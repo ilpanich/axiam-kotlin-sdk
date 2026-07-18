@@ -138,9 +138,25 @@ publishing {
     }
     repositories {
         maven {
-            // Sonatype Central Portal (mirrors the Java SDK's Maven Central deploy).
+            // Sonatype Central (the new Central Portal, central.sonatype.com).
+            //
+            // maven-publish deploys by doing an HTTP PUT for each artifact to a
+            // per-file path — the classic OSSRH / Nexus staging protocol. The
+            // Portal's own upload endpoint (/api/v1/publisher/upload) is NOT that:
+            // it only accepts a single POST of a zipped bundle and has no
+            // per-artifact PUT paths, so every PUT 404s there.
+            //
+            // Sonatype provides an OSSRH Staging API compatibility service that
+            // speaks the exact PUT protocol maven-publish uses and forwards the
+            // result into the Central Portal as a validated deployment. Point the
+            // deploy there. Credentials are the Portal-generated user token
+            // (Account -> Generate User Token) — the same CENTRAL_TOKEN_* values.
+            //
+            // The uploaded deployment then either auto-releases (if the namespace's
+            // publishing default is set to "Automatic" in the Portal) or waits for a
+            // manual "Publish" in the Deployments view.
             name = "central"
-            url = uri("https://central.sonatype.com/api/v1/publisher/upload")
+            url = uri("https://ossrh-staging-api.central.sonatype.com/service/local/staging/deploy/maven2/")
             credentials {
                 username = System.getenv("CENTRAL_TOKEN_USERNAME")
                 password = System.getenv("CENTRAL_TOKEN_PASSWORD")
