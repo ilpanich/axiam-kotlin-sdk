@@ -76,6 +76,44 @@ tasks.test {
     }
 }
 
+// ---- Examples (compile-checked, NOT published) ---------------------------
+// A dedicated 'examples' source set compiles the runnable samples under
+// examples/ against the main SDK output, so they can never drift from the
+// public API. `./gradlew compileExamplesKotlin` (also wired into `check`)
+// keeps them honest; `runLoginMfaExample` / `runRestAuthzExample` run them.
+// These sources are excluded from the published jar and Dokka.
+val examples: SourceSet by sourceSets.creating
+
+configurations["examplesImplementation"].extendsFrom(configurations["implementation"])
+configurations["examplesRuntimeOnly"].extendsFrom(configurations["runtimeOnly"])
+
+dependencies {
+    "examplesImplementation"(sourceSets["main"].output)
+}
+
+// Point the examples compilation at the flat examples/ tree (mirrors the other
+// AXIAM SDKs' examples/<topic>/<File> layout) instead of src/examples/kotlin.
+sourceSets["examples"].resources.setSrcDirs(emptyList<String>())
+kotlin.sourceSets["examples"].kotlin.setSrcDirs(listOf("examples"))
+
+tasks.named("check") {
+    dependsOn("compileExamplesKotlin")
+}
+
+val runLoginMfaExample by tasks.registering(JavaExec::class) {
+    group = "examples"
+    description = "Run examples/login-mfa/LoginMfaExample.kt"
+    classpath = examples.runtimeClasspath
+    mainClass.set("io.axiam.sdk.examples.loginmfa.LoginMfaExample")
+}
+
+val runRestAuthzExample by tasks.registering(JavaExec::class) {
+    group = "examples"
+    description = "Run examples/rest-authz/RestAuthzExample.kt"
+    classpath = examples.runtimeClasspath
+    mainClass.set("io.axiam.sdk.examples.restauthz.RestAuthzExample")
+}
+
 // Dokka -> javadoc jar (javadoc.io serves this verbatim).
 val dokkaJavadocJar by tasks.registering(Jar::class) {
     dependsOn(tasks.dokkaJavadoc)

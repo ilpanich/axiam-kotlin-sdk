@@ -70,8 +70,12 @@ import io.axiam.sdk.Sensitive
 import kotlinx.coroutines.runBlocking
 
 runBlocking {
+    // §5.1: login/refresh require organization context in addition to the
+    // tenant (a tenant slug is only unique within an org) — supply it with
+    // .orgSlug("acme") (or .orgId(UUID)), else login fails with HTTP 400
+    // "must provide org_id or org_slug".
     AxiamClient.builder("https://axiam.example.com", tenantId = "acme")
-        .orgSlug("acme-org")
+        .orgSlug("acme")
         .build()
         .use { client ->
             // Authentication
