@@ -7,17 +7,15 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
-  group: pages
+  group: docs-gh-pages
   cancel-in-progress: true
 
 jobs:
   dokka:
-    name: build & publish Dokka HTML
+    name: build & publish Dokka HTML to gh-pages
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -30,18 +28,17 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
       - name: Generate Dokka HTML
         run: ./gradlew dokkaHtml --no-daemon
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: build/dokka/html
-
-  deploy:
-    needs: dokka
-    runs-on: ubuntu-24.04
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Publish to gh-pages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          DIR=build/dokka/html
+          touch "$DIR/.nojekyll"
+          cd "$DIR"
+          git init -q
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "docs: publish from ${GITHUB_SHA}"
+          git push -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:gh-pages
