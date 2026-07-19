@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-alpha12] - 2026-07-19
+
+### Changed
+
+- Add Kotlin examples and sync CONTRACT §5.1 org context (#3)
+
+### Fixed
+
+- Deploy via OSSRH Staging API compat endpoint, not Portal upload URL
+
 ## [1.0.0-alpha11] - 2026-07-18
 
 ### Changed
