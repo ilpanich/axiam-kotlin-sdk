@@ -76,6 +76,44 @@ tasks.test {
     }
 }
 
+// ---- Examples (compile-checked, NOT published) ---------------------------
+// A dedicated 'examples' source set compiles the runnable samples under
+// examples/ against the main SDK output, so they can never drift from the
+// public API. `./gradlew compileExamplesKotlin` (also wired into `check`)
+// keeps them honest; `runLoginMfaExample` / `runRestAuthzExample` run them.
+// These sources are excluded from the published jar and Dokka.
+val examples: SourceSet by sourceSets.creating
+
+configurations["examplesImplementation"].extendsFrom(configurations["implementation"])
+configurations["examplesRuntimeOnly"].extendsFrom(configurations["runtimeOnly"])
+
+dependencies {
+    "examplesImplementation"(sourceSets["main"].output)
+}
+
+// Point the examples compilation at the flat examples/ tree (mirrors the other
+// AXIAM SDKs' examples/<topic>/<File> layout) instead of src/examples/kotlin.
+sourceSets["examples"].resources.setSrcDirs(emptyList<String>())
+kotlin.sourceSets["examples"].kotlin.setSrcDirs(listOf("examples"))
+
+tasks.named("check") {
+    dependsOn("compileExamplesKotlin")
+}
+
+val runLoginMfaExample by tasks.registering(JavaExec::class) {
+    group = "examples"
+    description = "Run examples/login-mfa/LoginMfaExample.kt"
+    classpath = examples.runtimeClasspath
+    mainClass.set("io.axiam.sdk.examples.loginmfa.LoginMfaExample")
+}
+
+val runRestAuthzExample by tasks.registering(JavaExec::class) {
+    group = "examples"
+    description = "Run examples/rest-authz/RestAuthzExample.kt"
+    classpath = examples.runtimeClasspath
+    mainClass.set("io.axiam.sdk.examples.restauthz.RestAuthzExample")
+}
+
 // Dokka -> javadoc jar (javadoc.io serves this verbatim).
 val dokkaJavadocJar by tasks.registering(Jar::class) {
     dependsOn(tasks.dokkaJavadoc)
@@ -90,6 +128,14 @@ val sourcesJar by tasks.registering(Jar::class) {
 
 kover {
     reports {
+        // The runnable samples under examples/ are demonstration code, not part
+        // of the SDK's tested surface — exclude them so they don't drag down the
+        // coverage ratio (they have no unit tests by design).
+        filters {
+            excludes {
+                classes("io.axiam.sdk.examples.*")
+            }
+        }
         verify {
             // Regression floor set below the current ~91% line coverage so it
             // never false-fails; ratchet upward as coverage rises.
