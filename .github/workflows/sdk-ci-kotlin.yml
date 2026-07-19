@@ -128,10 +128,33 @@ jobs:
           java-version: '17'
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
-      - name: Publish (GPG-signed) to the Sonatype Central Portal
+      - name: Publish (GPG-signed) to the OSSRH Staging API
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
           CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
           CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
         run: ./gradlew publish --no-daemon
+
+      # `./gradlew publish` only does the OSSRH-protocol PUTs, which land the
+      # artifacts in an *open* staging repository on the OSSRH Staging API. The
+      # maven-publish plugin never closes/forwards that repo, so without this
+      # step the deployment never reaches the Central Portal Deployments view and
+      # is never published — the build goes green but nothing lands on Central.
+      #
+      # This POST closes the namespace's default staging repository and forwards
+      # it to the Portal. publishing_type=automatic auto-releases to Maven
+      # Central once validation passes; switch to user_managed to instead have it
+      # wait for a manual "Publish" click in the Deployments view.
+      - name: Close & forward the staging repository to the Central Portal
+        env:
+          CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
+          CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          namespace="$(grep -E '^group=' gradle.properties | cut -d= -f2)"
+          token="$(printf '%s:%s' "${CENTRAL_TOKEN_USERNAME}" "${CENTRAL_TOKEN_PASSWORD}" | base64 -w0)"
+          echo "Forwarding default staging repository for namespace '${namespace}' to the Central Portal…"
+          curl -sS --fail-with-body -X POST \
+            -H "Authorization: Bearer ${token}" \
+            "https://ossrh-staging-api.central.sonatype.com/manual/upload/defaultRepository/${namespace}?publishing_type=automatic"
