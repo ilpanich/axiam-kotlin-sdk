@@ -198,9 +198,15 @@ publishing {
             // deploy there. Credentials are the Portal-generated user token
             // (Account -> Generate User Token) — the same CENTRAL_TOKEN_* values.
             //
-            // The uploaded deployment then either auto-releases (if the namespace's
-            // publishing default is set to "Automatic" in the Portal) or waits for a
-            // manual "Publish" in the Deployments view.
+            // IMPORTANT: `./gradlew publish` only performs the PUTs. That leaves
+            // the artifacts in an *open* staging repository — the maven-publish
+            // plugin does NOT close/forward it, so nothing reaches the Portal on
+            // its own. A separate POST to
+            //   /manual/upload/defaultRepository/<namespace>?publishing_type=...
+            // is required to close the staging repo and forward it to the Portal
+            // (see the "Close & forward" step in .github/workflows/sdk-ci-kotlin.yml).
+            // Only after that does the deployment appear in the Deployments view
+            // and — with publishing_type=automatic — auto-release to Central.
             name = "central"
             url = uri("https://ossrh-staging-api.central.sonatype.com/service/local/staging/deploy/maven2/")
             credentials {
