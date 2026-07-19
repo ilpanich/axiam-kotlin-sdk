@@ -128,6 +128,14 @@ val sourcesJar by tasks.registering(Jar::class) {
 
 kover {
     reports {
+        // The runnable samples under examples/ are demonstration code, not part
+        // of the SDK's tested surface — exclude them so they don't drag down the
+        // coverage ratio (they have no unit tests by design).
+        filters {
+            excludes {
+                classes("io.axiam.sdk.examples.*")
+            }
+        }
         verify {
             // Regression floor set below the current ~91% line coverage so it
             // never false-fails; ratchet upward as coverage rises.
