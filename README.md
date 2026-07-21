@@ -34,8 +34,11 @@ default tenant.
   forwarding, §4 per-client cookie jar, §5 tenant header, §6 strict TLS + §6.1 mTLS client
   certificates, §7 `Sensitive`, §9 single-flight refresh, JWKS (EdDSA/Ed25519) session
   verification, and the §10/§11 Ktor route guard + declarative-authorization helpers.
-- **Deferred follow-ups (not in v1):** gRPC transport and §8 AMQP HMAC consumption. The
-  contract does not require AMQP of the Kotlin SDK; gRPC is a planned addition.
+- **Deferred follow-ups (not in v1):** the gRPC transport — including the gRPC-only
+  `getUserInfo` operation (CONTRACT §1.1, contract 1.3) — and §8 AMQP HMAC consumption. The
+  contract does not require AMQP of the Kotlin SDK; gRPC (and with it `getUserInfo`) is a
+  planned addition. Per CONTRACT §1.1, this SDK does **not** substitute the REST
+  `/oauth2/userinfo` endpoint for the gRPC operation.
 
 ## Getting started
 
