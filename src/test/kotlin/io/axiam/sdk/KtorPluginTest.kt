@@ -29,6 +29,7 @@ import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.util.Date
@@ -39,6 +40,8 @@ class KtorPluginTest {
     private lateinit var signingKey: OctetKeyPair
     private val allowUuid = "33333333-3333-3333-3333-333333333333"
     private val denyUuid = "44444444-4444-4444-4444-444444444444"
+    private val authzErrorUuid = "66666666-6666-6666-6666-666666666666"
+    private val authErrorUuid = "77777777-7777-7777-7777-777777777777"
 
     @BeforeEach
     fun setUp() {
@@ -53,10 +56,16 @@ class KtorPluginTest {
                         .setBody(JWKSet(signingKey.toPublicJWK()).toString())
                     path.startsWith("/api/v1/authz/check") -> {
                         val body = request.body.readUtf8()
-                        val allowed = !body.contains(denyUuid)
-                        MockResponse().setResponseCode(200)
-                            .addHeader("Content-Type", "application/json")
-                            .setBody("""{"allowed":$allowed}""")
+                        when {
+                            body.contains(authzErrorUuid) -> MockResponse().setResponseCode(403).setBody("{}")
+                            body.contains(authErrorUuid) -> MockResponse().setResponseCode(401).setBody("{}")
+                            else -> {
+                                val allowed = !body.contains(denyUuid)
+                                MockResponse().setResponseCode(200)
+                                    .addHeader("Content-Type", "application/json")
+                                    .setBody("""{"allowed":$allowed}""")
+                            }
+                        }
                     }
                     else -> MockResponse().setResponseCode(404)
                 }
@@ -158,5 +167,41 @@ class KtorPluginTest {
         assertEquals(HttpStatusCode.Forbidden, client.get("/docs/$denyUuid", auth).status)
         assertEquals(HttpStatusCode.BadRequest, client.get("/docs/not-a-uuid", auth).status)
         axiam.close()
+    }
+
+    @Test
+    fun `requireAccess maps a thrown AuthzError to 403 and a thrown AuthError to 401`() = testApplication {
+        val axiam = client()
+        application {
+            install(AxiamAuthentication) { this.client = axiam }
+            routing {
+                get("/docs/{id}") {
+                    call.requireAccess("read", call.parameters["id"] ?: "") ?: return@get
+                    call.respondText("ok")
+                }
+            }
+        }
+        val auth: io.ktor.client.request.HttpRequestBuilder.() -> Unit =
+            { header("Authorization", "Bearer ${token()}") }
+        assertEquals(HttpStatusCode.Forbidden, client.get("/docs/$authzErrorUuid", auth).status)
+        assertEquals(HttpStatusCode.Unauthorized, client.get("/docs/$authErrorUuid", auth).status)
+        axiam.close()
+    }
+
+    @Test
+    fun `AxiamAuthentication requires a configured client`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            testApplication {
+                application {
+                    install(AxiamAuthentication) { }
+                    routing {
+                        get("/ping") { call.respondText("pong") }
+                    }
+                }
+                // Forces the (lazily-started) test application to actually
+                // initialize, so the plugin's requireNotNull runs.
+                client.get("/ping")
+            }
+        }
     }
 }
