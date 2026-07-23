@@ -69,7 +69,7 @@ class AuthFlowTest {
     }
 
     @Test
-    fun `login wrong credentials maps 401 to AuthError`() = runBlocking {
+    fun `login wrong credentials maps 401 to AuthError`(): Unit = runBlocking {
         server.enqueue(MockResponse().setResponseCode(401).setBody("{}"))
         TestSupport.clientFor(server).use { client ->
             assertThrows(AuthError::class.java) {

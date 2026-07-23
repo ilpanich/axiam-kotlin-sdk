@@ -76,7 +76,7 @@ class ClientExtraTest {
     }
 
     @Test
-    fun `refresh fails cleanly when org id cannot be resolved`() = runBlocking {
+    fun `refresh fails cleanly when org id cannot be resolved`(): Unit = runBlocking {
         // Session token carries no org_id and none is configured on the client.
         val noOrgJwt = buildString {
             append(
@@ -105,7 +105,7 @@ class ClientExtraTest {
     }
 
     @Test
-    fun `explicit refresh propagates a server rejection as AuthError`() = runBlocking {
+    fun `explicit refresh propagates a server rejection as AuthError`(): Unit = runBlocking {
         server.enqueue(TestSupport.loginOkResponse())
         server.enqueue(MockResponse().setResponseCode(401).setBody("{}"))
         TestSupport.clientFor(server).use { client ->
@@ -116,7 +116,7 @@ class ClientExtraTest {
     }
 
     @Test
-    fun `logout maps a server error to an exception`() = runBlocking {
+    fun `logout maps a server error to an exception`(): Unit = runBlocking {
         server.enqueue(TestSupport.loginOkResponse())
         server.enqueue(MockResponse().setResponseCode(500).setBody("boom"))
         TestSupport.clientFor(server).use { client ->
@@ -129,7 +129,7 @@ class ClientExtraTest {
     }
 
     @Test
-    fun `a malformed success body surfaces as NetworkError`() = runBlocking {
+    fun `a malformed success body surfaces as NetworkError`(): Unit = runBlocking {
         server.enqueue(TestSupport.json(200, "not-json"))
         TestSupport.clientFor(server).use { client ->
             assertThrows(io.axiam.sdk.errors.NetworkError::class.java) {
