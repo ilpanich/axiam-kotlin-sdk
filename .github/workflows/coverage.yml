@@ -26,6 +26,9 @@ jobs:
       - name: Run tests and produce the Kover XML report
         run: ./gradlew test koverXmlReport --no-daemon
 
+      - name: Coverage verification (>= 98% line, enforced floor)
+        run: ./gradlew koverVerify --no-daemon
+
       - name: Upload coverage to Coveralls
         uses: coverallsapp/github-action@v2
         with:

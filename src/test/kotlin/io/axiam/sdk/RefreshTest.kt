@@ -108,4 +108,26 @@ class RefreshTest {
         }
         server.shutdown()
     }
+
+    @Test
+    fun `a caller observing an already-stale token gets the cached pair without a new refresh`() = runBlocking {
+        val guard = RefreshGuard()
+        val calls = AtomicInteger(0)
+        val doRefresh: suspend () -> TokenPair = {
+            calls.incrementAndGet()
+            TokenPair("second-access", "second-refresh", System.currentTimeMillis() + 60_000)
+        }
+
+        // First round: establishes `current`.
+        val first = guard.refreshIfNeeded("first-access", doRefresh)
+        assertEquals("second-access", first.access)
+        assertEquals("second-access", guard.cachedAccessToken())
+
+        // Second round: this caller still observed the now-superseded
+        // "first-access" token — the double-check in refreshIfNeeded must
+        // return the already-current pair WITHOUT invoking doRefresh again.
+        val second = guard.refreshIfNeeded("first-access", doRefresh)
+        assertEquals("second-access", second.access)
+        assertEquals(1, calls.get(), "a caller behind the current token must not trigger another refresh")
+    }
 }
