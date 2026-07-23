@@ -30,8 +30,8 @@ jobs:
       - name: Build, test, and coverage report
         run: ./gradlew build test koverXmlReport --no-daemon
 
-      - name: Coverage verification (>= 90% line, fail-safe floor)
-        run: ./gradlew koverVerify --no-daemon || true
+      - name: Coverage verification (>= 98% line, enforced floor)
+        run: ./gradlew koverVerify --no-daemon
 
   tls-bypass-gate:
     name: TLS-bypass gate (§6)

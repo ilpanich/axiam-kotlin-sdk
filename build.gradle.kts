@@ -137,10 +137,11 @@ kover {
             }
         }
         verify {
-            // Regression floor set below the current ~91% line coverage so it
-            // never false-fails; ratchet upward as coverage rises.
+            // Regression floor set ~1 point below the achieved ~99.1% line
+            // coverage (measured 2026-07-23) so it never false-fails while
+            // still catching a real regression; ratchet upward as coverage rises.
             rule {
-                minBound(88)
+                minBound(98)
             }
         }
     }
