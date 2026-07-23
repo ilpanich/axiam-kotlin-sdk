@@ -10,6 +10,7 @@ import com.nimbusds.jose.jwk.gen.OctetKeyPairGenerator
 import com.nimbusds.jwt.JWTClaimsSet
 import com.nimbusds.jwt.SignedJWT
 import io.axiam.sdk.errors.AuthError
+import io.axiam.sdk.internal.JwksVerifier
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -105,6 +106,57 @@ class JwksTest {
     fun `verifySession rejects a malformed token`() {
         TestSupport.clientFor(server).use { client ->
             assertThrows(AuthError::class.java) { client.verifySession("not-a-jwt") }
+        }
+    }
+
+    @Test
+    fun `constructing JwksVerifier with an invalid base URL throws IllegalArgumentException`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            JwksVerifier("this is not a url at all")
+        }
+    }
+
+    @Test
+    fun `verifySession rejects a token signed by a key not present in the JWKS`() {
+        // The JWKS advertises signingKey's PUBLIC key under kid "k1", but this
+        // token is actually signed with a DIFFERENT private key sharing that
+        // same kid — signature verification must fail (the !valid branch),
+        // not merely "no matching key".
+        val otherKey = OctetKeyPairGenerator(Curve.Ed25519).keyID("k1").generate()
+        val jwt = SignedJWT(JWSHeader.Builder(JWSAlgorithm.EdDSA).keyID("k1").build(), claims())
+        jwt.sign(Ed25519Signer(otherKey))
+        TestSupport.clientFor(server).use { client ->
+            assertThrows(AuthError::class.java) { client.verifySession(jwt.serialize()) }
+        }
+    }
+
+    @Test
+    fun `verifySession maps a JWKS endpoint failure to AuthError`() {
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse = MockResponse().setResponseCode(500)
+        }
+        val token = signEd25519(claims())
+        TestSupport.clientFor(server).use { client ->
+            assertThrows(AuthError::class.java) { client.verifySession(token) }
+        }
+    }
+
+    @Test
+    fun `verifySession rejects a token whose kid has no match in the JWKS`() {
+        val token = signEd25519(claims(), kid = "no-such-kid")
+        TestSupport.clientFor(server).use { client ->
+            assertThrows(AuthError::class.java) { client.verifySession(token) }
+        }
+    }
+
+    @Test
+    fun `assertTenant rejects a non-string tenant_id claim`() {
+        val badClaims = JWTClaimsSet.Builder()
+            .subject("user-1")
+            .claim("tenant_id", 12345L)
+            .build()
+        assertThrows(AuthError::class.java) {
+            JwksVerifier.assertTenant(badClaims, TestSupport.TENANT_ID)
         }
     }
 }
