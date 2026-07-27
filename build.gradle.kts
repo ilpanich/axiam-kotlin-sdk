@@ -114,6 +114,14 @@ val runRestAuthzExample by tasks.registering(JavaExec::class) {
     mainClass.set("io.axiam.sdk.examples.restauthz.RestAuthzExample")
 }
 
+val runOidcLoginExample by tasks.registering(JavaExec::class) {
+    group = "examples"
+    description = "Run examples/oidc-login/OidcLoginExample.kt"
+    classpath = examples.runtimeClasspath
+    mainClass.set("io.axiam.sdk.examples.oidclogin.OidcLoginExample")
+    standardInput = System.`in`
+}
+
 // Dokka -> javadoc jar (javadoc.io serves this verbatim).
 val dokkaJavadocJar by tasks.registering(Jar::class) {
     dependsOn(tasks.dokkaJavadoc)

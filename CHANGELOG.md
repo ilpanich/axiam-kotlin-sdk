@@ -5,6 +5,52 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- OIDC / SSO relying-party helpers (CONTRACT.md §12, contract 1.4): the nine canonical
+  operations as `suspend` functions directly on `AxiamClient` — `oidcDiscover`, `oidcBegin`
+  (deliberately NOT `suspend`: pure local computation, no network I/O), `oidcExchange`,
+  `oidcRefresh`, `loginClientCredentials`, `introspect`, `revoke`, `ssoStart`, `ssoComplete`. No
+  `*Async` twins, matching the contract's Kotlin naming column.
+- New `io.axiam.sdk.oidc` package: `OidcConfiguration`, `AuthorizationRequest`, `OidcTokenSet`,
+  `IdTokenClaims`, `IntrospectionResult`, `SsoStartResult`, `SsoCompleteResult`, and the
+  per-operation parameter types; `OidcStateStore` + an in-memory `MemoryOidcStateStore`
+  reference implementation (10-minute TTL, single-use `consume`, no background thread).
+- PKCE/CSPRNG primitives (`java.security.SecureRandom` + `MessageDigest`, S256-only, RFC 7636
+  Appendix B verified) and the full §12.4 ID-token validation checklist (algorithm pinning,
+  JWKS signature verification via an extended `JwksVerifier`, issuer/audience/time/nonce),
+  raising `AuthError` with one of the seven stable reason codes
+  (`invalid_alg`/`unknown_kid`/`invalid_signature`/`invalid_issuer`/`invalid_audience`/
+  `token_expired`/`nonce_mismatch`) on any failure — the whole token set is discarded, never
+  partially trusted.
+- `OAuthProtocolError`, a subclass of the existing `AuthError` (not a fourth peer error type,
+  so `catch (e: AuthError)` keeps matching it), for an `OAuth2ErrorResponse` body from
+  `/oauth2/token` (400) or `/oauth2/introspect`/`/oauth2/revoke` (401); message is exactly
+  `"<error>: <error_description>"`. `AuthError` itself gained an additive, optional `reason`
+  field for the §12.4 codes above — fully backward compatible with every existing construction
+  site.
+- `AxiamClient.Builder.oidcClientId(...)`, `.oidcClientSecret(...)`, `.oidcDiscoveryTtlMillis(...)`,
+  and `.oidcClockSkewSeconds(...)` — the relying party's OAuth2 identity is configured at
+  construction time (needed by §12.4 rule 4 audience matching), never as a per-call argument.
+- Ktor glue: `Route.axiamOidcLogin(client, redirectUri, ...)` installing a login-redirect and
+  callback route pair, `compileOnly`-safe exactly like the existing `AxiamAuthentication`
+  plugin — the SDK core compiles and passes tests with Ktor entirely absent.
+- `examples/oidc-login/OidcLoginExample.kt` and a README section documenting all nine
+  operations and the caller-owns-login-state rule (§12.3 rule 1).
+- No new runtime dependency: PKCE/CSPRNG uses the JDK standard library; JWKS/ID-token
+  verification reuses the existing `nimbus-jose-jwt` dependency.
+
+### Fixed
+
+- `Sensitive.expose()` widened from `internal` to `public` (CONTRACT.md §7 rule 3, contract
+  1.5): CONTRACT.md §12 hands `accessToken`/`refreshToken`/`idToken` on `OidcTokenSet` to the
+  calling application in the `/oauth2/token` response body, not via a `Set-Cookie` the SDK
+  captures on the caller's behalf, so a §12 caller had no supported way to read the tokens it
+  was handed. Additive and non-breaking: `toString()` redaction is unaffected, and there is
+  still exactly one accessor and no implicit reachability path.
+
 ## [1.0.0-alpha18] - 2026-07-24
 
 ### Changed
