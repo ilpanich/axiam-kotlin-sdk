@@ -26,8 +26,8 @@ import kotlin.concurrent.withLock
  * secret for its whole lifetime, "including … in any `OidcStateStore` entry"),
  * so serializing an entry — e.g. into a Redis-backed store — never emits the
  * verifier by accident; a store implementation that needs to persist the
- * value must call the SDK-internal exposure path explicitly and is then
- * responsible for protecting it at rest.
+ * value must call [Sensitive.expose] explicitly and is then responsible for
+ * protecting it at rest.
  *
  * @property state the `state` value this entry is keyed by. Not a secret (§12.3 rule 2)
  * @property nonce the `nonce` to check the ID token's `nonce` claim against. Not a secret (§12.3 rule 2)

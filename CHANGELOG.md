@@ -42,6 +42,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - No new runtime dependency: PKCE/CSPRNG uses the JDK standard library; JWKS/ID-token
   verification reuses the existing `nimbus-jose-jwt` dependency.
 
+### Fixed
+
+- `Sensitive.expose()` widened from `internal` to `public` (CONTRACT.md §7 rule 3, contract
+  1.5): CONTRACT.md §12 hands `accessToken`/`refreshToken`/`idToken` on `OidcTokenSet` to the
+  calling application in the `/oauth2/token` response body, not via a `Set-Cookie` the SDK
+  captures on the caller's behalf, so a §12 caller had no supported way to read the tokens it
+  was handed. Additive and non-breaking: `toString()` redaction is unaffected, and there is
+  still exactly one accessor and no implicit reachability path.
+
 ## [1.0.0-alpha18] - 2026-07-24
 
 ### Changed
