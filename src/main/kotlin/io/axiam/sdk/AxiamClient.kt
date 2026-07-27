@@ -8,6 +8,21 @@ import io.axiam.sdk.internal.JwksVerifier
 import io.axiam.sdk.internal.RefreshGuard
 import io.axiam.sdk.internal.SessionState
 import io.axiam.sdk.internal.TlsFactory
+import io.axiam.sdk.oidc.AuthorizationRequest
+import io.axiam.sdk.oidc.IntrospectParams
+import io.axiam.sdk.oidc.IntrospectionResult
+import io.axiam.sdk.oidc.LoginClientCredentialsParams
+import io.axiam.sdk.oidc.OidcBeginParams
+import io.axiam.sdk.oidc.OidcConfiguration
+import io.axiam.sdk.oidc.OidcExchangeParams
+import io.axiam.sdk.oidc.OidcRefreshParams
+import io.axiam.sdk.oidc.OidcSupport
+import io.axiam.sdk.oidc.OidcTokenSet
+import io.axiam.sdk.oidc.RevokeParams
+import io.axiam.sdk.oidc.SsoCompleteParams
+import io.axiam.sdk.oidc.SsoCompleteResult
+import io.axiam.sdk.oidc.SsoStartParams
+import io.axiam.sdk.oidc.SsoStartResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -55,6 +70,7 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
     private val refreshGuard = RefreshGuard()
     private val jwksVerifier = JwksVerifier(baseUrl)
     private val session: SessionState
+    private val oidcSupport: OidcSupport
 
     init {
         val cookieManager = CookieManager(null, CookiePolicy.ACCEPT_ALL)
@@ -75,6 +91,21 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
             .addInterceptor(AuthHeaderInterceptor(session))
             .build()
         session.attachHttpClient(httpClient)
+
+        // CONTRACT.md §12 — built on this SAME httpClient (§4 cookie jar, §6
+        // TLS, §5 tenant header via AuthHeaderInterceptor already installed
+        // above) and this SAME session (for org defaults / tenant_id
+        // resolution), never a forked transport.
+        oidcSupport = OidcSupport(
+            httpClient = httpClient,
+            baseUrl = baseUrl,
+            configuredTenantId = tenantId,
+            session = session,
+            oidcClientId = b.oidcClientId,
+            oidcClientSecret = b.oidcClientSecret,
+            discoveryTtlMs = b.oidcDiscoveryTtlMs,
+            clockSkewSecInput = b.oidcClockSkewSec,
+        )
     }
 
     // ---- SDK-internal accessors (middleware/§10 seam) --------------------
@@ -261,6 +292,76 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
         return AxiamUser(sub, tenantId, roles)
     }
 
+    // ---- OIDC / SSO relying-party helpers (CONTRACT.md §12) --------------
+    //
+    // The nine canonical §12 operations, under the exact §12.2 Kotlin names.
+    // Networking/orchestration lives in [io.axiam.sdk.oidc.OidcSupport]
+    // (file-size hygiene only) — every method below is a thin delegation, so
+    // these ARE "operations on the existing client" per §12's requirement.
+    //
+    // `oidcBegin` is deliberately NOT `suspend`: CONTRACT.md §12.1 fixes it as
+    // pure local computation with no network I/O, and §12.2's C# carve-out
+    // ("the single deliberate exception... performs no network I/O... no
+    // Async suffix") makes the same call for a TAP-style language. The
+    // TypeScript reference makes the identical choice. A `suspend` wrapper
+    // that never suspends would be a needless coroutine-context hop for
+    // every caller.
+
+    /**
+     * `GET /.well-known/openid-configuration` (§12.1) — fetch and cache the
+     * OIDC discovery document (≥5-minute TTL, single-flight de-duplication,
+     * per-origin cache key; §12.3 rule 6).
+     */
+    suspend fun oidcDiscover(): OidcConfiguration = oidcSupport.oidcDiscover()
+
+    /**
+     * Builds an [AuthorizationRequest] (§12.1) — PURE LOCAL COMPUTATION, no
+     * network I/O. See [OidcBeginParams] for the CSPRNG/PKCE construction
+     * rules. The caller owns [AuthorizationRequest.state],
+     * [AuthorizationRequest.nonce], and [AuthorizationRequest.codeVerifier]
+     * (§12.3 rule 1) — this SDK stores none of them.
+     */
+    fun oidcBegin(params: OidcBeginParams): AuthorizationRequest = oidcSupport.oidcBegin(params)
+
+    /**
+     * `POST /oauth2/token` with `grant_type=authorization_code` (§12.1) —
+     * exchange an authorization code for a validated [OidcTokenSet]. See the
+     * CONTRACT.md §12.4 ID-token validation checklist: on any failure the
+     * whole token set is discarded and [io.axiam.sdk.errors.AuthError] is
+     * raised with the matching `reason`.
+     */
+    suspend fun oidcExchange(params: OidcExchangeParams): OidcTokenSet = oidcSupport.oidcExchange(params)
+
+    /**
+     * `POST /oauth2/token` with `grant_type=refresh_token` (§12.1), under its
+     * own single-flight guard (§9). Distinct from [refresh] — the two are
+     * never merged or aliased.
+     */
+    suspend fun oidcRefresh(params: OidcRefreshParams): OidcTokenSet = oidcSupport.oidcRefresh(params)
+
+    /**
+     * `POST /oauth2/token` with `grant_type=client_credentials` (§12.1) —
+     * service-account machine-to-machine login.
+     */
+    suspend fun loginClientCredentials(params: LoginClientCredentialsParams = LoginClientCredentialsParams()): OidcTokenSet =
+        oidcSupport.loginClientCredentials(params)
+
+    /** `POST /oauth2/introspect` (RFC 7662, §12.1). Requires confidential-client credentials. */
+    suspend fun introspect(params: IntrospectParams): IntrospectionResult = oidcSupport.introspect(params)
+
+    /** `POST /oauth2/revoke` (RFC 7009, §12.1). Idempotent: any `200` (including for an unknown token) is success. */
+    suspend fun revoke(params: RevokeParams) = oidcSupport.revoke(params)
+
+    /** `POST /api/v1/auth/federation/oidc/start` (§12.1) — step 1 of upstream-IdP SSO. */
+    suspend fun ssoStart(params: SsoStartParams): SsoStartResult = oidcSupport.ssoStart(params)
+
+    /**
+     * `POST /api/v1/auth/federation/oidc/callback` (§12.1) — step 2 of
+     * upstream-IdP SSO. The session arrives as `Set-Cookie`; this client's §4
+     * cookie jar captures it automatically.
+     */
+    suspend fun ssoComplete(params: SsoCompleteParams): SsoCompleteResult = oidcSupport.ssoComplete(params)
+
     override fun close() {
         httpClient.dispatcher.executorService.shutdown()
         httpClient.connectionPool.evictAll()
@@ -343,6 +444,10 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
         internal var connectTimeout: Duration = Duration.ofSeconds(10)
         internal var readTimeout: Duration = Duration.ofSeconds(30)
         internal var writeTimeout: Duration = Duration.ofSeconds(30)
+        internal var oidcClientId: String? = null
+        internal var oidcClientSecret: Sensitive<String>? = null
+        internal var oidcDiscoveryTtlMs: Long = OidcSupport.MIN_DISCOVERY_TTL_MS
+        internal var oidcClockSkewSec: Int? = null
 
         /** Organization slug (mutually exclusive with [orgId]; last call wins). */
         fun orgSlug(slug: String) = apply { orgSlug = slug; orgId = null }
@@ -372,6 +477,40 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
         fun connectTimeout(d: Duration) = apply { connectTimeout = d }
         fun readTimeout(d: Duration) = apply { readTimeout = d }
         fun writeTimeout(d: Duration) = apply { writeTimeout = d }
+
+        /**
+         * The relying party's OAuth2 `client_id` (CONTRACT.md §12.1), required
+         * before calling any §12 operation other than [oidcDiscover]. Matched
+         * against the ID token's `aud`/`azp` (§12.4 rule 4) — it comes from
+         * client configuration, never a per-call argument, since §12.4 rule 4
+         * needs the SAME value the caller used to build the authorization
+         * request.
+         */
+        fun oidcClientId(clientId: String) = apply { oidcClientId = clientId }
+
+        /**
+         * A confidential client's `client_secret` (CONTRACT.md §12.1), held
+         * behind [Sensitive] (§12.5). Omit for a public client:
+         * [loginClientCredentials], [introspect], and [revoke] then throw
+         * [io.axiam.sdk.errors.AuthError] client-side, without a wire call
+         * (§12.1 note 4 — a public client cannot call them).
+         */
+        fun oidcClientSecret(clientSecret: String) = apply { oidcClientSecret = Sensitive.of(clientSecret) }
+
+        /**
+         * Overrides the OIDC discovery-document cache TTL, in milliseconds.
+         * Floored at [OidcSupport.MIN_DISCOVERY_TTL_MS] (5 minutes) per
+         * CONTRACT.md §12.3 rule 6 — a smaller configured value is silently
+         * raised to the floor.
+         */
+        fun oidcDiscoveryTtlMillis(ttlMs: Long) = apply { oidcDiscoveryTtlMs = ttlMs }
+
+        /**
+         * Overrides the permitted ID-token clock skew, in seconds. Clamped to
+         * `[0, 60]` per CONTRACT.md §12.4 rule 5 — the contract forbids
+         * configuring it above that bound.
+         */
+        fun oidcClockSkewSeconds(seconds: Int) = apply { oidcClockSkewSec = seconds }
 
         fun build(): AxiamClient = AxiamClient(this)
     }

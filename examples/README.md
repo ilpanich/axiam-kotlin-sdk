@@ -8,6 +8,7 @@ all connection details from the environment, with safe defaults.
 | --- | --- | --- |
 | Login + MFA | [`login-mfa/LoginMfaExample.kt`](login-mfa/LoginMfaExample.kt) | The two-phase `login()` / `verifyMfa()` flow (CONTRACT.md §1, §5, §5.1) |
 | REST authz | [`rest-authz/RestAuthzExample.kt`](rest-authz/RestAuthzExample.kt) | `can()`, `checkAccess()`, and order-preserving `batchCheck()` (§1) |
+| OIDC / SSO login | [`oidc-login/OidcLoginExample.kt`](oidc-login/OidcLoginExample.kt) | The nine §12 operations: `oidcDiscover`/`oidcBegin`/`oidcExchange`, `loginClientCredentials`, `introspect`/`revoke` |
 
 ## Organization context (§5.1)
 
@@ -56,6 +57,11 @@ AXIAM_BASE_URL=https://localhost:8443 \
 AXIAM_TENANT_SLUG=acme AXIAM_ORG_SLUG=acme \
 AXIAM_EMAIL=you@example.com AXIAM_PASSWORD=secret \
   ./gradlew runRestAuthzExample
+
+AXIAM_BASE_URL=https://localhost:8443 AXIAM_TENANT_ID=<uuid> \
+AXIAM_OIDC_CLIENT_ID=my-app AXIAM_OIDC_CLIENT_SECRET=secret \
+AXIAM_OIDC_REDIRECT_URI=http://127.0.0.1:8081/auth/callback \
+  ./gradlew runOidcLoginExample
 ```
 
 Every SDK auth/authz operation is a `suspend` function (§1); each example's

@@ -21,7 +21,7 @@ Source: [ilpanich/axiam-kotlin-sdk](https://github.com/ilpanich/axiam-kotlin-sdk
 
 ## Contract conformance
 
-This SDK conforms to CONTRACT.md §1–§7, §9–§11 (including §6.1 mTLS).
+This SDK conforms to CONTRACT.md §1–§7, §9–§12 (including §6.1 mTLS).
 
 See [`CONTRACT.md`](CONTRACT.md) for the full cross-language behavioral contract. AXIAM is
 multi-tenant: a tenant identifier is a **required** constructor argument (§5) — there is no
@@ -33,7 +33,8 @@ default tenant.
   authorization (`checkAccess`, `can`, `batchCheck`), the §2 error taxonomy, §3 CSRF
   forwarding, §4 per-client cookie jar, §5 tenant header, §6 strict TLS + §6.1 mTLS client
   certificates, §7 `Sensitive`, §9 single-flight refresh, JWKS (EdDSA/Ed25519) session
-  verification, and the §10/§11 Ktor route guard + declarative-authorization helpers.
+  verification, the §10/§11 Ktor route guard + declarative-authorization helpers, and the
+  §12 OIDC/SSO relying-party helpers (see "OIDC / SSO relying-party helpers" below).
 - **Deferred follow-ups (not in v1):** the gRPC transport — including the gRPC-only
   `getUserInfo` operation (CONTRACT §1.1, contract 1.3) — and §8 AMQP HMAC consumption. The
   contract does not require AMQP of the Kotlin SDK; gRPC (and with it `getUserInfo`) is a
@@ -156,6 +157,101 @@ The framework-free annotations `@AxiamRequireAuth`, `@AxiamRequireAccess(action,
 `@AxiamRequireRole(…)` are also provided (`io.axiam.sdk.annotations`). **Spring Boot** users can
 reuse the Java SDK's `AxiamAuthorizationInterceptor` (`io.github.ilpanich:axiam-sdk`), which
 enforces the same annotation vocabulary.
+
+## OIDC / SSO relying-party helpers (§12)
+
+Nine canonical operations (CONTRACT.md §12) let this SDK offer "Login with AXIAM"
+(authorization-code + PKCE), service-account machine-to-machine login, token
+introspection/revocation, and the upstream-IdP federation pair — all as `suspend`
+functions directly on `AxiamClient` (no separate client type, no `*Async` twins):
+
+| Operation | Wire call | Notes |
+| --- | --- | --- |
+| `oidcDiscover()` | `GET /.well-known/openid-configuration` | Cached ≥5 min, single-flight, per-client-instance |
+| `oidcBegin(params)` | *(none — pure local computation)* | **Not `suspend`**: no network I/O (§12.1). Builds `state`/`nonce`/PKCE `codeVerifier` |
+| `oidcExchange(params)` | `POST /oauth2/token` (`authorization_code`) | Validates the `id_token` in full (§12.4) before returning |
+| `oidcRefresh(params)` | `POST /oauth2/token` (`refresh_token`) | Own single-flight guard (§9); distinct from `refresh()` |
+| `loginClientCredentials(params?)` | `POST /oauth2/token` (`client_credentials`) | No `openid` scope, no `id_token` |
+| `introspect(params)` | `POST /oauth2/introspect` | Requires confidential-client credentials |
+| `revoke(params)` | `POST /oauth2/revoke` | Idempotent: any `200` (including for an unknown token) is success |
+| `ssoStart(params)` | `POST /api/v1/auth/federation/oidc/start` | Upstream-IdP SSO step 1 — no JWT required |
+| `ssoComplete(params)` | `POST /api/v1/auth/federation/oidc/callback` | Step 2 — session arrives as `Set-Cookie` via the §4 cookie jar |
+
+Configure the relying party's `client_id`/`client_secret` **at construction time** (needed by
+`oidcExchange`'s §12.4 rule 4 audience check, so it can never disagree with a per-call value):
+
+```kotlin
+val client = AxiamClient.builder(baseUrl, tenantId = "22222222-2222-2222-2222-222222222222")
+    .oidcClientId("my-app")
+    .oidcClientSecret("secret")   // omit for a public client
+    .build()
+```
+
+### The caller owns all login state (§12.3 rule 1)
+
+`oidcBegin` and `oidcExchange` are **stateless**: the SDK stores no copy of `state`, `nonce`, or
+`codeVerifier` anywhere. Persist the three values returned by `oidcBegin` in your own session
+between the login redirect and the callback, and pass `nonce`/`codeVerifier` back into
+`oidcExchange` explicitly:
+
+```kotlin
+val configuration = client.oidcDiscover()
+val request = client.oidcBegin(
+    OidcBeginParams(configuration = configuration, redirectUri = redirectUri, scope = "openid profile"),
+)
+// …persist request.state / request.nonce / request.codeVerifier, then redirect the browser…
+res.redirect(request.url)
+
+// …on the callback, having checked the returned `state` matches…
+val tokens = client.oidcExchange(
+    OidcExchangeParams(
+        code = code,
+        codeVerifier = request.codeVerifier,
+        redirectUri = redirectUri,
+        nonce = request.nonce,
+    ),
+)
+println(tokens.idClaims?.sub)   // the validated ID-token subject (§12.4)
+```
+
+`OidcStateStore` / `MemoryOidcStateStore` (`io.axiam.sdk.oidc`) are an **optional** reference
+implementation of that same pattern (10-minute TTL, single-use `consume`) for a redirect flow
+split across two separate HTTP requests — the Ktor glue below uses one internally.
+
+### Ktor "Login with AXIAM" glue
+
+```kotlin
+import io.axiam.sdk.ktor.axiamOidcLogin
+
+routing {
+    axiamOidcLogin(
+        client = axiamClient,
+        redirectUri = "https://app.example.com/auth/callback",
+        onSuccess = { tokens, entry -> /* establish YOUR OWN session here */ },
+    )
+}
+```
+
+Installs a `GET /login` (redirect to the IdP) and a `GET /callback` (exchanges the code) pair,
+using an in-memory `OidcStateStore` by default. Kept `compileOnly`-safe exactly like
+`AxiamAuthentication` — the core §12 operations above compile and run with Ktor absent from a
+consumer's classpath; only importing `io.axiam.sdk.ktor.*` requires adding `ktor-server-core`.
+
+### Error taxonomy additions (§12.3 rule 3)
+
+An RFC 6749 `OAuth2ErrorResponse` body (e.g. `invalid_grant`) surfaces as `OAuthProtocolError`
+— a **subclass of `AuthError`**, so existing `catch (e: AuthError)` handling keeps matching it —
+exposing `error`/`errorDescription` with `message` exactly `"<error>: <error_description>"`. A
+§12.4 ID-token validation failure raises a plain `AuthError` whose `reason` carries one of the
+seven stable codes: `invalid_alg`, `unknown_kid`, `invalid_signature`, `invalid_issuer`,
+`invalid_audience`, `token_expired`, `nonce_mismatch`.
+
+The five §12.5 secret fields — `accessToken`, `refreshToken`, `idToken`, `oidcClientSecret`, and
+`AuthorizationRequest.codeVerifier` — are `Sensitive<String>`, exactly like every other token
+material in this SDK (§7); `state` and `nonce` are not secrets and are plain strings.
+
+See [`examples/oidc-login/OidcLoginExample.kt`](examples/oidc-login/OidcLoginExample.kt) for a
+complete, framework-free walk-through of all nine operations.
 
 ## Building from source
 
