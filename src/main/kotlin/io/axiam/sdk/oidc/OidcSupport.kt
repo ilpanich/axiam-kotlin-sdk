@@ -8,7 +8,7 @@ import io.axiam.sdk.errors.NetworkError
 import io.axiam.sdk.errors.OAuthProtocolError
 import io.axiam.sdk.internal.JwksVerifier
 import io.axiam.sdk.internal.SessionState
-import kotlinx.coroutines.CompletableDeferred
+import io.axiam.sdk.internal.SingleFlight
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -55,17 +55,18 @@ import java.io.IOException
  *    verifier the §10 middleware uses;
  *  - §7/§12.5 redaction -> the existing [Sensitive] wrapper.
  *
- * `oidcRefresh` uses its OWN single-flight guard ([pendingRefresh]), a
- * SEPARATE instance from [io.axiam.sdk.internal.RefreshGuard] — that type's
- * `refreshIfNeeded` API compares an "observed" `axiam_access` cookie value
- * against a cached [io.axiam.sdk.internal.TokenPair], which has no meaning
- * for an OAuth2 `refresh_token` grant operating on an entirely different,
- * cookie-independent token namespace (documented deviation from the
- * TypeScript reference, matching the Go port's reasoning). A dedicated guard
- * built from the SAME mechanism CONTRACT.md §9 prescribes for Kotlin
- * (`Mutex` guarding a shared `Deferred`) still satisfies §9's actual
- * requirement for this operation — exactly one in-flight refresh, waiters
- * share the outcome, no retry on failure.
+ * `oidcRefresh` uses its OWN single-flight guard ([refreshFlight]), a SEPARATE
+ * [SingleFlight] instance from [io.axiam.sdk.internal.RefreshGuard] — that
+ * type's `refreshIfNeeded` API compares an "observed" `axiam_access` cookie
+ * value against a cached [io.axiam.sdk.internal.TokenPair], which has no
+ * meaning for an OAuth2 `refresh_token` grant operating on an entirely
+ * different, cookie-independent token namespace (documented deviation from the
+ * TypeScript reference, matching the Go port's reasoning). §9 rule 5 permits
+ * exactly that — a dedicated INSTANCE of an equally strong mechanism — and
+ * because both guards are instances of the one [SingleFlight] implementation,
+ * both satisfy §9 rules 1-3 and rule 6's four invariants identically: one
+ * in-flight refresh per burst, every caller gets that one outcome, no retry on
+ * failure.
  */
 internal class OidcSupport(
     private val httpClient: OkHttpClient,
@@ -82,14 +83,13 @@ internal class OidcSupport(
 
     // -- 1. oidcDiscover: per-client discovery cache, single-flight fetch ---
 
-    private val discoveryMutex = Mutex()
+    private val discoveryFlight = SingleFlight<OidcConfiguration>()
 
     @Volatile
     private var cachedDoc: OidcConfiguration? = null
 
     @Volatile
     private var cachedExpiresAtMs: Long = 0L
-    private var inFlightDiscovery: CompletableDeferred<OidcConfiguration>? = null
 
     /**
      * `GET /.well-known/openid-configuration` (§12.1) — fetch and cache the
@@ -102,45 +102,19 @@ internal class OidcSupport(
      * origin, so a single cached document already satisfies §12.3 rule 6's
      * "keyed by origin, never process-global, never shared across tenants"
      * requirement (each `AxiamClient` owns its own `OidcSupport`).
+     *
+     * De-duplication uses the same [SingleFlight] coalescer — and therefore the
+     * same §9 rule 6 invariants — as the two refresh guards; only the cached
+     * DOCUMENT (never the settled in-flight slot) outlives an attempt.
      */
-    suspend fun oidcDiscover(): OidcConfiguration {
-        val leaderDeferred: CompletableDeferred<OidcConfiguration>?
-        val joinTarget: CompletableDeferred<OidcConfiguration>
-
-        discoveryMutex.withLock {
-            val doc = cachedDoc
-            if (doc != null && System.currentTimeMillis() < cachedExpiresAtMs) {
-                return doc
-            }
-            val existing = inFlightDiscovery
-            if (existing != null) {
-                leaderDeferred = null
-                joinTarget = existing
-            } else {
-                val fresh = CompletableDeferred<OidcConfiguration>()
-                inFlightDiscovery = fresh
-                leaderDeferred = fresh
-                joinTarget = fresh
-            }
-        }
-
-        if (leaderDeferred == null) {
-            return joinTarget.await()
-        }
-
-        return try {
-            val doc = fetchDiscoveryDocument()
+    suspend fun oidcDiscover(): OidcConfiguration = discoveryFlight.run(
+        fastPath = { cachedDoc?.takeIf { System.currentTimeMillis() < cachedExpiresAtMs } },
+        beforePublish = { doc ->
             cachedDoc = doc
             cachedExpiresAtMs = System.currentTimeMillis() + this.discoveryTtlMs
-            leaderDeferred.complete(doc)
-            doc
-        } catch (t: Throwable) {
-            leaderDeferred.completeExceptionally(t)
-            throw t
-        } finally {
-            discoveryMutex.withLock { inFlightDiscovery = null }
-        }
-    }
+        },
+        block = { fetchDiscoveryDocument() },
+    )
 
     private suspend fun fetchDiscoveryDocument(): OidcConfiguration {
         val request = Request.Builder().url(baseUrl + DISCOVERY_PATH).get().build()
@@ -250,56 +224,41 @@ internal class OidcSupport(
 
     // -- 4. oidcRefresh -------------------------------------------------------
 
-    private val refreshMutex = Mutex()
-    private var pendingRefresh: CompletableDeferred<OidcTokenSet>? = null
+    private val refreshFlight = SingleFlight<OidcTokenSet>()
+
+    /**
+     * Visible-for-testing seam; see [SingleFlight.afterPublishHook]. Never set
+     * in production.
+     */
+    internal var afterRefreshPublishHook: (() -> Unit)?
+        get() = refreshFlight.afterPublishHook
+        set(value) {
+            refreshFlight.afterPublishHook = value
+        }
 
     /**
      * `POST /oauth2/token` with `grant_type=refresh_token` (§12.1) — refresh
-     * an [OidcTokenSet] under [pendingRefresh]'s single-flight guard (§9):
+     * an [OidcTokenSet] under [refreshFlight]'s single-flight guard (§9):
      * concurrent callers collapse into ONE HTTP request and all receive the
      * same result (or the same failure), with no retry loop on failure
-     * (§9 rule 3).
+     * (§9 rule 3). See [SingleFlight] for how §9 rule 6's four invariants are
+     * met — in particular why cancelling one caller can never strand the rest
+     * of the burst, which matters most here: `/oauth2/token` consumes a
+     * single-use, rotating `refresh_token`, so a discarded outcome is an
+     * unrecoverable session and a second wire call is an `invalid_grant`.
      *
      * A DISTINCT operation from `AxiamClient.refresh()`, which drives the
      * cookie/opaque-token session path at `POST /api/v1/auth/refresh` — the
-     * two are never merged, aliased, or made to fall back to one another.
+     * two are never merged, aliased, or made to fall back to one another, and
+     * (§9 rule 5) each owns its own guard instance because the two run on
+     * different token namespaces.
      *
      * An `id_token` in the response is validated against §12.4 rules 1-5
      * and 7; rule 6 (nonce) is skipped, since OIDC Core §12.2 does not
      * require a nonce in a refresh-issued ID token.
      */
-    suspend fun oidcRefresh(params: OidcRefreshParams): OidcTokenSet {
-        val leaderDeferred: CompletableDeferred<OidcTokenSet>?
-        val joinTarget: CompletableDeferred<OidcTokenSet>
-
-        refreshMutex.withLock {
-            val existing = pendingRefresh
-            if (existing != null) {
-                leaderDeferred = null
-                joinTarget = existing
-            } else {
-                val fresh = CompletableDeferred<OidcTokenSet>()
-                pendingRefresh = fresh
-                leaderDeferred = fresh
-                joinTarget = fresh
-            }
-        }
-
-        if (leaderDeferred == null) {
-            return joinTarget.await()
-        }
-
-        return try {
-            val result = doOidcRefresh(params)
-            leaderDeferred.complete(result)
-            result
-        } catch (t: Throwable) {
-            leaderDeferred.completeExceptionally(t)
-            throw t
-        } finally {
-            refreshMutex.withLock { pendingRefresh = null }
-        }
-    }
+    suspend fun oidcRefresh(params: OidcRefreshParams): OidcTokenSet =
+        refreshFlight.run { doOidcRefresh(params) }
 
     private suspend fun doOidcRefresh(params: OidcRefreshParams): OidcTokenSet {
         val configuration = params.configuration ?: oidcDiscover()
@@ -367,7 +326,7 @@ internal class OidcSupport(
      * token is active and, if so, for its metadata. Requires
      * confidential-client credentials (§12.1 note 4). A `401` here is a
      * CLIENT-CREDENTIAL failure surfaced as [OAuthProtocolError]; it never
-     * touches [pendingRefresh] or [io.axiam.sdk.internal.RefreshGuard] —
+     * touches [refreshFlight] or [io.axiam.sdk.internal.RefreshGuard] —
      * refreshing a session cannot fix a bad `client_secret` (§12.3 rule 3).
      */
     suspend fun introspect(params: IntrospectParams): IntrospectionResult {

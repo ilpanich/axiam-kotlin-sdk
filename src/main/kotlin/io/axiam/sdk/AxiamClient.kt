@@ -122,6 +122,18 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
     /** The single [JwksVerifier] used by the §10 middleware to verify sessions. */
     fun jwksVerifier(): JwksVerifier = jwksVerifier
 
+    /**
+     * Visible-for-testing seam onto `oidcRefresh`'s §9 coalescer; see
+     * [io.axiam.sdk.internal.SingleFlight.afterPublishHook]. Lets a CONTRACT.md
+     * §9 rule 6a test pin the "outcome published, slot not yet vacated" window
+     * open deterministically. **Never set in production** (always `null`).
+     */
+    internal var oidcRefreshAfterPublishHook: (() -> Unit)?
+        get() = oidcSupport.afterRefreshPublishHook
+        set(value) {
+            oidcSupport.afterRefreshPublishHook = value
+        }
+
     // ---- Auth methods (§1): login / verifyMfa / refresh / logout --------
 
     /**
