@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-alpha21] - 2026-07-30
+
+### Added
+
+- Add OIDC/SSO relying-party helpers (CONTRACT.md §12)
+
+### Changed
+
+- Re-sync vendored CONTRACT.md to contract 1.6
+- Re-sync vendored CONTRACT.md to contract 1.5
+
+### Fixed
+
+- §9 rule 6 — never let a caller's cancellation own the shared refresh
+- Widen Sensitive.expose() to public (F-03, CONTRACT §7 rule 3)
+
 ## [Unreleased]
 
 ### Added
