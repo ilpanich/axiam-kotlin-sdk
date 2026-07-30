@@ -44,6 +44,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Single-flight refresh: a cancelled caller could strand the rest of its burst and, in a
+  narrow race, poison the guard permanently (CONTRACT.md §9 rule 6, contract 1.6).** Both
+  refresh coalescers (`AxiamClient.refresh()`'s `RefreshGuard`, §1; `oidcRefresh`'s dedicated
+  guard, §12) ran the wire call *in the coroutine of whichever caller happened to be elected
+  leader*, and published that leader's own `CancellationException` into the shared `Deferred`.
+  Consequences, all fixed:
+  - Cancelling the leader's caller (`withTimeout`, a cancelled parent scope, a client
+    disconnect) made every *other* caller coalesced into that refresh resume with a foreign
+    `CancellationException` — silently cancelling coroutines that were never cancelled, and
+    uncatchable as `AxiamException`. Because OkHttp's `Call.execute()` is a blocking,
+    non-interruptible call, the refresh had in fact already **succeeded on the wire** and the
+    server had already rotated the single-use `refresh_token`: the burst threw away a valid
+    rotated token and left the session unrecoverable (§9 rule 2 — "all N callers receive that
+    one call's outcome" — was not met under cancellation).
+  - The slot was vacated by an unconditional `finally { mutex.withLock { slot = null } }`.
+    Acquiring a `Mutex` is a *cancellable* suspension point, so a cancelled leader that found
+    the mutex contended threw before clearing, parking a settled outcome in the slot forever;
+    every later caller was then handed that previous burst's outcome with no wire call ever
+    happening again (§9 rule 6c/6d).
+  Both guards — plus the §12.1 discovery fetch, which had the same shape — now share one
+  documented coalescer, `internal SingleFlight`: the work block runs in the guard's own
+  `SupervisorJob` scope so no caller's `Job` owns the shared attempt, the outcome is carried as
+  a `Result` by a `Deferred` that is only ever completed *successfully* (so no caller can ever
+  be handed another coroutine's cancellation), and the vacate is identity-checked and
+  `NonCancellable`. Publish-before-vacate ordering (6a) and "no retry on failure" (§9.3,
+  original throwable instance, unwrapped) are unchanged. Cancelling any single caller now
+  cancels only that caller's `await`.
 - `Sensitive.expose()` widened from `internal` to `public` (CONTRACT.md §7 rule 3, contract
   1.5): CONTRACT.md §12 hands `accessToken`/`refreshToken`/`idToken` on `OidcTokenSet` to the
   calling application in the `/oauth2/token` response body, not via a `Set-Cookie` the SDK
