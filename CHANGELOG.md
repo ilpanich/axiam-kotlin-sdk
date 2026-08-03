@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Webhook value-semantics and header-parsing tests (§12.6.4).** Coverage sat
+  at 98.19% against a 98% floor — a 0.19-point margin, so the next unrelated
+  addition would have tripped the gate. The untested surface was
+  `WebhookEvent`'s hand-written `equals`/`hashCode`/`toString` and the remaining
+  fail-closed branches of the signature-header parser, which is worth testing on
+  its own merits rather than as coverage padding: `WebhookEvent` holds a
+  `ByteArray`, so a compiler-generated `equals` would compare it by **reference**
+  and two events carrying identical bytes would compare unequal. The new tests
+  pin content-based equality, the hash-code contract, that `toString` reports the
+  body's size rather than the body (a delivery body may carry sensitive data),
+  and that a duplicate `t=`, a non-numeric `t=` and an odd-length `v1=` each fail
+  closed. Coverage is now 98.94%.
+
 ### Changed — BREAKING
 
 - **`AxiamClient.verifySession` now applies the full CONTRACT.md §10.1 "minimum
