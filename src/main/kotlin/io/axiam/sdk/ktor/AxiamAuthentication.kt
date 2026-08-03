@@ -29,8 +29,20 @@ import java.util.UUID
  * the full CONTRACT.md §10.1 minimum local-verification set: EdDSA/JWKS
  * signature with `alg` pinned before key lookup, REQUIRED `exp`, `nbf`, tenant
  * scoping, and `iss`/`aud` when configured), and injects the [AxiamUser] into the call
- * (readable via [axiamUser]). Verification failures leave the user absent; each
- * route decides via the helpers below whether that is a 401.
+ * (readable via [axiamUser]).
+ *
+ * **A token that FAILS verification is rejected here with 401** (§15.3.3). An
+ * earlier revision swallowed the `AuthError` and left the user attribute absent,
+ * deferring the decision to the per-route helpers — which meant a route that
+ * forgot [requireAuth] ran **unauthenticated** for a caller who had presented an
+ * expired, foreign-tenant or forged token. Java and C# make the same
+ * leave-it-absent choice deliberately, but they sit behind Spring Security and
+ * ASP.NET Core authorization respectively; Ktor has no equivalent layer behind
+ * this plugin, so the omission is not caught anywhere else.
+ *
+ * A call carrying **no token at all** is left absent, exactly as before: that is
+ * not a failed authentication, and public routes must keep working. The
+ * distinction is deliberate — reject a bad credential, ignore an absent one.
  *
  * The §11 helpers ([requireAuth], [requireAccess], [requireRole], and the
  * annotation-driven [enforce]) run strictly AFTER this injection and consume the
@@ -55,7 +67,18 @@ val AxiamAuthentication = createApplicationPlugin(
                 val user = withContext(Dispatchers.IO) { client.verifySession(token) }
                 call.attributes.put(USER_KEY, user)
             } catch (_: AuthError) {
-                // Leave the user absent; per-route helpers turn this into 401.
+                // §15.3.3: the caller PRESENTED a credential and it did not
+                // verify. Leaving the attribute absent and continuing makes a
+                // route that forgets `requireAuth()` serve that caller
+                // unauthenticated — fail-open by omission. Reject here.
+                //
+                // Only a *presented* token reaches this branch; a call with no
+                // token never enters it, so public routes are unaffected.
+                call.respondError(
+                    HttpStatusCode.Unauthorized,
+                    "authentication_failed",
+                    "invalid or expired token",
+                )
             }
         }
     }
