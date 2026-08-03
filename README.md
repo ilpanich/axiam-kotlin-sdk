@@ -21,7 +21,7 @@ Source: [ilpanich/axiam-kotlin-sdk](https://github.com/ilpanich/axiam-kotlin-sdk
 
 ## Contract conformance
 
-This SDK conforms to CONTRACT.md §1–§7, §9–§12 (including §6.1 mTLS).
+This SDK conforms to CONTRACT.md §1–§7, §9–§13 (including §6.1 mTLS).
 
 See [`CONTRACT.md`](CONTRACT.md) for the full cross-language behavioral contract. AXIAM is
 multi-tenant: a tenant identifier is a **required** constructor argument (§5) — there is no
@@ -33,8 +33,9 @@ default tenant.
   authorization (`checkAccess`, `can`, `batchCheck`), the §2 error taxonomy, §3 CSRF
   forwarding, §4 per-client cookie jar, §5 tenant header, §6 strict TLS + §6.1 mTLS client
   certificates, §7 `Sensitive`, §9 single-flight refresh, JWKS (EdDSA/Ed25519) session
-  verification, the §10/§11 Ktor route guard + declarative-authorization helpers, and the
-  §12 OIDC/SSO relying-party helpers (see "OIDC / SSO relying-party helpers" below).
+  verification, the §10/§11 Ktor route guard + declarative-authorization helpers, the
+  §12 OIDC/SSO relying-party helpers (see "OIDC / SSO relying-party helpers" below), and the
+  §13 webhook-signature verifier (see "Webhook signature verification" below).
 - **Deferred follow-ups (not in v1):** the gRPC transport — including the gRPC-only
   `getUserInfo` operation (CONTRACT §1.1, contract 1.3) — and §8 AMQP HMAC consumption. The
   contract does not require AMQP of the Kotlin SDK; gRPC (and with it `getUserInfo`) is a
@@ -252,6 +253,44 @@ material in this SDK (§7); `state` and `nonce` are not secrets and are plain st
 
 See [`examples/oidc-login/OidcLoginExample.kt`](examples/oidc-login/OidcLoginExample.kt) for a
 complete, framework-free walk-through of all nine operations.
+
+## Webhook signature verification (§13)
+
+`io.axiam.sdk.webhook.AxiamWebhooks.verify(...)` verifies the signed-timestamp scheme AXIAM uses
+for every webhook delivery (`X-Axiam-Signature: t=<unix>,v1=<hex>` = HMAC-SHA256 over
+`"<timestamp>.<raw_body>"`), with a two-sided freshness window (default 300 s) and a
+constant-time comparison (`MessageDigest.isEqual`) over the decoded MAC bytes. It returns a
+sealed `WebhookVerifyResult` — `Success(WebhookEvent)` or `Failure(WebhookVerifyError)` — never
+throws on a bad signature, and never surfaces the expected MAC or the secret in an error message.
+
+**Pass the exact raw request body bytes.** Re-serializing a parsed JSON object changes key order
+and/or whitespace and breaks the MAC — read the body as bytes/text before any JSON parsing, and
+hand THAT to `verify`.
+
+```kotlin
+import io.axiam.sdk.Sensitive
+import io.axiam.sdk.webhook.AxiamWebhooks
+import io.axiam.sdk.webhook.WebhookVerifyResult
+
+// Ktor example: rawBody is the untouched ByteArray this route received.
+fun handleWebhook(rawBody: ByteArray, signatureHeader: String) {
+    val webhookSecret = Sensitive.of(System.getenv("AXIAM_WEBHOOK_SECRET"))
+    when (val result = AxiamWebhooks.verify(webhookSecret, signatureHeader, rawBody)) {
+        is WebhookVerifyResult.Success -> {
+            // result.event.deliveryId is the X-Axiam-Delivery header — the
+            // at-least-once dedup key. A retry replays a validly-signed body
+            // inside the freshness window, so keep a short-lived seen-set of
+            // delivery ids if double-processing must be avoided.
+            println("verified ${result.event.eventType} (delivery=${result.event.deliveryId})")
+        }
+        is WebhookVerifyResult.Failure -> {
+            // result.error is one of MalformedHeader / SignatureMismatch /
+            // StaleTimestamp / FutureTimestamp — reject the delivery (e.g. 400).
+            println("rejected: ${result.error}")
+        }
+    }
+}
+```
 
 ## Building from source
 

@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Webhook signature verification (CONTRACT.md §13, `T-145`): `io.axiam.sdk.webhook.AxiamWebhooks.verify(...)`
+  verifies AXIAM's signed-timestamp webhook scheme (`X-Axiam-Signature: t=<unix>,v1=<hex>` =
+  HMAC-SHA256 over `"<timestamp>.<raw_body>"`) against the raw request body bytes, with a
+  two-sided freshness window (default 300 s, `now` injection seam for tests) and a
+  constant-time comparison (`MessageDigest.isEqual`) over the decoded MAC bytes. Returns a
+  sealed `WebhookVerifyResult` (`Success(WebhookEvent)` / `Failure(WebhookVerifyError)`) rather
+  than throwing; every `WebhookVerifyError` message is fixed and generic — the expected
+  signature and the secret are never surfaced. `X-Axiam-Event`/`X-Axiam-Delivery` are accepted
+  as optional parameters and echoed onto `WebhookEvent` for the receiver's own dedup handling.
+  New `io.axiam.sdk.webhook` package: `AxiamWebhooks`, `WebhookEvent`, `WebhookVerifyResult`,
+  `WebhookVerifyError`. Vendored `CONTRACT.md` re-synced to add §13.
+
+### Security
+
+- **SEC-073 [MEDIUM]** — `AxiamClient.builder(...)` now rejects a plaintext `http://` `baseUrl`
+  at construction time (`AuthError`), with a loopback exception (`localhost`/`127.0.0.1`/`::1`)
+  for local development — matching the Rust SDK's `ensure_secure_scheme`. Previously a
+  misconfigured `http://` base URL was accepted silently, so login credentials, the bearer
+  session cookie, CSRF token, and tenant header could be sent in cleartext with no error.
+- **SEC-075 [LOW/MEDIUM]** — the OIDC discovery document's `jwks_uri` is now constrained to the
+  configured base URL's origin: it must be an absolute `https` URL with the same host and port
+  as `baseUrl`, or the SDK falls back to the conventional `{baseUrl}/oauth2/jwks` instead of
+  following it. Matches the PHP SDK's `isSameOriginHttps` fix for the same `SDK-19` class.
+  Previously a compromised/misconfigured discovery response could point EdDSA key resolution at
+  an attacker-chosen host.
+
 ## [1.0.0-alpha23] - 2026-08-02
 
 ### Changed

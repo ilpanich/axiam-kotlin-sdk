@@ -590,10 +590,40 @@ internal class OidcSupport(
      * discovery document's `jwks_uri` DIRECTLY
      * ([JwksVerifier.forJwksUri]), never a re-derived
      * `baseUrl + "/oauth2/jwks"`, since the two may legitimately differ
-     * behind a proxy.
+     * behind a proxy — UNLESS [resolveJwksUri] rejects it (SEC-075), in
+     * which case the fallback path IS the re-derived URL.
      */
     private suspend fun verifierFor(jwksUri: String): JwksVerifier = verifiersMutex.withLock {
-        verifiers.getOrPut(jwksUri) { JwksVerifier.forJwksUri(jwksUri) }
+        val resolved = resolveJwksUri(jwksUri)
+        verifiers.getOrPut(resolved) { JwksVerifier.forJwksUri(resolved) }
+    }
+
+    /**
+     * SEC-075 anti-key-substitution / anti-SSRF guard (the `SDK-19` class,
+     * first fixed in the PHP SDK): the discovery document is itself fetched
+     * from [baseUrl], but its `jwks_uri` field is otherwise unconstrained
+     * server-provided data. Following it blindly would let a compromised or
+     * misconfigured discovery response point EdDSA key resolution at a host
+     * of the attacker's choosing — substituting their own signing keys — or
+     * coerce this client into fetching an arbitrary URL.
+     *
+     * Only a `jwks_uri` that is an absolute `https` URL AND same-origin
+     * (case-insensitive host, exact port) with [baseUrl] is honoured; every
+     * other shape — a relative path, plaintext `http`, or an off-origin
+     * absolute URL — falls back to the conventional `{baseUrl}/oauth2/jwks`,
+     * the path every sibling SDK hardcodes. This mirrors the PHP SDK's
+     * `isSameOriginHttps` exactly (no loopback carve-out here, unlike
+     * SEC-073's base-URL check: this guard runs against SERVER-SUPPLIED
+     * data, not developer-supplied configuration).
+     */
+    private fun resolveJwksUri(candidate: String): String =
+        if (isSameOriginHttps(candidate)) candidate else baseUrl + FALLBACK_JWKS_PATH
+
+    private fun isSameOriginHttps(candidate: String): Boolean {
+        val candidateUrl = candidate.toHttpUrlOrNull() ?: return false
+        val baseHttpUrl = baseUrl.toHttpUrlOrNull() ?: return false
+        if (!candidateUrl.scheme.equals("https", ignoreCase = true)) return false
+        return candidateUrl.host.equals(baseHttpUrl.host, ignoreCase = true) && candidateUrl.port == baseHttpUrl.port
     }
 
     /**
@@ -720,6 +750,9 @@ internal class OidcSupport(
 
         /** Minimum — and default — discovery-cache TTL (CONTRACT.md §12.3 rule 6). */
         const val MIN_DISCOVERY_TTL_MS: Long = 300_000L
+
+        /** SEC-075 fallback path for a `jwks_uri` that fails the same-origin-https check. */
+        private const val FALLBACK_JWKS_PATH = "/oauth2/jwks"
 
         private const val OPENID_SCOPE = "openid"
         private const val MAX_OAUTH2_ERROR_BODY_BYTES = 8192L

@@ -37,6 +37,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -541,7 +542,8 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
          * identifier (slug or UUID string) — AXIAM is multi-tenant with no
          * default tenant.
          *
-         * @throws AuthError if [baseUrl] or [tenantId] is blank.
+         * @throws AuthError if [baseUrl] or [tenantId] is blank, or if
+         *   [baseUrl] does not use `https://` (SEC-073; see [ensureSecureBaseUrl]).
          */
         fun builder(baseUrl: String, tenantId: String?): Builder {
             if (baseUrl.isBlank()) {
@@ -552,8 +554,40 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
                     "tenantId is required — AXIAM is multi-tenant and there is no default tenant (§5)",
                 )
             }
+            ensureSecureBaseUrl(baseUrl)
             return Builder(baseUrl, tenantId)
         }
+
+        /**
+         * SEC-073 / CONTRACT.md §6: reject a plaintext (non-`https`) [baseUrl]
+         * at construction, so a misconfigured `http://` endpoint can never
+         * silently carry login credentials, the bearer session cookie, the
+         * CSRF token, or the tenant header in cleartext.
+         *
+         * The sole exception is a loopback host (`localhost`, `127.0.0.1`,
+         * `::1`) so local development against a non-TLS dev server still
+         * works — the same carve-out the Rust SDK's `ensure_secure_scheme`
+         * uses (there is no flag to disable the check for a routable host).
+         *
+         * @throws AuthError if [baseUrl] does not parse as an `http(s)` URL,
+         *   or parses with a non-`https` scheme against a non-loopback host.
+         */
+        private fun ensureSecureBaseUrl(baseUrl: String) {
+            val parsed = baseUrl.toHttpUrlOrNull()
+                ?: throw AuthError("baseUrl is not a valid http(s) URL: $baseUrl")
+            if (parsed.scheme.equals("https", ignoreCase = true)) return
+            if (isLoopbackHost(parsed.host)) return
+            throw AuthError(
+                "baseUrl must use the encrypted \"https://\" scheme (got \"${parsed.scheme}://\"); " +
+                    "plaintext transport is refused because it would expose tenant identifiers, CSRF " +
+                    "tokens, and session cookies — the only exception is a loopback host " +
+                    "(localhost/127.0.0.1/::1) for local development (SEC-073, CONTRACT.md §6).",
+            )
+        }
+
+        /** The sole plaintext exception (SEC-073): loopback / localhost literals only — never DNS-resolved. */
+        private fun isLoopbackHost(host: String): Boolean =
+            host.equals("localhost", ignoreCase = true) || host == "127.0.0.1" || host == "::1"
 
         private fun kotlinx.serialization.json.JsonPrimitive.contentOrNull(): String? =
             if (this is kotlinx.serialization.json.JsonNull) null else content

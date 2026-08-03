@@ -29,6 +29,37 @@ class BuilderAndSensitiveTest {
         }
     }
 
+    // ---- SEC-073: plaintext base URL rejection (CONTRACT.md §6) -----------
+
+    @Test
+    fun `a plaintext http base url against a routable host is rejected`() {
+        val ex = assertThrows(AuthError::class.java) {
+            AxiamClient.builder("http://axiam.example.com", "acme")
+        }
+        assertTrue(ex.message!!.contains("https"))
+    }
+
+    @Test
+    fun `a plaintext http base url against localhost is allowed`() {
+        AxiamClient.builder("http://localhost:8080", "acme").build().use { client ->
+            assertEquals("acme", client.tenantId())
+            assertEquals("http://localhost:8080", client.baseUrl())
+        }
+    }
+
+    @Test
+    fun `a plaintext http base url against 127-0-0-1 or -- 1 is allowed`() {
+        AxiamClient.builder("http://127.0.0.1:8080", "acme").build().close()
+        AxiamClient.builder("http://[::1]:8080", "acme").build().close()
+    }
+
+    @Test
+    fun `a non-http-s scheme base url is rejected`() {
+        assertThrows(AuthError::class.java) {
+            AxiamClient.builder("ftp://axiam.example.com", "acme")
+        }
+    }
+
     @Test
     fun `orgSlug and orgId are mutually exclusive - last call wins`() {
         val id = UUID.randomUUID()
