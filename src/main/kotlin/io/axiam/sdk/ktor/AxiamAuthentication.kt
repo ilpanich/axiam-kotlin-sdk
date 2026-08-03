@@ -25,8 +25,10 @@ import java.util.UUID
  *
  * Install [AxiamAuthentication] with an [AxiamClient]; on every call it extracts
  * the session token (`Authorization: Bearer` first, else the `axiam_access`
- * cookie), verifies it against AXIAM ([AxiamClient.verifySession] — EdDSA/JWKS,
- * tenant scoping, expiry), and injects the resulting [AxiamUser] into the call
+ * cookie), verifies it against AXIAM ([AxiamClient.verifySession], which applies
+ * the full CONTRACT.md §10.1 minimum local-verification set: EdDSA/JWKS
+ * signature with `alg` pinned before key lookup, REQUIRED `exp`, `nbf`, tenant
+ * scoping, and `iss`/`aud` when configured), and injects the [AxiamUser] into the call
  * (readable via [axiamUser]). Verification failures leave the user absent; each
  * route decides via the helpers below whether that is a 401.
  *

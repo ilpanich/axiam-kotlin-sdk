@@ -96,7 +96,8 @@ class JwksTest {
 
     @Test
     fun `verifySession rejects an expired token`() {
-        val token = signEd25519(claims(expOffsetSec = -10))
+        // Well outside the §10.1 rule 7 leeway (JwksVerifier.CLOCK_SKEW_SECONDS).
+        val token = signEd25519(claims(expOffsetSec = -3600))
         TestSupport.clientFor(server).use { client ->
             assertThrows(AuthError::class.java) { client.verifySession(token) }
         }

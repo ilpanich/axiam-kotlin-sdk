@@ -7,7 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — BREAKING
+
+- **`AxiamClient.verifySession` now applies the full CONTRACT.md §10.1 "minimum
+  local-verification set", which tightens what it accepts.** Two rules change acceptance for
+  tokens that used to pass:
+
+  1. **An absent `exp` is now rejected.** The check was `if (exp != null && exp.time <= now)`, so
+     a token carrying **no** `exp` claim skipped the comparison entirely and was accepted with no
+     expiry ever applied — the `SEC-080` defect, found independently in a sibling SDK. An absent
+     `exp` is a *permanent* credential, not a token without an expiry constraint.
+  2. **`nbf` is now honoured.** It was not read at all; a token whose not-before instant is in
+     the future was accepted. It is now rejected.
+
+  **A token minted by the AXIAM server is unaffected** — it always carries `exp` and never a
+  future `nbf`. The break is real for a guard fed tokens from *another* signer that shares the
+  organization JWKS: such a guard may start rejecting tokens it used to accept. That is the
+  intent of the change. The Ktor plugin (`AxiamAuthentication`) inherits the tightening, since it
+  injects its identity via `verifySession`.
+
+- **`JwksVerifier.verify` is renamed `JwksVerifier.verifySignatureOnlyUnchecked`.** It is the raw
+  signature primitive §10.1 permits, and its name now says at the call site that it checks no
+  claims at all — not `exp`, not `nbf`, not `tenant_id`, not `iss`, not `aud`. It MUST NOT be
+  used as a guard; `AxiamClient.verifySession` is the guard entry point and routes through it.
+
+- **`JwksVerifier.assertTenant` now fails closed when the configured tenant is blank**, rather
+  than comparing against an empty expectation (§10.1 rule 4: "no configured tenant to compare
+  against MUST fail closed"). `AxiamClient.builder` already rejects a blank `tenantId`, so this
+  affects only direct callers of the assertion.
+
 ### Added
+
+- **`iss` and `aud` verification, conditional on configuration (§10.1 rules 5 and 6).** New
+  builder options `expectedIssuer(...)` and `expectedAudience(...)`, both optional and unset by
+  default: unset means the claim is not checked, exactly as §10.1 specifies. When one is set,
+  `verifySession` rejects a token whose claim is absent or does not match — an absent claim is
+  never treated as "nothing to check". A resource server guarding a user-facing API SHOULD set
+  `expectedAudience("axiam:user")`.
+- **`JwksVerifier.CLOCK_SKEW_SECONDS` (§10.1 rule 7)** — the single named, bounded 60 s leeway
+  applied to the `exp` and `nbf` comparisons. It is a constant, not an inline literal, and
+  deliberately has no setter: the contract forbids an operator raising it to an unbounded value.
+- **`JwksVerifier.assertLocalClaims(...)`** — §10.1 rules 2-7 over an already-signature-verified
+  claim set, the companion to `verifySignatureOnlyUnchecked` (rule 1). Together the two are the
+  whole guard; neither is sufficient alone.
+- Algorithm pinning in the §10 path now reads `alg` from the **raw** header before
+  `SignedJWT.parse`, matching the §12.4 id-token path. An `alg: none` token is therefore refused
+  on its algorithm (nimbus would otherwise surface it as a generic parse error), and neither it
+  nor an HS-signed token bearing an EdDSA `kid` reaches the JWKS.
+- The full §10.1 negative-test set (`LocalVerificationSetTest`): expired; no `exp`; non-numeric
+  `exp`; future `nbf`; different tenant; no `tenant_id`; `alg: none`; an HS-signed token bearing
+  an EdDSA key id; and issuer/audience mismatch and absent-claim cases. The `alg: none` and
+  HS-confusion cases additionally assert that the JWKS endpoint was never contacted, pinning
+  "rejected without consulting a key".
+- Vendored `CONTRACT.md` re-synced to add §10.1.
 
 - Webhook signature verification (CONTRACT.md §13, `T-145`): `io.axiam.sdk.webhook.AxiamWebhooks.verify(...)`
   verifies AXIAM's signed-timestamp webhook scheme (`X-Axiam-Signature: t=<unix>,v1=<hex>` =
