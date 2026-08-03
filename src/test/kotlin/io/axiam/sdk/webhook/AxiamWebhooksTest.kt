@@ -321,4 +321,130 @@ class AxiamWebhooksTest {
         val expected = referenceHmacHex(secret, ts, body)
         assertFalse(result.error.message.contains(expected))
     }
+
+    // ---- WebhookEvent value semantics (§12.6.4) --------------------------------------
+    //
+    // WebhookEvent holds a ByteArray, which is exactly where a data-class-shaped
+    // type goes wrong: the compiler-generated equals/hashCode would compare the
+    // array by REFERENCE, so two events carrying identical bytes would compare
+    // unequal and behave unpredictably in a set or as a map key. These are
+    // hand-written for that reason, and were the largest untested surface left
+    // in this package.
+
+    private fun event(
+        eventType: String? = "user.created",
+        deliveryId: String? = "d-1",
+        timestamp: Instant = fixedNow,
+        body: ByteArray = "payload".toByteArray(Charsets.UTF_8),
+    ) = WebhookEvent(eventType, deliveryId, timestamp, body)
+
+    @Test
+    fun `WebhookEvent equality compares the body by content, not by reference`() {
+        val a = event(body = "same".toByteArray(Charsets.UTF_8))
+        val b = event(body = "same".toByteArray(Charsets.UTF_8))
+
+        assertTrue(a == b, "distinct arrays with equal content must compare equal")
+        assertEquals(a.hashCode(), b.hashCode(), "equal values must share a hash code")
+    }
+
+    @Test
+    fun `WebhookEvent is reflexive and rejects a foreign type`() {
+        val a = event()
+        assertTrue(a == a)
+        assertFalse(a.equals("not an event"))
+        assertFalse(a.equals(null))
+    }
+
+    @Test
+    fun `WebhookEvent inequality is driven by every field`() {
+        val base = event()
+        assertFalse(base == event(eventType = "user.deleted"))
+        assertFalse(base == event(deliveryId = "d-2"))
+        assertFalse(base == event(timestamp = fixedNow.plusSeconds(1)))
+        assertFalse(base == event(body = "different".toByteArray(Charsets.UTF_8)))
+    }
+
+    @Test
+    fun `WebhookEvent toString reports the body size rather than the body`() {
+        val secretish = "super-secret-payload".toByteArray(Charsets.UTF_8)
+        val rendered = event(body = secretish).toString()
+
+        assertTrue(rendered.contains("user.created"))
+        assertTrue(rendered.contains("<${secretish.size} bytes>"))
+        assertFalse(
+            rendered.contains("super-secret-payload"),
+            "a delivery body may carry sensitive data and must not be rendered into a log line",
+        )
+    }
+
+    @Test
+    fun `WebhookVerifyError renders as its message`() {
+        // The error is surfaced to integrators via toString in logs; pin that it
+        // stays the human-readable message and never the enum-ish default.
+        assertEquals(
+            WebhookVerifyError.MalformedHeader.message,
+            WebhookVerifyError.MalformedHeader.toString(),
+        )
+        assertEquals(
+            WebhookVerifyError.FutureTimestamp.message,
+            WebhookVerifyError.FutureTimestamp.toString(),
+        )
+    }
+
+    // ---- header parsing: the remaining fail-closed branches --------------------------
+
+    @Test
+    fun `a header carrying two t values is refused rather than picking one`() {
+        val ts = fixedNow.epochSecond
+        val mac = referenceHmacHex(secret, ts, body)
+        val result = AxiamWebhooks.verify(
+            secret = Sensitive.of(secret),
+            signatureHeader = "t=$ts,t=$ts,v1=$mac",
+            body = body,
+            now = fixedNow,
+        )
+        assertEquals(WebhookVerifyResult.Failure(WebhookVerifyError.MalformedHeader), result)
+    }
+
+    @Test
+    fun `a non-numeric t is refused`() {
+        val mac = referenceHmacHex(secret, fixedNow.epochSecond, body)
+        val result = AxiamWebhooks.verify(
+            secret = Sensitive.of(secret),
+            signatureHeader = "t=not-a-number,v1=$mac",
+            body = body,
+            now = fixedNow,
+        )
+        assertEquals(WebhookVerifyResult.Failure(WebhookVerifyError.MalformedHeader), result)
+    }
+
+    @Test
+    fun `an odd-length v1 is refused rather than decoded short`() {
+        val result = AxiamWebhooks.verify(
+            secret = Sensitive.of(secret),
+            signatureHeader = "t=${fixedNow.epochSecond},v1=abc",
+            body = body,
+            now = fixedNow,
+        )
+        require(result is WebhookVerifyResult.Failure)
+        assertTrue(
+            result.error == WebhookVerifyError.MalformedHeader ||
+                result.error == WebhookVerifyError.SignatureMismatch,
+        )
+    }
+
+    @Test
+    fun `verify falls back to the system clock when no now is supplied`() {
+        // Exercises the default-argument path: a timestamp of "right now" must
+        // verify without the test injecting a clock.
+        val ts = Instant.now().epochSecond
+        val mac = referenceHmacHex(secret, ts, body)
+        val result = AxiamWebhooks.verify(
+            secret = Sensitive.of(secret),
+            signatureHeader = header(ts, mac),
+            body = body,
+        )
+        assertTrue(result is WebhookVerifyResult.Success)
+    }
 }
+
