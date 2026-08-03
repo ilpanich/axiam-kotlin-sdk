@@ -43,10 +43,13 @@ import kotlin.concurrent.withLock
  * matches the [OctetKeyPair] against the cached JWKS directly and constructs an
  * [Ed25519Verifier] from it.
  *
- * [verify] verifies **signature only** — never `exp` (no expiry check here, by
- * design) and never tenant scoping. Callers MUST separately check `exp` and
- * call [assertTenant] (the JWKS endpoint is org-wide, so a valid signature does
- * not by itself imply the caller's tenant).
+ * [verifySignatureOnlyUnchecked] verifies **signature only** — no `exp`, no
+ * `nbf`, no tenant/issuer/audience binding. It is deliberately NOT the guard
+ * entry point (CONTRACT.md §10.1): its name carries the omission to the call
+ * site, and it exists only for integrators implementing their own policy. The
+ * SDK's own §10 guard — [io.axiam.sdk.AxiamClient.verifySession] — routes
+ * signature verification through it and then applies [assertLocalClaims],
+ * which is the full §10.1 minimum local-verification set.
  */
 class JwksVerifier private constructor(jwksUrl: URL) {
 
@@ -61,13 +64,41 @@ class JwksVerifier private constructor(jwksUrl: URL) {
     constructor(baseUrl: String) : this(deriveJwksUrl(baseUrl))
 
     /**
-     * Verifies [token]'s signature (alg pinned to EdDSA, key from the
-     * cached/rotated JWKS) and returns its claims.
+     * **Signature-only primitive — NOT a guard** (CONTRACT.md §10.1).
+     *
+     * Verifies [token]'s signature (alg pinned to EdDSA *before* key lookup,
+     * key taken from the cached/rotated JWKS) and returns its claims WITHOUT
+     * checking a single claim: not `exp`, not `nbf`, not `tenant_id`, not
+     * `iss`, not `aud`. A caller that stops here has not authenticated
+     * anything — the org-wide JWKS makes a valid signature compatible with a
+     * permanent, cross-tenant, foreign-audience token.
+     *
+     * Use [io.axiam.sdk.AxiamClient.verifySession] instead. This entry point
+     * exists only for integrators deliberately implementing their own policy,
+     * who MUST then apply [assertLocalClaims] (or an equivalent) themselves.
      *
      * @throws AuthError if the token is malformed, the alg is not EdDSA, no
      *   matching key is found, or the signature is invalid.
      */
-    fun verify(token: String): JWTClaimsSet {
+    fun verifySignatureOnlyUnchecked(token: String): JWTClaimsSet {
+        val parts = token.split(".")
+        if (parts.size != 3) {
+            throw AuthError("malformed token: expected a 3-part compact JWS")
+        }
+
+        // §10.1 rule 1: the `alg` is read from the RAW header and pinned to
+        // EdDSA before any key lookup, so neither `alg: none` (which nimbus's
+        // `SignedJWT.parse` would otherwise surface as a generic parse error)
+        // nor an HS-family token bearing an EdDSA `kid` ever reaches the JWKS.
+        val rawHeader = try {
+            Header.parse(Base64URL.from(parts[0]))
+        } catch (e: Exception) {
+            throw AuthError("malformed token header: ${e.message}")
+        }
+        if (JWSAlgorithm.EdDSA != rawHeader.algorithm) {
+            throw AuthError("unexpected JWS algorithm ${rawHeader.algorithm}: only EdDSA is accepted")
+        }
+
         val jwt = try {
             SignedJWT.parse(token)
         } catch (e: Exception) {
@@ -75,10 +106,6 @@ class JwksVerifier private constructor(jwksUrl: URL) {
         }
 
         val header = jwt.header
-        if (JWSAlgorithm.EdDSA != header.algorithm) {
-            throw AuthError("unexpected JWS algorithm ${header.algorithm}: only EdDSA is accepted")
-        }
-
         val key = selectKeyOrNull(header)
             ?: throw AuthError("no matching EdDSA key found in JWKS (kid=${header.keyID})")
         val verifier = try {
@@ -105,11 +132,12 @@ class JwksVerifier private constructor(jwksUrl: URL) {
     /**
      * CONTRACT.md §12.4 rules 1-2 for an OIDC `id_token`: the SAME
      * alg-allowlist + kid-lookup + one-shot unknown-kid-refetch machinery as
-     * [verify] (same [jwkSource], same [refreshLock] — never a forked fetch
-     * path), but the thrown [AuthError] carries one of the §12.3 rule 3
-     * reason codes (`invalid_alg`, `unknown_kid`, `invalid_signature`)
-     * instead of [verify]'s plain messages, so the §12.4 orchestration in
-     * `io.axiam.sdk.oidc` can classify the failure per the contract.
+     * [verifySignatureOnlyUnchecked] (same [jwkSource], same [refreshLock] —
+     * never a forked fetch path), but the thrown [AuthError] carries one of
+     * the §12.3 rule 3 reason codes (`invalid_alg`, `unknown_kid`,
+     * `invalid_signature`) instead of that method's plain messages, so the
+     * §12.4 orchestration in `io.axiam.sdk.oidc` can classify the failure per
+     * the contract.
      *
      * A missing `kid` header is treated identically to an unknown `kid`
      * (CONTRACT.md §12 port addendum item 12), and a JWKS re-fetch failure
@@ -183,7 +211,8 @@ class JwksVerifier private constructor(jwksUrl: URL) {
      * `null` — never throws — on ANY failure to produce a match: no `kid`
      * header, a `kid` absent from the JWKS even after the re-fetch, or the
      * re-fetch itself failing (e.g. the JWKS endpoint returning a 5xx). Both
-     * [verify] and [verifyForIdToken] treat a `null` result as their own
+     * [verifySignatureOnlyUnchecked] and [verifyForIdToken] treat a `null`
+     * result as their own
      * "no matching key" failure — this is the ONE shared fetch/cache/refetch
      * code path (CONTRACT.md §12 forbids forking the JWKS mechanism).
      */
@@ -250,12 +279,92 @@ class JwksVerifier private constructor(jwksUrl: URL) {
         }
 
         /**
-         * Cross-tenant carry-forward control: the JWKS endpoint is org-wide, so
-         * a valid signature alone does not imply the token belongs to
-         * [configuredTenantId]. Throws if the `tenant_id` claim is absent or
-         * mismatched.
+         * CONTRACT.md §10.1 rule 7 — the ONE named, bounded leeway applied to
+         * the `exp` and `nbf` comparisons. It is a constant, not an inline
+         * literal, and there is deliberately no setter: the contract forbids
+         * an operator raising it to an unbounded value.
+         */
+        const val CLOCK_SKEW_SECONDS: Long = 60
+
+        /**
+         * CONTRACT.md §10.1 rules 2-7 — the **minimum local-verification set**,
+         * applied to an already-signature-verified [claims] set (rule 1 lives
+         * in [verifySignatureOnlyUnchecked]). Together those two calls are the
+         * whole guard; neither is sufficient alone.
+         *
+         * Every rule fails CLOSED: a required claim that is absent, of the
+         * wrong JSON type, or unparseable rejects the token. "The claim was
+         * missing so there was nothing to check" is the SEC-080 defect and is
+         * never a success path here.
+         *
+         * - rule 2 `exp` — REQUIRED. Absent ⇒ reject (a token with no expiry
+         *   is a permanent credential). A non-numeric `exp` never reaches
+         *   this method: nimbus fails the claim-set parse in
+         *   [verifySignatureOnlyUnchecked], which surfaces as `malformed claims`.
+         * - rule 3 `nbf` — honoured when present; a future `nbf` rejects.
+         *   Absent `nbf` is valid.
+         * - rule 4 `tenant_id` — REQUIRED and asserted (see [assertTenant]).
+         * - rule 5 `iss` — checked only when [expectedIssuer] is configured.
+         * - rule 6 `aud` — checked only when [expectedAudience] is configured.
+         * - rule 7 — both time comparisons allow [CLOCK_SKEW_SECONDS].
+         *
+         * @param nowEpochSec current time in epoch seconds — injectable so a
+         *   test can pin it.
+         */
+        fun assertLocalClaims(
+            claims: JWTClaimsSet,
+            configuredTenantId: String,
+            expectedIssuer: String? = null,
+            expectedAudience: String? = null,
+            nowEpochSec: Long = System.currentTimeMillis() / 1000,
+        ) {
+            // Rule 2 — `exp` is REQUIRED, not "checked if present".
+            val exp = claims.expirationTime
+                ?: throw AuthError("token has no exp claim; refusing to accept an unbounded session")
+            if (exp.time / 1000 + CLOCK_SKEW_SECONDS <= nowEpochSec) {
+                throw AuthError("token is expired")
+            }
+
+            // Rule 3 — `nbf` is optional, but binding when present.
+            val nbf = claims.notBeforeTime
+            if (nbf != null && nbf.time / 1000 - CLOCK_SKEW_SECONDS > nowEpochSec) {
+                throw AuthError("token is not yet valid (nbf is in the future)")
+            }
+
+            // Rule 4 — tenant binding.
+            assertTenant(claims, configuredTenantId)
+
+            // Rule 5 — issuer, only when the SDK was configured with one.
+            if (expectedIssuer != null) {
+                val iss = claims.issuer
+                    ?: throw AuthError("token has no iss claim but an expected issuer is configured")
+                if (iss != expectedIssuer) {
+                    throw AuthError("token iss does not match the configured expected issuer")
+                }
+            }
+
+            // Rule 6 — audience, only when the SDK was configured with one.
+            if (expectedAudience != null) {
+                val audiences = claims.audience ?: emptyList()
+                if (!audiences.contains(expectedAudience)) {
+                    throw AuthError("token aud does not contain the configured expected audience")
+                }
+            }
+        }
+
+        /**
+         * Cross-tenant carry-forward control (CONTRACT.md §10.1 rule 4): the
+         * JWKS endpoint is org-wide, so a valid signature alone does not imply
+         * the token belongs to [configuredTenantId]. Throws if the `tenant_id`
+         * claim is absent, of the wrong JSON type, or mismatched — and also
+         * when there is no configured tenant to compare against, since a
+         * blank expectation would otherwise silently match nothing (or, with
+         * a blank claim, everything).
          */
         fun assertTenant(claims: JWTClaimsSet, configuredTenantId: String) {
+            if (configuredTenantId.isBlank()) {
+                throw AuthError("no configured tenant to bind the session to")
+            }
             val tenantId = try {
                 claims.getStringClaim("tenant_id")
             } catch (e: Exception) {

@@ -137,7 +137,7 @@ AxiamClient.builder(baseUrl, "acme")
 ## Framework integration (§10 / §11)
 
 For **Ktor**, install the `AxiamAuthentication` plugin with a client; it verifies the incoming
-session (EdDSA/JWKS, tenant scoping, expiry) and injects an `AxiamUser`. The §11 helpers
+session (the full §10.1 set below) and injects an `AxiamUser`. The §11 helpers
 (`requireAuth`, `requireAccess`, `requireRole`) and the annotation-driven `enforce` compose on
 top of it:
 
@@ -158,6 +158,35 @@ The framework-free annotations `@AxiamRequireAuth`, `@AxiamRequireAccess(action,
 `@AxiamRequireRole(…)` are also provided (`io.axiam.sdk.annotations`). **Spring Boot** users can
 reuse the Java SDK's `AxiamAuthorizationInterceptor` (`io.github.ilpanich:axiam-sdk`), which
 enforces the same annotation vocabulary.
+
+### What the guard checks (§10.1 minimum local-verification set)
+
+`AxiamClient.verifySession` — the entry point the Ktor plugin uses — applies **all seven** rules.
+A signature check alone is not a guard.
+
+| # | Claim | Rule |
+| --- | --- | --- |
+| 1 | signature | Against the org JWKS (`GET /oauth2/jwks`, cached 300s), with `alg` pinned to **EdDSA before key lookup** — `alg: none` and HS-family confusion never reach a key. |
+| 2 | `exp` | **Required.** Absent or non-numeric ⇒ reject. An absent `exp` is a permanent credential, not "no expiry constraint". |
+| 3 | `nbf` | Honoured when present; a future `nbf` rejects. Absent `nbf` is fine. |
+| 4 | `tenant_id` | **Required** and matched against the configured tenant. |
+| 5 | `iss` | Checked only when `expectedIssuer(...)` was configured on the builder. |
+| 6 | `aud` | Checked only when `expectedAudience(...)` was configured on the builder. |
+| 7 | clock skew | One named 60s constant, `JwksVerifier.CLOCK_SKEW_SECONDS`, on rules 2 and 3. Not settable. |
+
+Every rule fails **closed** — a required claim that is absent, unparseable, or of the wrong JSON
+type rejects the token.
+
+```kotlin
+val guardClient = AxiamClient.builder(baseUrl, tenantId = "22222222-…-uuid")
+    .expectedIssuer("https://axiam.example.com")   // optional; unset ⇒ `iss` not checked
+    .expectedAudience("axiam:user")                // optional; unset ⇒ `aud` not checked
+    .build()
+```
+
+`JwksVerifier.verifySignatureOnlyUnchecked(...)` is the raw signature primitive §10.1 permits for
+integrators writing their own policy. As its name says, it checks **no** claims — it is not a
+guard, and the SDK's own guards never stop there.
 
 ## OIDC / SSO relying-party helpers (§12)
 

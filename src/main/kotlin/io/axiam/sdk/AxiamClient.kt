@@ -66,6 +66,13 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
 
     private val baseUrl: String = b.baseUrl.trimEnd('/')
     private val tenantId: String = b.tenantId
+
+    /** CONTRACT.md §10.1 rule 5 — unset (the default) means "do not check". */
+    private val expectedIssuer: String? = b.expectedIssuer
+
+    /** CONTRACT.md §10.1 rule 6 — unset (the default) means "do not check". */
+    private val expectedAudience: String? = b.expectedAudience
+
     private val customCaPem: ByteArray? = b.customCaPem
     private val httpClient: OkHttpClient
     private val refreshGuard = RefreshGuard()
@@ -283,18 +290,31 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
     }
 
     /**
-     * Verifies a bearer/cookie session token for the §10 middleware: EdDSA
-     * signature (JWKS), tenant scoping, and expiry — returning the injected
-     * [AxiamUser]. Signature failure/tenant mismatch/expiry all surface as
-     * [AuthError].
+     * The §10 guard entry point: verifies a bearer/cookie session token and
+     * returns the [AxiamUser] to inject.
+     *
+     * Applies the CONTRACT.md §10.1 **minimum local-verification set** in
+     * full — EdDSA signature against the org JWKS with `alg` pinned before
+     * key lookup, REQUIRED `exp`, `nbf` when present, REQUIRED `tenant_id`
+     * asserted against the configured tenant, and `iss`/`aud` when this
+     * client was configured with an expected value (see
+     * [Builder.expectedIssuer] / [Builder.expectedAudience]) — with a single
+     * bounded [JwksVerifier.CLOCK_SKEW_SECONDS] leeway on the time claims.
+     * Every failure, including a required claim that is simply absent,
+     * surfaces as [AuthError].
+     *
+     * The signature-only primitive
+     * ([JwksVerifier.verifySignatureOnlyUnchecked]) is NOT a substitute for
+     * this method.
      */
     fun verifySession(token: String): AxiamUser {
-        val claims = jwksVerifier.verify(token)
-        JwksVerifier.assertTenant(claims, tenantId)
-        val exp = claims.expirationTime
-        if (exp != null && exp.time <= System.currentTimeMillis()) {
-            throw AuthError("token is expired")
-        }
+        val claims = jwksVerifier.verifySignatureOnlyUnchecked(token)
+        JwksVerifier.assertLocalClaims(
+            claims = claims,
+            configuredTenantId = tenantId,
+            expectedIssuer = expectedIssuer,
+            expectedAudience = expectedAudience,
+        )
         val sub = claims.subject ?: throw AuthError("token has no subject (sub) claim")
         val scope = try {
             claims.getStringClaim("scope")
@@ -461,6 +481,26 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
         internal var oidcClientSecret: Sensitive<String>? = null
         internal var oidcDiscoveryTtlMs: Long = OidcSupport.MIN_DISCOVERY_TTL_MS
         internal var oidcClockSkewSec: Int? = null
+        internal var expectedIssuer: String? = null
+        internal var expectedAudience: String? = null
+
+        /**
+         * CONTRACT.md §10.1 rule 5 — the `iss` the §10 guard
+         * ([AxiamClient.verifySession]) requires an inbound access token to
+         * carry. OPTIONAL and unset by default: leaving it unset means the
+         * issuer is not checked. When set, a token whose `iss` is absent or
+         * different is rejected.
+         */
+        fun expectedIssuer(issuer: String) = apply { expectedIssuer = issuer }
+
+        /**
+         * CONTRACT.md §10.1 rule 6 — an audience the §10 guard
+         * ([AxiamClient.verifySession]) requires an inbound access token's
+         * `aud` to contain. OPTIONAL and unset by default: leaving it unset
+         * means the audience is not checked. A resource server guarding a
+         * user-facing API SHOULD set `axiam:user`.
+         */
+        fun expectedAudience(audience: String) = apply { expectedAudience = audience }
 
         /** Organization slug (mutually exclusive with [orgId]; last call wins). */
         fun orgSlug(slug: String) = apply { orgSlug = slug; orgId = null }
