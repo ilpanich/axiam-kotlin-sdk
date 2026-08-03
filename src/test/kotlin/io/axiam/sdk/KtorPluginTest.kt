@@ -204,4 +204,79 @@ class KtorPluginTest {
             }
         }
     }
+
+    // --- §15.3.3: a presented-but-invalid token is rejected by the plugin ---
+    //
+    // The plugin used to swallow the AuthError and leave the user attribute
+    // absent, deferring the decision to the per-route helpers. A route that
+    // forgot requireAuth() therefore ran UNAUTHENTICATED for a caller who had
+    // presented an expired, foreign-tenant or forged token. Java and C# make the
+    // same choice deliberately, but they sit behind Spring Security / ASP.NET
+    // authorization; Ktor has no equivalent layer behind this plugin.
+
+    private fun expiredToken(): String {
+        val claims = JWTClaimsSet.Builder()
+            .subject("user-1")
+            .claim("tenant_id", TestSupport.TENANT_ID)
+            .expirationTime(Date(System.currentTimeMillis() - 3_600_000))
+            .build()
+        val jwt = SignedJWT(JWSHeader.Builder(JWSAlgorithm.EdDSA).keyID("k1").build(), claims)
+        jwt.sign(Ed25519Signer(signingKey))
+        return jwt.serialize()
+    }
+
+    /** The headline case: an unguarded route must NOT serve a bad token. */
+    @Test
+    fun `a route without requireAuth does not serve a caller whose token failed`() = testApplication {
+        val axiam = client()
+        application {
+            install(AxiamAuthentication) { this.client = axiam }
+            routing {
+                // Deliberately no requireAuth() — this is the mistake the plugin
+                // must not turn into an unauthenticated success.
+                get("/unguarded") { call.respondText("sensitive") }
+            }
+        }
+        val response = client.get("/unguarded") {
+            header("Authorization", "Bearer ${expiredToken()}")
+        }
+        assertEquals(HttpStatusCode.Unauthorized, response.status)
+        assertEquals(
+            false,
+            response.bodyAsText().contains("sensitive"),
+            "the handler must not have run for a caller whose credential failed",
+        )
+        axiam.close()
+    }
+
+    /** Garbage and foreign-tenant tokens are the same class. */
+    @Test
+    fun `a malformed token is rejected by the plugin itself`() = testApplication {
+        val axiam = client()
+        application {
+            install(AxiamAuthentication) { this.client = axiam }
+            routing { get("/unguarded") { call.respondText("sensitive") } }
+        }
+        val response = client.get("/unguarded") { header("Authorization", "Bearer not-a-jwt") }
+        assertEquals(HttpStatusCode.Unauthorized, response.status)
+        axiam.close()
+    }
+
+    /**
+     * The distinction that keeps this from being a blunt instrument: a call with
+     * NO token has not failed authentication, so public routes must keep working.
+     */
+    @Test
+    fun `a request with no token at all still reaches a public route`() = testApplication {
+        val axiam = client()
+        application {
+            install(AxiamAuthentication) { this.client = axiam }
+            routing { get("/public") { call.respondText("open") } }
+        }
+        val response = client.get("/public")
+        assertEquals(HttpStatusCode.OK, response.status)
+        assertEquals("open", response.bodyAsText())
+        axiam.close()
+    }
 }
+

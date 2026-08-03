@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security — BREAKING (behavioural)
+
+- **The Ktor plugin now rejects a token that fails verification (§15.3.3).**
+  `AxiamAuthentication` swallowed the `AuthError` and left the user attribute
+  absent, deferring the decision to the per-route helpers. A route that forgot
+  `requireAuth()` therefore ran **unauthenticated** for a caller who had
+  presented an expired, foreign-tenant or forged token — fail-open by omission.
+  The Java and C# SDKs make the same leave-it-absent choice deliberately, but
+  they sit behind Spring Security and ASP.NET Core authorization respectively;
+  Ktor has no equivalent layer behind this plugin, so nothing else caught it.
+
+  A presented-but-invalid credential now yields `401` from the plugin itself.
+  **A call carrying no token at all is unaffected** — that is not a failed
+  authentication, and public routes must keep working. The distinction is the
+  point: reject a bad credential, ignore an absent one.
+
+  Verified by falsification: reverting the plugin fails the two new
+  invalid-token tests while the public-route test keeps passing.
+
 ### Added
 
 - **Webhook value-semantics and header-parsing tests (§12.6.4).** Coverage sat
