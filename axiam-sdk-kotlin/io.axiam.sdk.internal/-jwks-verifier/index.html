@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html class="no-js">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" charset="UTF-8">
+    <title>JwksVerifier</title>
+    <link href="../../../images/logo-icon.svg" rel="icon" type="image/svg">
+    <script>var pathToRoot = "../../../";</script>
+    <script>document.documentElement.classList.replace("no-js","js");</script>
+    <script>const storage = localStorage.getItem("dokka-dark-mode")
+    if (storage == null) {
+        const osDarkSchemePreferred = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+        if (osDarkSchemePreferred === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    } else {
+        const savedDarkMode = JSON.parse(storage)
+        if(savedDarkMode === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    }
+    </script>
+<script type="text/javascript" src="https://unpkg.com/kotlin-playground@1/dist/playground.min.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/sourceset_dependencies.js" async="async"></script>
+<link href="../../../styles/style.css" rel="Stylesheet">
+<link href="../../../styles/main.css" rel="Stylesheet">
+<link href="../../../styles/prism.css" rel="Stylesheet">
+<link href="../../../styles/logo-styles.css" rel="Stylesheet">
+<link href="../../../styles/font-jb-sans-auto.css" rel="Stylesheet">
+<script type="text/javascript" src="../../../scripts/clipboard.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/navigation-loader.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/platform-content-handler.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/main.js" defer="defer"></script>
+<script type="text/javascript" src="../../../scripts/prism.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/symbol-parameters-wrapper_deferred.js" defer="defer"></script>
+</head>
+<body>
+    <div class="root">
+<nav class="navigation" id="navigation-wrapper">
+    <div class="navigation--inner">
+        <div class="navigation-title">
+            <button class="menu-toggle" id="menu-toggle" type="button">toggle menu</button>
+            <div class="library-name">
+                    <a class="library-name--link" href="../../../index.html">
+                            axiam-sdk-kotlin
+                    </a>
+            </div>
+            <div class="library-version">
+1.0.0-alpha24            </div>
+        </div>
+        <div class="filter-section" id="filter-section">
+                <button class="platform-tag platform-selector jvm-like" data-active="" data-filter=":dokkaHtml/main">jvm</button>
+        </div>
+    </div>
+    <div class="navigation-controls">
+        <button class="navigation-controls--btn navigation-controls--theme" id="theme-toggle-button" type="button">switch theme</button>
+        <div class="navigation-controls--btn navigation-controls--search" id="searchBar" role="button">search in API</div>
+    </div>
+</nav>
+        <div id="container">
+            <div class="sidebar" id="leftColumn">
+                <div class="sidebar--inner" id="sideMenu"></div>
+            </div>
+            <div id="main">
+<div class="main-content" data-page-type="classlike" id="content" pageIds="axiam-sdk-kotlin::io.axiam.sdk.internal/JwksVerifier///PointingToDeclaration//769193423">
+  <div class="breadcrumbs"><a href="../../../index.html">axiam-sdk-kotlin</a><span class="delimiter">/</span><a href="../index.html">io.axiam.sdk.internal</a><span class="delimiter">/</span><span class="current">JwksVerifier</span></div>
+  <div class="cover ">
+    <h1 class="cover"><span>Jwks</span><wbr></wbr><span><span>Verifier</span></span></h1>
+    <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">class </span><a href="index.html">JwksVerifier</a></div><p class="paragraph">Local JWT verification against an EdDSA JWKS document, the §10 middleware's verification primitive — extended (never forked) by <a href="verify-for-id-token.html">verifyForIdToken</a> for the CONTRACT.md §12.4 ID-token validation checklist.</p><p class="paragraph">Keys are fetched/cached/rotated by nimbus's <span data-unresolved-link="com.nimbusds.jose.jwk.source/RemoteJWKSet///PointingToDeclaration/">RemoteJWKSet</span> + <span data-unresolved-link="com.nimbusds.jose.jwk.source/DefaultJWKSetCache///PointingToDeclaration/">DefaultJWKSetCache</span> (TTL 300s, forced-refetch cooldown 60s — matching the sibling SDKs' defaults).</p><p class="paragraph"><strong>Algorithm pinning:</strong> the header <code class="lang-kotlin">alg</code> is checked against an EdDSA allowlist BEFORE any key lookup, so the token's own <code class="lang-kotlin">alg</code> never selects the verification algorithm (algorithm-confusion defense).</p><p class="paragraph"><strong>EdDSA/OKP note:</strong> nimbus's <code class="lang-kotlin">JWSVerificationKeySelector</code> cannot drive Ed25519 verification (its <code class="lang-kotlin">KeyConverter</code> cannot export an <span data-unresolved-link="com.nimbusds.jose.jwk/OctetKeyPair///PointingToDeclaration/">OctetKeyPair</span> to a <code class="lang-kotlin">java.security.Key</code>), so — as the Java sibling SDK does — this verifier matches the <span data-unresolved-link="com.nimbusds.jose.jwk/OctetKeyPair///PointingToDeclaration/">OctetKeyPair</span> against the cached JWKS directly and constructs an <span data-unresolved-link="com.nimbusds.jose.crypto/Ed25519Verifier///PointingToDeclaration/">Ed25519Verifier</span> from it.</p><p class="paragraph"><a href="verify-signature-only-unchecked.html">verifySignatureOnlyUnchecked</a> verifies <strong>signature only</strong> — no <code class="lang-kotlin">exp</code>, no <code class="lang-kotlin">nbf</code>, no tenant/issuer/audience binding. It is deliberately NOT the guard entry point (CONTRACT.md §10.1): its name carries the omission to the call site, and it exists only for integrators implementing their own policy. The SDK's own §10 guard — <a href="../../io.axiam.sdk/-axiam-client/verify-session.html">io.axiam.sdk.AxiamClient.verifySession</a> — routes signature verification through it and then applies <a href="-companion/assert-local-claims.html">assertLocalClaims</a>, which is the full §10.1 minimum local-verification set.</p></div></div>
+  </div>
+  <div class="tabbedcontent">
+    <div class="tabs-section" tabs-section="tabs-section"><button class="section-tab" data-active="" data-togglable="CONSTRUCTOR,TYPE,PROPERTY,FUNCTION">Members</button></div>
+    <div class="tabs-section-body">
+      <div data-togglable="CONSTRUCTOR">
+        <h2 class="">Constructors</h2>
+        <div class="table"><a data-name="-1235740784%2FConstructors%2F769193423" anchor-label="JwksVerifier" id="-1235740784%2FConstructors%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-togglable="CONSTRUCTOR" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="-jwks-verifier.html"><span>Jwks</span><wbr></wbr><span><span>Verifier</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1235740784%2FConstructors%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">constructor</span><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">baseUrl<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">The §10 middleware's public entry point: a verifier bound to <code class="lang-kotlin">{baseUrl}/oauth2/jwks</code>.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div data-togglable="TYPE">
+        <h2 class="">Types</h2>
+        <div class="table"><a data-name="-848506142%2FClasslikes%2F769193423" anchor-label="Companion" id="-848506142%2FClasslikes%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="-companion/index.html"><span><span>Companion</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-848506142%2FClasslikes%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">object </span><a href="-companion/index.html">Companion</a></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div data-togglable="FUNCTION">
+        <h2 class="">Functions</h2>
+        <div class="table"><a data-name="2080204467%2FFunctions%2F769193423" anchor-label="verifyForIdToken" id="2080204467%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="verify-for-id-token.html"><span>verify</span><wbr></wbr><span>For</span><wbr></wbr><span>Id</span><wbr></wbr><span><span>Token</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="2080204467%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">fun </span><a href="verify-for-id-token.html"><span class="token function">verifyForIdToken</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">token<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><span data-unresolved-link="com.nimbusds.jwt/JWTClaimsSet///PointingToDeclaration/">JWTClaimsSet</span></div><div class="brief "><p class="paragraph">CONTRACT.md §12.4 rules 1-2 for an OIDC <code class="lang-kotlin">id_token</code>: the SAME alg-allowlist + kid-lookup + one-shot unknown-kid-refetch machinery as <a href="verify-signature-only-unchecked.html">verifySignatureOnlyUnchecked</a> (same <span data-unresolved-link="io.axiam.sdk.internal/JwksVerifier/jwkSource/#/PointingToDeclaration/">jwkSource</span>, same <span data-unresolved-link="io.axiam.sdk.internal/JwksVerifier/refreshLock/#/PointingToDeclaration/">refreshLock</span> — never a forked fetch path), but the thrown <a href="../../io.axiam.sdk.errors/-auth-error/index.html">AuthError</a> carries one of the §12.3 rule 3 reason codes (<code class="lang-kotlin">invalid_alg</code>, <code class="lang-kotlin">unknown_kid</code>, <code class="lang-kotlin">invalid_signature</code>) instead of that method's plain messages, so the §12.4 orchestration in <code class="lang-kotlin">io.axiam.sdk.oidc</code> can classify the failure per the contract.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="1507612328%2FFunctions%2F769193423" anchor-label="verifySignatureOnlyUnchecked" id="1507612328%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="verify-signature-only-unchecked.html"><span>verify</span><wbr></wbr><span>Signature</span><wbr></wbr><span>Only</span><wbr></wbr><span><span>Unchecked</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="1507612328%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">fun </span><a href="verify-signature-only-unchecked.html"><span class="token function">verifySignatureOnlyUnchecked</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">token<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><span data-unresolved-link="com.nimbusds.jwt/JWTClaimsSet///PointingToDeclaration/">JWTClaimsSet</span></div><div class="brief "><p class="paragraph"><strong>Signature-only primitive — NOT a guard</strong> (CONTRACT.md §10.1).</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      <div class="footer">
+        <span class="go-to-top-icon"><a href="#content" id="go-to-top-link"></a></span><span>© 2026 Copyright</span><span
+                class="pull-right"><span>Generated by </span><a
+                href="https://github.com/Kotlin/dokka"><span>dokka</span><span class="padded-icon"></span></a></span>
+      </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
