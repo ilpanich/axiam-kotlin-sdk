@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-alpha24] - 2026-08-04
+
+### Added
+
+- Apply the full CONTRACT §10.1 local-verification set
+
+### Changed
+
+- Add the §10.1 rule-8 guardrail regression tests (#16)
+- Device (mTLS) tokens now carry aud=axiam:m2m (#15)
+- Service accounts can use login_client_credentials (#14)
+- Reject a failed token in the Ktor plugin (§15.3.3) (#13)
+- Close the coverage margin with real value-semantics tests (§12.6.4) (#12)
+
+### Fixed
+
+- Reject plaintext base URL, pin discovery jwks_uri origin, add webhook verifier
+
 ## [Unreleased]
 
 ### Security — BREAKING (behavioural)
