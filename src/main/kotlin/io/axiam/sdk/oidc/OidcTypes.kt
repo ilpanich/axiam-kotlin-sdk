@@ -64,6 +64,28 @@ data class OidcConfiguration(
     val claims_supported: List<String>,
     /** Grant types the token endpoint supports. */
     val grant_types_supported: List<String>,
+    /**
+     * RFC 8628 device authorization endpoint, used by `deviceAuthorize` (§14.1).
+     *
+     * `null` when the server does not implement the device grant, or when the
+     * document came from a non-AXIAM OP. Its absence is an error at call time,
+     * never a cue to build the URL by concatenation.
+     */
+    val device_authorization_endpoint: String? = null,
+    /**
+     * OIDC RP-Initiated Logout 1.0 `end_session_endpoint`, used by `logoutUrl`
+     * (§12.7.2 rule 1).
+     *
+     * `null` for the same reason, and the rule is stricter here: §12.7.2 rule 1
+     * forbids synthesising this URL from the issuer. Code that concatenates
+     * works against AXIAM and breaks against every other OP the same
+     * application is pointed at.
+     */
+    val end_session_endpoint: String? = null,
+    /** Whether the OP sends back-channel logout tokens. */
+    val backchannel_logout_supported: Boolean = false,
+    /** Whether those logout tokens carry `sid`. AXIAM always sends it. */
+    val backchannel_logout_session_supported: Boolean = false,
 )
 
 /**
@@ -327,4 +349,190 @@ data class SsoCompleteResult(
     val sessionId: String,
     val expiresIn: Long,
     val redirectUri: String,
+)
+
+
+// ---------------------------------------------------------------------------
+// §14 Device Authorization Grant (RFC 8628)
+// ---------------------------------------------------------------------------
+
+/**
+ * Arguments to `deviceAuthorize` (CONTRACT.md §14.1).
+ *
+ * @property scope space-separated scope to request; omitted when `null`
+ * @property tenantId tenant UUID for the mandatory `tenant_id` query parameter
+ * @property configuration a pre-fetched discovery document, or `null` to fetch
+ */
+data class DeviceAuthorizeParams(
+    val scope: String? = null,
+    val tenantId: String? = null,
+    val configuration: OidcConfiguration? = null,
+)
+
+/**
+ * The `DeviceAuthorizationResponse` — what the device shows its user, plus the
+ * `device_code` it polls with (§14.1).
+ *
+ * [deviceCode] is [Sensitive] (§14.5): a bearer credential for the lifetime of
+ * the grant. [userCode] deliberately is **not** — it exists to be read aloud
+ * and typed by a human, and wrapping it would defeat the one thing it is for.
+ * Neither may be logged; displaying [userCode] is the caller's job.
+ *
+ * @property deviceCode the device's polling credential (§14.5 secret)
+ * @property userCode the short code the human types into the verification page
+ * @property verificationUri where the human goes to enter [userCode]
+ * @property verificationUriComplete the verification URI with the user code
+ *   already embedded, when the server sent one — prefer it when the device can
+ *   render a QR code. Never synthesised by concatenation when absent (§14.3):
+ *   its format is the server's to choose
+ * @property expiresIn seconds until the grant expires; polling stops here
+ *   (§14.2 rule 4)
+ * @property interval seconds between polls, from the response, defaulted to 5
+ *   when the server omitted it (§14.2 rule 2)
+ */
+data class DeviceAuthorization(
+    val deviceCode: Sensitive<String>,
+    val userCode: String,
+    val verificationUri: String,
+    val verificationUriComplete: String? = null,
+    val expiresIn: Int,
+    val interval: Int,
+)
+
+/**
+ * Arguments to `devicePoll` (§14.1).
+ *
+ * @property deviceCode the `deviceCode` from [DeviceAuthorization]
+ * @property tenantId tenant UUID for the `tenant_id` query parameter
+ * @property configuration a pre-fetched discovery document, or `null`
+ */
+data class DevicePollParams(
+    val deviceCode: Sensitive<String>,
+    val tenantId: String? = null,
+    val configuration: OidcConfiguration? = null,
+)
+
+/**
+ * Arguments to `deviceLogin` (§14.3).
+ *
+ * @property scope space-separated scope to request
+ * @property tenantId tenant UUID for the `tenant_id` query parameter
+ * @property configuration a pre-fetched discovery document, or `null`
+ * @property onUserCode called with the [DeviceAuthorization] **before the
+ *   first poll** (§14.3 rule 2), so the caller can display the code. A
+ *   `suspend` function, so a device that must await a paint or a redraw can —
+ *   polling does not begin until it returns. The SDK never prints the code:
+ *   what the device does with it is the application's decision
+ */
+data class DeviceLoginParams(
+    val scope: String? = null,
+    val tenantId: String? = null,
+    val configuration: OidcConfiguration? = null,
+    val onUserCode: suspend (DeviceAuthorization) -> Unit,
+)
+
+// ---------------------------------------------------------------------------
+// §15 Token Exchange (RFC 8693)
+// ---------------------------------------------------------------------------
+
+/**
+ * Arguments to `tokenExchange` (CONTRACT.md §15.1).
+ *
+ * A parameter object rather than positional arguments, because four optional
+ * strings in positional order is a bug waiting to be written (§15.1).
+ *
+ * @property subjectToken the token being exchanged (§15.5 secret)
+ * @property actorToken the acting party, when this is a **delegation** (§15.2
+ *   rule 1). Its absence selects **impersonation** — a different operation with
+ *   different risk. The SDK never fills this in for you
+ * @property scopes scopes to request; omitted from the body when `null` or empty
+ * @property audience the service the issued token is for
+ * @property resource RFC 8707 synonym of [audience]; the server refuses the
+ *   pair when they disagree
+ * @property tenantId tenant UUID for the `tenant_id` query parameter
+ * @property configuration a pre-fetched discovery document, or `null`
+ */
+data class TokenExchangeParams(
+    val subjectToken: Sensitive<String>,
+    val actorToken: Sensitive<String>? = null,
+    val scopes: List<String>? = null,
+    val audience: String? = null,
+    val resource: String? = null,
+    val tenantId: String? = null,
+    val configuration: OidcConfiguration? = null,
+)
+
+/**
+ * The result of an exchange (wire schema `TokenExchangeResponse`, §15.1).
+ *
+ * **There is no `refreshToken` property, and that is deliberate** (§15.2
+ * rule 4). RFC 8693 issues none, so the type cannot represent one: an
+ * application that wants a fresh exchanged token re-runs the exchange. This
+ * result also never enters the §9 single-flight refresh guard — there is
+ * nothing to refresh.
+ *
+ * @property accessToken the issued token (§15.5 secret)
+ * @property issuedTokenType what the server actually issued. Mandatory in
+ *   RFC 8693 §2.2.1 and surfaced rather than dropped (§15.2 rule 6), so a
+ *   client that asked for one type and got another can tell
+ * @property tokenType the token type (`Bearer`)
+ * @property expiresIn lifetime in seconds — never longer than the subject
+ *   token's remaining life
+ * @property scope **the granted scope, which may be narrower than requested**
+ *   even on success (§15.2 rule 7); read it rather than assuming the request
+ *   was honoured verbatim
+ */
+data class ExchangedToken(
+    val accessToken: Sensitive<String>,
+    val issuedTokenType: String,
+    val tokenType: String,
+    val expiresIn: Long,
+    val scope: String? = null,
+)
+
+// ---------------------------------------------------------------------------
+// §12.7 Logout helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Arguments to `logoutUrl` (CONTRACT.md §12.7.2).
+ *
+ * @property idToken a previously-issued ID token, placed in `id_token_hint` —
+ *   the only *authenticated* statement of which session is being ended
+ * @property postLogoutRedirectUri where the OP should send the browser
+ *   afterwards. Honoured only on exact match against the client's registered
+ *   allow-list — a server-side check the SDK deliberately does not duplicate
+ *   (§12.7.2 rule 3)
+ * @property state an opaque value echoed back on the redirect. Generated and
+ *   checked by the caller (§12.7.2 rule 2), never by the SDK
+ * @property configuration a pre-fetched discovery document, or `null`
+ */
+data class LogoutUrlParams(
+    val idToken: Sensitive<String>,
+    val postLogoutRedirectUri: String? = null,
+    val state: String? = null,
+    val configuration: OidcConfiguration? = null,
+)
+
+/**
+ * What a verified back-channel logout token names (§12.7.3).
+ *
+ * Deliberately **not** a bare `Boolean`: the RP has to know *which* session to
+ * end, and a verifier that only says "valid" would force the caller to
+ * re-parse the token themselves, with none of the checks this type is proof of.
+ *
+ * @property sid the session that ended. **When non-`null`, end only this
+ *   session** — falling back to "every session for [sub]" is over-reach the
+ *   AXIAM server itself refuses to make
+ * @property sub the subject whose session ended
+ * @property jti replay identifier. **The RP dedups on this, not the SDK.**
+ *   Back-channel delivery is at-least-once with retry, so a valid token
+ *   legitimately arrives twice; the SDK has no durable store and an in-memory
+ *   guard would silently drop a real second logout after a restart. Surfaced,
+ *   never consumed
+ */
+data class VerifiedLogoutToken(
+    val sid: String? = null,
+    val sub: String? = null,
+    val jti: String,
 )

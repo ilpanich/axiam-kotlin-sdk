@@ -10,6 +10,7 @@ import io.axiam.sdk.internal.JwksVerifier
 import io.axiam.sdk.internal.SessionState
 import io.axiam.sdk.internal.SingleFlight
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -140,6 +141,10 @@ internal class OidcSupport(
         token_endpoint_auth_methods_supported = json.strList("token_endpoint_auth_methods_supported"),
         claims_supported = json.strList("claims_supported"),
         grant_types_supported = json.strList("grant_types_supported"),
+        device_authorization_endpoint = json.strOrNull("device_authorization_endpoint"),
+        end_session_endpoint = json.strOrNull("end_session_endpoint"),
+        backchannel_logout_supported = json.boolOrFalse("backchannel_logout_supported"),
+        backchannel_logout_session_supported = json.boolOrFalse("backchannel_logout_session_supported"),
     )
 
     // -- 2. oidcBegin: pure local computation, no network I/O ---------------
@@ -472,6 +477,344 @@ internal class OidcSupport(
 
     // -- shared wire mechanics -------------------------------------------------
 
+    // -- §14 Device Authorization Grant (RFC 8628) -------------------------
+
+    /**
+     * `POST /oauth2/device_authorization` (§14.1) — start the grant and obtain
+     * the code pair.
+     *
+     * **Unauthenticated by design.** A device that cannot show a browser also
+     * cannot hold a client secret, so this never sends `client_secret` and
+     * never refuses a client built without one (§14.1).
+     *
+     * @throws AuthError when the discovery document advertises no
+     *   `device_authorization_endpoint`. The URL is never built by
+     *   concatenation onto the issuer: that works against AXIAM and breaks
+     *   against every other OP the same code is pointed at.
+     */
+    suspend fun deviceAuthorize(params: DeviceAuthorizeParams): DeviceAuthorization {
+        val configuration = params.configuration ?: oidcDiscover()
+        val endpoint = configuration.device_authorization_endpoint
+            ?: throw AuthError(
+                "the authorization server's discovery document advertises no " +
+                    "device_authorization_endpoint: this server does not support the device " +
+                    "grant (CONTRACT.md §14.1)",
+            )
+
+        val form = buildForm(
+            "client_id" to requireClientId(),
+            "scope" to params.scope,
+        )
+        val url = endpointUrl(endpoint, params.tenantId)
+        val json = postOAuth2Form(url, form, "device authorization request failed")
+
+        val interval = json.intOrNull("interval")
+        return DeviceAuthorization(
+            deviceCode = Sensitive.of(json.str("device_code")),
+            userCode = json.str("user_code"),
+            verificationUri = json.str("verification_uri"),
+            verificationUriComplete = json.strOrNull("verification_uri_complete"),
+            expiresIn = json.str("expires_in").toInt(),
+            // §14.2 rule 2: the interval comes from the response; only its
+            // absence falls back to the RFC default. A server-sent 0 is treated
+            // as absent — polling with no delay is never what the server meant.
+            interval = if (interval != null && interval > 0) interval else DEFAULT_POLL_INTERVAL_SECONDS,
+        )
+    }
+
+    /**
+     * `POST /oauth2/token` with the device-code grant (§14.1) — **one** poll
+     * attempt.
+     *
+     * The raw single call, so an application driving its own loop (a UI
+     * rendering a countdown, say) can. All five RFC 8628 §3.5 answers surface
+     * as [OAuthProtocolError] — `authorization_pending` and `slow_down`
+     * included — so a hand-rolled loop sees exactly what [deviceLogin] sees.
+     * Most callers want [deviceLogin].
+     */
+    suspend fun devicePoll(params: DevicePollParams): OidcTokenSet {
+        val configuration = params.configuration ?: oidcDiscover()
+        val clientId = requireClientId()
+        val form = buildForm(
+            "grant_type" to DEVICE_CODE_GRANT_TYPE,
+            "device_code" to params.deviceCode.expose(),
+            "client_id" to clientId,
+        )
+        val json = postToken(configuration, form, params.tenantId)
+        // No nonce: the device grant has no authorization request to carry one.
+        val expectations = OidcIdToken.Expectations(
+            issuer = configuration.issuer,
+            clientId = clientId,
+            nonce = null,
+            hasNonce = false,
+            clockSkewSec = clockSkewSec,
+        )
+        return toTokenSet(json, configuration, expectations)
+    }
+
+    /**
+     * The composed §14.3 helper: start the grant, hand the caller the user
+     * code, poll to completion.
+     *
+     * [DeviceLoginParams.onUserCode] is a `suspend` function and is **awaited
+     * before the first poll** — §14.3 rule 2 requires the caller to have had
+     * the chance to display the code before polling begins, and a device
+     * rendering a QR code may need to await a paint. The SDK never prints it.
+     *
+     * Per §14.3 rule 4 (contract 1.7 errata) the token set is **returned**;
+     * this SDK does not adopt it, matching its `loginClientCredentials`
+     * posture.
+     *
+     * Polling follows §14.2: the interval comes from the response; `slow_down`
+     * adds 5 s **permanently**; `authorization_pending` loops; `access_denied`
+     * and `expired_token` raise distinct errors; polling stops at `expiresIn`
+     * even if the server has not yet said `expired_token`. A 5xx or transport
+     * failure mid-poll is **not** terminal (rule 6) — a server restart must not
+     * lose a grant the user has already approved.
+     *
+     * The inter-poll wait is `delay`, so cancelling the calling coroutine
+     * cancels the login promptly rather than after the current interval.
+     */
+    suspend fun deviceLogin(params: DeviceLoginParams): OidcTokenSet {
+        val configuration = params.configuration ?: oidcDiscover()
+        val authorization = deviceAuthorize(
+            DeviceAuthorizeParams(
+                scope = params.scope,
+                tenantId = params.tenantId,
+                configuration = configuration,
+            ),
+        )
+
+        // §14.3 rule 2 — before any polling.
+        params.onUserCode(authorization)
+
+        var intervalSeconds = authorization.interval
+        var remainingSeconds = authorization.expiresIn
+
+        while (true) {
+            // §14.2 rule 4: the deadline is authoritative. Checking before
+            // waiting keeps the SDK from issuing a request that can only be
+            // refused, and reports it under the same `expired_token` code the
+            // server would have used — so a caller's branch does not care which
+            // side noticed first.
+            if (intervalSeconds >= remainingSeconds) {
+                throw OAuthProtocolError(
+                    error = "expired_token",
+                    errorDescription = "the device authorization expired before the user " +
+                        "completed it (client-side deadline from expires_in; " +
+                        "CONTRACT.md §14.2 rule 4)",
+                )
+            }
+            remainingSeconds -= intervalSeconds
+
+            delay(intervalSeconds * 1000L)
+
+            try {
+                return devicePoll(
+                    DevicePollParams(
+                        deviceCode = authorization.deviceCode,
+                        tenantId = params.tenantId,
+                        configuration = configuration,
+                    ),
+                )
+            } catch (e: OAuthProtocolError) {
+                when (e.error) {
+                    "authorization_pending" -> continue
+                    // §14.2 rule 1: cumulative, never reset.
+                    "slow_down" -> {
+                        intervalSeconds += SLOW_DOWN_INCREMENT_SECONDS
+                        continue
+                    }
+                    // expired_token / access_denied / invalid_grant — terminal.
+                    else -> throw e
+                }
+            } catch (e: NetworkError) {
+                // §14.2 rule 6: transport and 5xx failures are not among the
+                // five protocol answers and are not terminal.
+                continue
+            }
+        }
+    }
+
+    // -- §15 Token Exchange (RFC 8693) -------------------------------------
+
+    /**
+     * `POST /oauth2/token` with the RFC 8693 grant (§15.1) — exchange a token
+     * for a **narrower** one.
+     *
+     * The exchanging client authenticates (`client_secret_post`): unlike §14's
+     * device, this is a confidential service, so a client with no secret fails
+     * here client-side, with no wire call.
+     *
+     * What this method deliberately does **not** do:
+     *
+     * - **No default `actorToken`** (§15.2 rule 1). Leaving it `null` asks for
+     *   *impersonation*; the SDK will not quietly reuse the client's own
+     *   session token as the actor and turn that into a delegation.
+     * - **No retry or downgrade on `unauthorized_client`** (rule 2) — a
+     *   registration fact an operator must fix.
+     * - **No auto-narrowing on `invalid_scope`** (rule 3). The server refuses
+     *   instead of silently narrowing precisely so the caller finds out here.
+     * - **No adoption** (rule 5). The returned token is handed onward in one
+     *   outbound call.
+     *
+     * A cross-tenant subject token answers `invalid_grant`, identically to an
+     * expired one. The SDK does not try to tell them apart (§15.3): the server
+     * collapses them because distinguishing them is a tenant-enumeration signal.
+     */
+    suspend fun tokenExchange(params: TokenExchangeParams): ExchangedToken {
+        val configuration = params.configuration ?: oidcDiscover()
+        val form = buildForm(
+            "grant_type" to TOKEN_EXCHANGE_GRANT_TYPE,
+            "subject_token" to params.subjectToken.expose(),
+            "subject_token_type" to ACCESS_TOKEN_TYPE,
+            "actor_token" to params.actorToken?.expose(),
+            // Sent exactly when `actor_token` is: RFC 8693 §2.1 requires the
+            // pair, and the type alone is a malformed request. `buildForm`
+            // drops a null value, so this stays paired without a branch.
+            "actor_token_type" to params.actorToken?.let { ACCESS_TOKEN_TYPE },
+            "scope" to params.scopes?.takeIf { it.isNotEmpty() }?.joinToString(" "),
+            "audience" to params.audience,
+            "resource" to params.resource,
+            "client_id" to requireClientId(),
+            "client_secret" to requireClientSecret("tokenExchange"),
+        )
+        val url = endpointUrl(configuration.token_endpoint, params.tenantId)
+        val json = postOAuth2Form(url, form, "token exchange request failed")
+
+        return ExchangedToken(
+            accessToken = Sensitive.of(json.str("access_token")),
+            issuedTokenType = json.str("issued_token_type"),
+            tokenType = json.str("token_type"),
+            expiresIn = json.long("expires_in"),
+            scope = json.strOrNull("scope"),
+        )
+    }
+
+    // -- §12.7 Logout helpers ----------------------------------------------
+
+    /**
+     * Build the RP-initiated logout URL to redirect the user agent to (§12.7.2).
+     *
+     * Performs **no network I/O** beyond the discovery fetch the SDK caches
+     * anyway, and does **not** clear this client's own session: whether the
+     * local session ends is the application's decision — a backend holding a
+     * service-account session must not lose it because a *user* logged out.
+     *
+     * `end_session_endpoint` is read from discovery and never synthesised from
+     * the issuer (rule 1). [LogoutUrlParams.postLogoutRedirectUri] is passed
+     * through **unvalidated against any local list** (rule 3): the allow-list
+     * lives in the client's server-side registration, and a client-side copy
+     * would drift and reject a URI an operator had just registered.
+     */
+    suspend fun logoutUrl(params: LogoutUrlParams): String {
+        val configuration = params.configuration ?: oidcDiscover()
+        val endpoint = configuration.end_session_endpoint
+            ?: throw AuthError(
+                "the authorization server's discovery document advertises no " +
+                    "end_session_endpoint: this server does not support RP-initiated logout " +
+                    "(CONTRACT.md §12.7.2 rule 1)",
+            )
+        val httpUrl = endpoint.toHttpUrlOrNull()
+            ?: throw NetworkError("invalid end_session_endpoint from discovery document: $endpoint")
+
+        val builder = httpUrl.newBuilder().addQueryParameter("id_token_hint", params.idToken.expose())
+        params.postLogoutRedirectUri?.let { builder.addQueryParameter("post_logout_redirect_uri", it) }
+        params.state?.let { builder.addQueryParameter("state", it) }
+        return builder.build().toString()
+    }
+
+    /**
+     * Verify a back-channel logout token the OP POSTed to this application's
+     * `backchannel_logout_uri` (§12.7.3).
+     *
+     * Every check exists because skipping it has a name:
+     *
+     * 1. **Signature**, through the same §12.4 JWKS verifier the ID-token path
+     *    uses — no second key-fetching path — which already pins EdDSA and
+     *    requires a `kid`, so rotation cannot be defeated by omitting it.
+     * 2. **`iss`/`aud`**: a token minted for another RP is not accepted here.
+     * 3. **`events` carries the back-channel-logout key.** This is what
+     *    distinguishes a logout token from an ID token; skipping it means
+     *    accepting a replayed ID token as a logout instruction.
+     * 4. **`nonce` is absent.** Back-Channel Logout 1.0 §2.4 forbids it, and
+     *    its presence is the documented signature of an ID token being
+     *    replayed. Rejected, not ignored.
+     * 5. **At least one of `sid`/`sub`** — a token naming neither identifies
+     *    nothing.
+     * 6. **`exp` in the future, `iat` recent.**
+     *
+     * @return the `sid`/`sub`/`jti` the token names — never a bare `Boolean`,
+     *   because the RP has to know *which* session to end.
+     */
+    suspend fun verifyLogoutToken(
+        logoutToken: String,
+        configuration: OidcConfiguration? = null,
+    ): VerifiedLogoutToken {
+        val config = configuration ?: oidcDiscover()
+        val verifier = verifierFor(config.jwks_uri)
+
+        val claims = try {
+            verifier.verifyForIdToken(logoutToken)
+        } catch (e: AuthError) {
+            throw e
+        } catch (e: Exception) {
+            // The message never embeds the token: an unverifiable logout token
+            // is exactly the case a naive implementation logs verbatim.
+            throw AuthError("logout token signature verification failed: ${e.message}")
+        }
+
+        if (claims.issuer != config.issuer) {
+            throw AuthError("logout token issuer does not match the discovery document")
+        }
+        if (claims.audience?.contains(requireClientId()) != true) {
+            throw AuthError("logout token audience does not match this client_id")
+        }
+
+        // Without this check the whole method is an elaborate way to accept an
+        // ID token.
+        val events = claims.getClaim("events")
+        if (events !is Map<*, *> || events[BACKCHANNEL_LOGOUT_EVENT] !is Map<*, *>) {
+            throw AuthError(
+                "not a logout token: the events claim does not carry $BACKCHANNEL_LOGOUT_EVENT",
+            )
+        }
+
+        if (claims.getClaim("nonce") != null) {
+            throw AuthError(
+                "logout token carries a nonce, which Back-Channel Logout 1.0 §2.4 forbids: " +
+                    "this is an ID token being replayed as a logout token",
+            )
+        }
+
+        val sid = claims.getClaim("sid") as? String
+        val sub = claims.subject
+        if (sid == null && sub == null) {
+            throw AuthError("logout token names neither sid nor sub, so it identifies no session")
+        }
+
+        val nowSec = System.currentTimeMillis() / 1000L
+        val skew = clockSkewSec?.toLong() ?: 0L
+        val exp = claims.expirationTime?.time?.div(1000L)
+        val iat = claims.issueTime?.time?.div(1000L)
+        if (exp == null || exp + skew < nowSec) {
+            throw AuthError("logout token has expired")
+        }
+        if (iat == null || iat - skew > nowSec) {
+            throw AuthError("logout token was issued in the future")
+        }
+        if (nowSec - iat > MAX_LOGOUT_TOKEN_AGE_SECONDS + skew) {
+            throw AuthError("logout token is too old to be a live delivery")
+        }
+
+        val jti = claims.jwtid
+        if (jti.isNullOrEmpty()) {
+            throw AuthError("logout token carries no jti, so the RP cannot dedup redeliveries")
+        }
+
+        return VerifiedLogoutToken(sid = sid, sub = sub, jti = jti)
+    }
+
     private suspend fun postToken(configuration: OidcConfiguration, form: RequestBody, tenantIdOverride: String?): JsonObject {
         val url = endpointUrl(configuration.token_endpoint, tenantIdOverride)
         return postOAuth2Form(url, form, "token request failed")
@@ -751,6 +1094,44 @@ internal class OidcSupport(
         /** Minimum — and default — discovery-cache TTL (CONTRACT.md §12.3 rule 6). */
         const val MIN_DISCOVERY_TTL_MS: Long = 300_000L
 
+        /** `grant_type` of the device access-token request (RFC 8628 §3.4). */
+        const val DEVICE_CODE_GRANT_TYPE: String = "urn:ietf:params:oauth:grant-type:device_code"
+
+        /**
+         * Polling interval used when the authorization response omits
+         * `interval` (RFC 8628 §3.2, §14.2 rule 2). An SDK MUST NOT hard-code
+         * a faster floor.
+         */
+        const val DEFAULT_POLL_INTERVAL_SECONDS: Int = 5
+
+        /**
+         * Seconds added to the polling interval on each `slow_down` (§14.2
+         * rule 1). The increase is permanent and cumulative.
+         */
+        const val SLOW_DOWN_INCREMENT_SECONDS: Int = 5
+
+        /** `grant_type` of an RFC 8693 exchange. */
+        const val TOKEN_EXCHANGE_GRANT_TYPE: String =
+            "urn:ietf:params:oauth:grant-type:token-exchange"
+
+        /** The only `subject_token_type`/`actor_token_type` AXIAM accepts. */
+        const val ACCESS_TOKEN_TYPE: String = "urn:ietf:params:oauth:token-type:access_token"
+
+        /**
+         * The `events` member that distinguishes a logout token from an ID
+         * token (OIDC Back-Channel Logout 1.0 §2.4).
+         */
+        const val BACKCHANNEL_LOGOUT_EVENT: String =
+            "http://schemas.openid.net/event/backchannel-logout"
+
+        /**
+         * Maximum accepted age for a logout token's `iat`, in seconds. AXIAM
+         * issues them with a 120 s lifetime; this bound is the same order and
+         * stops a token captured from a mis-configured RP being replayed days
+         * later.
+         */
+        const val MAX_LOGOUT_TOKEN_AGE_SECONDS: Long = 300L
+
         /** SEC-075 fallback path for a `jwks_uri` that fails the same-origin-https check. */
         private const val FALLBACK_JWKS_PATH = "/oauth2/jwks"
 
@@ -793,3 +1174,7 @@ private fun JsonObject.long(key: String): Long =
     strOrNull(key)?.toLongOrNull() ?: throw NetworkError("response is missing the required field \"$key\"")
 
 private fun JsonObject.longOrNull(key: String): Long? = strOrNull(key)?.toLongOrNull()
+
+private fun JsonObject.intOrNull(key: String): Int? = strOrNull(key)?.toIntOrNull()
+
+private fun JsonObject.boolOrFalse(key: String): Boolean = strOrNull(key)?.toBoolean() ?: false

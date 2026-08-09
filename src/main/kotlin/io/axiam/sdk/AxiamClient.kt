@@ -9,13 +9,21 @@ import io.axiam.sdk.internal.RefreshGuard
 import io.axiam.sdk.internal.SessionState
 import io.axiam.sdk.internal.TlsFactory
 import io.axiam.sdk.oidc.AuthorizationRequest
+import io.axiam.sdk.oidc.DeviceAuthorization
+import io.axiam.sdk.oidc.DeviceAuthorizeParams
+import io.axiam.sdk.oidc.DeviceLoginParams
+import io.axiam.sdk.oidc.DevicePollParams
+import io.axiam.sdk.oidc.ExchangedToken
 import io.axiam.sdk.oidc.IntrospectParams
+import io.axiam.sdk.oidc.LogoutUrlParams
 import io.axiam.sdk.oidc.IntrospectionResult
 import io.axiam.sdk.oidc.LoginClientCredentialsParams
 import io.axiam.sdk.oidc.OidcBeginParams
 import io.axiam.sdk.oidc.OidcConfiguration
 import io.axiam.sdk.oidc.OidcExchangeParams
 import io.axiam.sdk.oidc.OidcRefreshParams
+import io.axiam.sdk.oidc.TokenExchangeParams
+import io.axiam.sdk.oidc.VerifiedLogoutToken
 import io.axiam.sdk.oidc.OidcSupport
 import io.axiam.sdk.oidc.OidcTokenSet
 import io.axiam.sdk.oidc.RevokeParams
@@ -284,6 +292,7 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
                 AccessResult(
                     allowed = obj["allowed"]?.jsonPrimitive?.boolean ?: false,
                     reason = obj["reason"]?.jsonPrimitive?.contentOrNull(),
+                    reasonCode = obj["reason_code"]?.jsonPrimitive?.contentOrNull(),
                 )
             } ?: emptyList()
         }
@@ -385,6 +394,61 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
     /** `POST /oauth2/revoke` (RFC 7009, §12.1). Idempotent: any `200` (including for an unknown token) is success. */
     suspend fun revoke(params: RevokeParams) = oidcSupport.revoke(params)
 
+    /**
+     * `POST /oauth2/device_authorization` (§14.1) — start the device grant.
+     *
+     * **Unauthenticated by design**: a device that cannot show a browser also
+     * cannot hold a client secret, so this never sends `client_secret` and
+     * never refuses a client built without one.
+     */
+    suspend fun deviceAuthorize(params: DeviceAuthorizeParams = DeviceAuthorizeParams()): DeviceAuthorization =
+        oidcSupport.deviceAuthorize(params)
+
+    /**
+     * `POST /oauth2/token` with the device-code grant (§14.1) — **one** poll
+     * attempt, for an application driving its own loop. Most callers want
+     * [deviceLogin].
+     */
+    suspend fun devicePoll(params: DevicePollParams): OidcTokenSet = oidcSupport.devicePoll(params)
+
+    /**
+     * The composed §14.3 helper: start the grant, hand the caller the user
+     * code (before the first poll), poll to completion.
+     *
+     * Returns the token set; this SDK does not adopt it, matching its
+     * [loginClientCredentials] posture (§14.3 rule 4, contract 1.7).
+     */
+    suspend fun deviceLogin(params: DeviceLoginParams): OidcTokenSet = oidcSupport.deviceLogin(params)
+
+    /**
+     * `POST /oauth2/token` with the RFC 8693 grant (§15.1) — exchange a token
+     * for a **narrower** one.
+     *
+     * Requires confidential-client credentials. Never defaults `actorToken`,
+     * never auto-narrows after `invalid_scope`, never adopts the result.
+     */
+    suspend fun tokenExchange(params: TokenExchangeParams): ExchangedToken =
+        oidcSupport.tokenExchange(params)
+
+    /**
+     * Build the RP-initiated logout URL to redirect the user agent to
+     * (§12.7.2). Does **not** clear this client's own session.
+     */
+    suspend fun logoutUrl(params: LogoutUrlParams): String = oidcSupport.logoutUrl(params)
+
+    /**
+     * Verify a back-channel logout token the OP pushed to this application's
+     * `backchannel_logout_uri` (§12.7.3).
+     *
+     * Returns the `sid`/`sub`/`jti` the token names — never a bare `Boolean`,
+     * because the RP has to know *which* session to end. **Dedup on `jti`
+     * yourself**: delivery is at-least-once.
+     */
+    suspend fun verifyLogoutToken(
+        logoutToken: String,
+        configuration: OidcConfiguration? = null,
+    ): VerifiedLogoutToken = oidcSupport.verifyLogoutToken(logoutToken, configuration)
+
     /** `POST /api/v1/auth/federation/oidc/start` (§12.1) — step 1 of upstream-IdP SSO. */
     suspend fun ssoStart(params: SsoStartParams): SsoStartResult = oidcSupport.ssoStart(params)
 
@@ -413,6 +477,10 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
             return AccessResult(
                 allowed = wire["allowed"]?.jsonPrimitive?.boolean ?: false,
                 reason = wire["reason"]?.jsonPrimitive?.contentOrNull(),
+                // §11 rule 9: surfaced verbatim, including a code this SDK has
+                // never heard of — the outcome is carried by `allowed` alone,
+                // so an unknown code can never change it.
+                reasonCode = wire["reason_code"]?.jsonPrimitive?.contentOrNull(),
             )
         }
     }
