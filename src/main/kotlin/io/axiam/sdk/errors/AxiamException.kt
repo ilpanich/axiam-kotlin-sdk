@@ -83,6 +83,17 @@ class NetworkError private constructor(
     message: String,
     val summary: String?,
     cause: Throwable?,
+    /**
+     * A server-supplied `Retry-After` hint (CONTRACT.md §16.1), `null` when the
+     * response had none.
+     *
+     * A parsed [kotlin.time.Duration], never the raw header text, so the
+     * redaction discipline this class exists to enforce is untouched: a
+     * duration cannot carry a token, a URL, or anything else a header might.
+     * §16 honors it as a **floor** on the backoff — the server is stating when
+     * it will be ready, so retrying sooner is not permitted.
+     */
+    val retryAfter: kotlin.time.Duration? = null,
 ) : AxiamException(message, cause) {
 
     /** A [NetworkError] with no attached summary or cause. */
@@ -102,7 +113,10 @@ class NetworkError private constructor(
          * headers stripped). The single path from an HTTP response into a
          * [NetworkError] (via [ErrorMapper]).
          */
-        fun withSummary(message: String, summary: String?): NetworkError =
-            NetworkError(message, summary, null)
+        fun withSummary(
+            message: String,
+            summary: String?,
+            retryAfter: kotlin.time.Duration? = null,
+        ): NetworkError = NetworkError(message, summary, null, retryAfter)
     }
 }

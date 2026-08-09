@@ -121,11 +121,16 @@ class AuthzTest {
 
     @Test
     fun `500 maps to NetworkError and redacts non-allowlisted headers`() {
-        server.enqueue(
-            MockResponse().setResponseCode(500)
-                .addHeader("X-Secret", "leak-me")
-                .setBody("boom"),
-        )
+        // §16 makes three attempts at a 5xx, so all three need a response —
+        // the assertion is about redaction of the error the caller finally
+        // sees, which is the LAST attempt's.
+        repeat(3) {
+            server.enqueue(
+                MockResponse().setResponseCode(500)
+                    .addHeader("X-Secret", "leak-me")
+                    .setBody("boom"),
+            )
+        }
         TestSupport.clientFor(server).use { client ->
             val ex = assertThrows(NetworkError::class.java) {
                 runBlocking { client.checkAccess("read", "r-1") }
