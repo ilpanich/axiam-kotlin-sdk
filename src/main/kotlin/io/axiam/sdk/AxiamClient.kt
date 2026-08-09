@@ -51,11 +51,17 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
+import io.axiam.sdk.internal.DecisionMemo
+import io.axiam.sdk.internal.Retry
+import io.axiam.sdk.internal.TelemetryDispatcher
+import io.axiam.sdk.telemetry.TelemetryEvent
+import io.axiam.sdk.telemetry.TelemetryHook
 import java.io.IOException
 import java.net.CookieManager
 import java.net.CookiePolicy
 import java.time.Duration
 import java.util.UUID
+import kotlin.time.toKotlinDuration
 
 /**
  * The AXIAM Kotlin SDK's public REST entry point (CONTRACT.md §1–§7, §9).
@@ -87,6 +93,25 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
     private val jwksVerifier = JwksVerifier(baseUrl)
     private val session: SessionState
     private val oidcSupport: OidcSupport
+
+    /**
+     * §16.1 disable switch. There is deliberately no field for the attempt cap,
+     * base delay or delay cap: §16.1 forbids raising them, and eleven SDKs
+     * agreeing on one table is the point.
+     */
+    private val retryEnabled: Boolean = b.retryEnabled
+
+    /** §17 decision memo. Disabled unless the builder was given a TTL. */
+    private val decisionMemo = DecisionMemo(b.decisionMemoTtl.toKotlinDuration())
+
+    /** §19 telemetry dispatcher. Inert unless a hook was installed. */
+    private val telemetry = TelemetryDispatcher(b.telemetryHook)
+
+    /** §16 jitter source, injectable for tests. */
+    private val jitter: () -> Double = b.jitterSource
+
+    /** §18 shutdown flag, read on every operation. */
+    private val closed = java.util.concurrent.atomic.AtomicBoolean(false)
 
     init {
         val cookieManager = CookieManager(null, CookiePolicy.ACCEPT_ALL)
@@ -158,6 +183,8 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
      * [LoginResult.mfaRequired].
      */
     suspend fun login(email: String, password: String): LoginResult {
+        ensureOpen()
+        onCredentialChange()
         val body = buildJsonObject {
             put("tenant_slug", tenantId)
             session.configuredOrgId()?.let { put("org_id", it.toString()) }
@@ -183,6 +210,8 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
      * by [login] when `mfaRequired` was `true`.
      */
     suspend fun verifyMfa(mfaToken: Sensitive<String>, totpCode: String): LoginResult {
+        ensureOpen()
+        onCredentialChange()
         val body = buildJsonObject {
             put("challenge_token", mfaToken.expose())
             put("totp_code", totpCode)
@@ -201,6 +230,8 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
      * with no retry (§9.3).
      */
     suspend fun refresh() {
+        ensureOpen()
+        onCredentialChange()
         val observed = session.cachedAccessToken()
             ?: throw AuthError("no access token to refresh — call login() first")
         refreshGuard.refreshIfNeeded(observed) { session.doHttpRefresh() }
@@ -208,6 +239,8 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
 
     /** `POST /api/v1/auth/logout` (§1) and clears in-memory session state. */
     suspend fun logout() {
+        ensureOpen()
+        onCredentialChange()
         val access = session.cachedAccessToken()
             ?: throw AuthError("no active session to log out")
         val claims = SessionState.decodeUnverifiedClaims(access)
@@ -229,14 +262,8 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
      * `POST /api/v1/authz/check` — a single authorization check for the client's
      * own session. Argument order is always `(action, resource[, scope])`.
      */
-    suspend fun checkAccess(action: String, resourceId: String, scope: String? = null): AccessResult {
-        val body = buildJsonObject {
-            put("action", action)
-            put("resource_id", resourceId)
-            scope?.let { put("scope", it) }
-        }
-        return sendCheck(body)
-    }
+    suspend fun checkAccess(action: String, resourceId: String, scope: String? = null): AccessResult =
+        memoizedCheck(null, action, resourceId, scope)
 
     /**
      * `POST /api/v1/authz/check` for an explicit [subjectId] (§11.2 subject
@@ -248,14 +275,49 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
         action: String,
         resourceId: String,
         scope: String?,
+    ): AccessResult = memoizedCheck(subjectId, action, resourceId, scope)
+
+    /**
+     * The shared body of both [checkAccess] overloads: §18 guard, §17 memo,
+     * §16 retry, §19 telemetry.
+     *
+     * The call is a `POST` but changes no server state, so it is retry-eligible:
+     * §16.2's test is "changes no server state", **not** "is a GET". Gating on
+     * the verb would exclude the single most important operation this policy
+     * covers.
+     */
+    private suspend fun memoizedCheck(
+        subjectId: String?,
+        action: String,
+        resourceId: String,
+        scope: String?,
     ): AccessResult {
+        ensureOpen()
+
+        // §17: consult the memo first. Disabled by default, in which case this
+        // is one map lookup that always misses.
+        val key = DecisionMemo.key(subjectId, resourceId, action, scope)
+        decisionMemo.get(key)?.let { return it }
+
         val body = buildJsonObject {
-            put("subject_id", subjectId)
+            subjectId?.let { put("subject_id", it) }
             put("action", action)
             put("resource_id", resourceId)
             scope?.let { put("scope", it) }
         }
-        return sendCheck(body)
+
+        val result = Retry.withRetry(
+            operation = "checkAccess",
+            enabled = retryEnabled,
+            telemetry = telemetry,
+            random = jitter,
+        ) { attempt -> sendCheck(body, "checkAccess", attempt) }
+
+        // Only a decision the server actually returned is memoized: reaching
+        // here means success, so §17.1 rule 7's ban on caching a failure is
+        // structural rather than a check that could be forgotten.
+        decisionMemo.put(key, result)
+        return result
     }
 
     /** Browser/UI alias for [checkAccess] (§1) returning the boolean decision. */
@@ -459,20 +521,72 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
      */
     suspend fun ssoComplete(params: SsoCompleteParams): SsoCompleteResult = oidcSupport.ssoComplete(params)
 
+    /**
+     * Releases this client's local resources (CONTRACT.md §18).
+     *
+     * Idempotent — `compareAndSet` means even a concurrent double-close does
+     * the work once rather than racing the executor shutdown. Cleanup runs from
+     * error paths, and an error path that itself throws hides the original
+     * failure.
+     *
+     * **This does not log out.** §18.1 rule 5: shutting down a client releases
+     * *local* resources and never reaches the network. The server-side session
+     * deliberately outlives the client object, which is what lets a process
+     * restart and resume; a `close()` that logged out would silently end every
+     * user's session on each deploy. Call [logout] first if ending the session
+     * is what you want.
+     *
+     * After this returns, every operation on this client throws [NetworkError]
+     * rather than silently reconnecting.
+     */
     override fun close() {
+        if (!closed.compareAndSet(false, true)) return
+        decisionMemo.clear()
         httpClient.dispatcher.executorService.shutdown()
         httpClient.connectionPool.evictAll()
         httpClient.cache?.close()
     }
 
+    /**
+     * Throws if [close] has been called (§18.1 rule 4).
+     *
+     * Use-after-close is an error, not a silent reconnect: a client that
+     * quietly rebuilt its transport would make [close] meaningless and hide the
+     * lifecycle bug that caused the call.
+     */
+    private fun ensureOpen() {
+        if (closed.get()) {
+            throw NetworkError("client is closed: this AxiamClient was shut down with close()")
+        }
+    }
+
+    /**
+     * Drops memoized decisions (§17.1 rule 9).
+     *
+     * Entries are keyed by subject rather than session, so a re-authentication
+     * as a *different* principal would otherwise inherit the previous one's
+     * decisions.
+     */
+    private fun onCredentialChange() {
+        decisionMemo.clear()
+    }
+
     // ---- shared HTTP mechanics ------------------------------------------
 
-    private suspend fun sendCheck(body: JsonObject): AccessResult {
-        val response = postWithRefresh(CHECK_PATH, body)
+    private suspend fun sendCheck(body: JsonObject, operation: String, attempt: Int): AccessResult {
+        val span = telemetry.startRequest(operation, "POST", CHECK_PATH, attempt)
+        val response = try {
+            postWithRefresh(CHECK_PATH, body)
+        } catch (e: Throwable) {
+            span.end(null, TelemetryEvent.Outcome.FAILURE)
+            throw e
+        }
         response.use {
             if (!it.isSuccessful) {
+                span.end(it.code, TelemetryEvent.Outcome.FAILURE)
                 throw ErrorMapper.fromHttpStatus(it.code, "checkAccess failed", it)
             }
+            span.end(it.code, TelemetryEvent.Outcome.SUCCESS)
             val wire = readJson(it)
             return AccessResult(
                 allowed = wire["allowed"]?.jsonPrimitive?.boolean ?: false,
@@ -536,6 +650,10 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
     /** Fluent builder — the ONLY construction path. Obtain via [AxiamClient.builder]. */
     class Builder internal constructor(baseUrl: String, internal val tenantId: String) {
         internal val baseUrl: String = baseUrl
+        internal var retryEnabled: Boolean = true
+        internal var decisionMemoTtl: Duration = Duration.ZERO
+        internal var telemetryHook: TelemetryHook? = null
+        internal var jitterSource: () -> Double = { kotlin.random.Random.Default.nextDouble() }
         internal var orgSlug: String? = null
         internal var orgId: UUID? = null
         internal var customCaPem: ByteArray? = null
@@ -632,6 +750,61 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
          * configuring it above that bound.
          */
         fun oidcClockSkewSeconds(seconds: Int) = apply { oidcClockSkewSec = seconds }
+
+        /**
+         * Disables the CONTRACT.md §16 bounded read-only retry policy, making
+         * every operation exactly one attempt.
+         *
+         * That is the right choice for a caller who owns their own retry layer
+         * — they know their deadline and this SDK does not — but it is not a
+         * way to make failures quieter: a transient [NetworkError] simply
+         * surfaces immediately.
+         *
+         * §16.1 permits this switch but forbids raising the attempt cap, base
+         * delay or delay cap above the contract's values, so there is no
+         * builder method for those.
+         */
+        fun retryDisabled(): Builder = apply { retryEnabled = false }
+
+        /**
+         * Enables the CONTRACT.md §17 client-side decision memo.
+         *
+         * **Disabled by default** — §11.2 rule 6's ban on caching authorization
+         * decisions is still the default behaviour, and this is the single
+         * opt-in exception.
+         *
+         * **What you are accepting:** the staleness bound is [ttl] in *both*
+         * directions. A grant revoked on the server can still read as allowed
+         * for up to the TTL, and a grant just added can still read as denied
+         * for up to the TTL.
+         *
+         * **Reads-your-own-writes is not guaranteed.** An admin UI that grants
+         * a role and immediately re-checks is the case that breaks, and it
+         * breaks silently. If that is your workload, do not set this.
+         *
+         * [ttl] is clamped to 5 seconds rather than rejected. Allows and denies
+         * are memoized identically (asymmetric caching leaks the outcome
+         * through latency), failures are never memoized, and the memo is
+         * cleared on any credential change.
+         */
+        fun decisionMemoTtl(ttl: Duration): Builder = apply { decisionMemoTtl = ttl }
+
+        /**
+         * Installs a CONTRACT.md §19 telemetry sink.
+         *
+         * It receives request start/end, §16 retry and §9 refresh events, so
+         * metrics can be wired without this module depending on any metrics
+         * library.
+         *
+         * A hook that throws cannot fail the operation that fired it (§19.2
+         * rule 2), and no event payload can carry a token — `TelemetryEvent` is
+         * a sealed hierarchy with fixed property lists (§19.2 rule 3). It is
+         * invoked on the calling coroutine, so it must not block.
+         */
+        fun telemetryHook(hook: TelemetryHook): Builder = apply { telemetryHook = hook }
+
+        /** Injects the §16 jitter draw. Test seam — not part of the public contract. */
+        internal fun jitterSource(source: () -> Double): Builder = apply { jitterSource = source }
 
         fun build(): AxiamClient = AxiamClient(this)
     }

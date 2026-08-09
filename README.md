@@ -21,7 +21,7 @@ Source: [ilpanich/axiam-kotlin-sdk](https://github.com/ilpanich/axiam-kotlin-sdk
 
 ## Contract conformance
 
-This SDK conforms to CONTRACT.md §1–§7, §9–§13 and §12.7, §14, §15 (including §6.1 mTLS).
+This SDK conforms to CONTRACT.md §1–§7, §9–§13 and §12.7, §14, §15, §17, §19 (including §6.1 mTLS).
 
 §12.7, §14 and §15 are named rather than folded into the range because they landed after this SDK
 already stated its coverage: widening the range silently would turn a statement that was true when
@@ -432,3 +432,92 @@ fun handleWebhook(rawBody: ByteArray, signatureHeader: String) {
 ```
 
 Targets JVM 17. CI runs on JDK 17 via `gradle/actions/setup-gradle`.
+
+## Client quality-of-life (CONTRACT.md §16–§19)
+
+### Retry policy (§16)
+
+Read-only authorization checks — `checkAccess` (both overloads), `can`, `batchCheck` — retry
+transient failures under the contract's normative table: **3 attempts** (1 initial + 2
+retries), 200 ms base, 5 s cap, **full jitter** (uniform over `[0, backoff]`), and
+`Retry-After` honored as a **floor**.
+
+This SDK had no §16 policy before — only §9.3's refresh-then-retry-once, which is a different
+mechanism. §11.2 rule 5 had been requiring one since it was written.
+
+Only failures that could plausibly succeed on a second attempt are retried: transport errors,
+`408`, `429`, `5xx`. A `401` or `403` is an answer, not a transport failure, and surfaces after
+exactly one attempt. Nothing that changes server state is ever retried, and **coroutine
+cancellation is never retried or swallowed** — it propagates immediately, because a cancelled
+scope is the caller's decision rather than the server's failure.
+
+```kotlin
+// Turn it off if you own your own retry layer — you know your deadline, this SDK doesn't.
+val client = AxiamClient.builder(baseUrl, tenantId).retryDisabled().build()
+```
+
+There is deliberately no builder method for the attempt cap, base delay or delay cap: §16.1
+forbids raising them, and eleven SDKs agreeing on one table is the point.
+
+### Deterministic shutdown (§18)
+
+`close()` releases the client's local resources. It is idempotent — `compareAndSet` means even
+a concurrent double-close does the work once — and any call afterwards throws `NetworkError`
+naming the cause rather than silently reconnecting.
+
+**`close()` does not log out.** It never reaches the network. The server-side session
+deliberately outlives the client object — that is what lets a process restart and resume — so
+a `close()` that logged out would silently end every user's session on each deploy. Call
+`logout()` first if ending the session is what you want.
+
+### Telemetry hooks (§19)
+
+Wire metrics without this module depending on any metrics library:
+
+```kotlin
+val client = AxiamClient.builder(baseUrl, tenantId)
+    .telemetryHook { event ->
+        when (event) {
+            is TelemetryEvent.RequestEnd ->
+                histogram.record(event.duration.inWholeMilliseconds, /* labels */)
+            is TelemetryEvent.Retry -> counter.increment(/* labels */)
+            else -> Unit
+        }
+    }
+    .build()
+```
+
+- **A hook that throws cannot fail the operation that fired it.** One exception: a
+  `CancellationException` is re-thrown rather than swallowed — absorbing it would break
+  structured concurrency, which is a correctness bug rather than a metrics one.
+- **No event payload can carry a token.** `TelemetryEvent` is a **sealed** hierarchy with
+  fixed property lists — no code outside the SDK can add a variant.
+- **Path templates, not URLs**, so a metric label cannot become a cardinality bomb.
+
+One `RequestStart`/`RequestEnd` pair is emitted **per attempt**, so you can count real wire
+calls. See [`examples/telemetry-hook`](examples/telemetry-hook).
+
+### Decision memo (§17) — opt-in, off by default
+
+An optional TTL-bounded cache for `checkAccess` results. **Disabled by default**, because
+§11.2 rule 6's ban on caching authorization decisions is still the default behaviour.
+
+```kotlin
+val client = AxiamClient.builder(baseUrl, tenantId)
+    .decisionMemoTtl(Duration.ofSeconds(5))
+    .build()
+```
+
+**What you are accepting.** The staleness bound is the TTL, in *both* directions: a grant
+revoked on the server can still read as allowed for up to the TTL, and a grant just added can
+still read as denied for up to the TTL.
+
+> **Reads-your-own-writes is not guaranteed.** An admin UI that grants a role and immediately
+> re-checks is the case that breaks, and it breaks silently. If that is your workload, leave
+> this off.
+
+The TTL is clamped to 5 seconds rather than rejected. Allows and denies are memoized
+identically — asymmetric caching would leak which outcome occurred through latency. Failures
+are never memoized: caching a transport error as a deny would turn a blip into a TTL-long
+outage. The memo is cleared on `login`, `verifyMfa`, `refresh` and `logout`, since entries are
+keyed by subject rather than by session. It is safe for concurrent use.
