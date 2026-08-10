@@ -1,6 +1,7 @@
 package io.axiam.sdk.internal
 
 import io.axiam.sdk.AccessResult
+import io.axiam.sdk.telemetry.TelemetryEvent
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.nanoseconds
 import kotlin.time.Duration.Companion.seconds
@@ -100,6 +101,30 @@ internal class DecisionMemo(
      */
     fun clear() {
         synchronized(lock) { entries.clear() }
+    }
+
+    /**
+     * Emits a [TelemetryEvent.ConfigClamped] if [requested] was clamped
+     * (CONTRACT.md §19.2 rule 6).
+     *
+     * This is the clamp that matters most to get right: an operator who set a
+     * 60-second TTL believes their staleness bound is 60 seconds. It is five,
+     * and without this event nothing anywhere says so.
+     *
+     * Nothing is emitted when the requested value was already inside the limit,
+     * or when the memo is disabled — an event that fires when nothing happened
+     * trains its reader to ignore it.
+     */
+    fun reportClamp(requested: Duration, telemetry: TelemetryDispatcher) {
+        if (requested <= Duration.ZERO || requested == effectiveTtl) return
+        telemetry.emit(
+            TelemetryEvent.ConfigClamped(
+                setting = "decisionMemoTtl",
+                requested = requested.toString(),
+                effective = effectiveTtl.toString(),
+                contractReference = "§17.1 rule 2",
+            ),
+        )
     }
 
     /** Entry count, for tests. */
