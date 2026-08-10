@@ -103,6 +103,34 @@ public sealed interface TelemetryEvent {
         val role: RefreshRole,
         val duration: Duration,
     ) : TelemetryEvent
+
+    /**
+     * Emitted at construction, once per caller-supplied setting the SDK clamped
+     * (§19.1, §19.2 rule 6).
+     *
+     * Clamping rather than rejecting is the right call — rejecting would fail
+     * construction for a caller whose configuration was merely optimistic, and
+     * honoring would let one client become the herd §16 exists to prevent.
+     * Doing it **silently** is the part that is wrong: an operator who set a
+     * 60-second memo TTL believes their staleness bound is 60 seconds. It is
+     * five, and their revocation reasoning is off by a factor of twelve with
+     * nothing anywhere to say so.
+     *
+     * Not emitted for a value already within its limit: an event that fires
+     * when nothing happened trains its reader to ignore it.
+     *
+     * @property setting the builder setting's name, e.g. `decisionMemoTtl`.
+     * @property requested the value the caller asked for, rendered.
+     * @property effective the value actually in force, rendered.
+     * @property contractReference the §-reference for the limit, e.g.
+     *   `§17.1 rule 2`.
+     */
+    public data class ConfigClamped(
+        val setting: String,
+        val requested: String,
+        val effective: String,
+        val contractReference: String,
+    ) : TelemetryEvent
 }
 
 /**

@@ -44,6 +44,16 @@ private fun record(event: TelemetryEvent) {
         is TelemetryEvent.Retry ->
             retries.computeIfAbsent(event.operation) { AtomicLong() }.incrementAndGet()
 
+        // §19.2 rule 6 — fired at most once per clamped setting, at
+        // construction. Worth logging loudly rather than counting: it means a
+        // value in your configuration file is not the value in force, and the
+        // gap is silent everywhere else.
+        is TelemetryEvent.ConfigClamped ->
+            println(
+                "WARN: ${event.setting}=${event.requested} was clamped to " +
+                    "${event.effective} (${event.contractReference})",
+            )
+
         else -> Unit
     }
 }

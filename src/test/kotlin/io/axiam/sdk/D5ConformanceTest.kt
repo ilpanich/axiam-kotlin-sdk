@@ -9,6 +9,7 @@ import io.axiam.sdk.telemetry.TelemetryEvent
 import java.time.Duration as JavaDuration
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
@@ -331,6 +332,7 @@ class D5ConformanceTest {
                 is TelemetryEvent.RequestEnd -> "end"
                 is TelemetryEvent.Retry -> "retry"
                 is TelemetryEvent.Refresh -> "refresh"
+                is TelemetryEvent.ConfigClamped -> "clamped"
             }
         }
         assertEquals(listOf("start", "end", "retry", "start", "end"), kinds)
@@ -367,6 +369,60 @@ class D5ConformanceTest {
         val rendered = events.toString().lowercase()
         assertFalse(rendered.contains("eyj"), "no JWT-shaped string in telemetry")
         assertFalse(rendered.contains("authorization"), "no auth header content in telemetry")
+    }
+
+    @Test
+    fun `a clamped setting is reported, not swallowed`() {
+        // §19.2 rule 6 — an operator who set a 60-second memo TTL believes
+        // their staleness bound is 60 seconds. It is five. Clamping is right;
+        // doing it silently leaves their revocation reasoning wrong by a factor
+        // of twelve with nothing anywhere to say so.
+        val events = mutableListOf<TelemetryEvent>()
+        client(memoTtl = JavaDuration.ofMinutes(1), hook = { events += it }).use { }
+
+        val clamps = events.filterIsInstance<TelemetryEvent.ConfigClamped>()
+        assertEquals(1, clamps.size)
+        assertEquals("decisionMemoTtl", clamps.first().setting)
+        assertEquals(1.minutes.toString(), clamps.first().requested)
+        assertEquals(DecisionMemo.MAX_TTL.toString(), clamps.first().effective)
+        assertEquals("§17.1 rule 2", clamps.first().contractReference)
+    }
+
+    @Test
+    fun `a value already inside its limit reports nothing`() {
+        // An event that fires when nothing happened trains its reader to ignore
+        // it, which costs exactly the case above.
+        val inRange = mutableListOf<TelemetryEvent>()
+        client(memoTtl = JavaDuration.ofSeconds(2), hook = { inRange += it }).use { }
+        assertTrue(
+            inRange.filterIsInstance<TelemetryEvent.ConfigClamped>().isEmpty(),
+            "2s is inside the 5s ceiling",
+        )
+
+        val boundary = mutableListOf<TelemetryEvent>()
+        client(memoTtl = JavaDuration.ofSeconds(5), hook = { boundary += it }).use { }
+        assertTrue(
+            boundary.filterIsInstance<TelemetryEvent.ConfigClamped>().isEmpty(),
+            "the ceiling exactly is not a clamp",
+        )
+    }
+
+    @Test
+    fun `the disabled default reports no clamp`() {
+        // Never configuring the memo is not a setting that got overridden.
+        val events = mutableListOf<TelemetryEvent>()
+        client(hook = { events += it }).use { }
+        assertTrue(events.filterIsInstance<TelemetryEvent.ConfigClamped>().isEmpty())
+
+        // A negative TTL disables the memo; it is not clamped up to the ceiling.
+        val negative = mutableListOf<TelemetryEvent>()
+        val c = AxiamClient.builder(server.url("/").toString(), TestSupport.TENANT_ID)
+            .orgId(TestSupport.ORG_ID)
+            .decisionMemoTtl(JavaDuration.ofSeconds(-5))
+            .telemetryHook { event -> negative += event }
+            .build()
+        c.use { }
+        assertTrue(negative.filterIsInstance<TelemetryEvent.ConfigClamped>().isEmpty())
     }
 
     @Test

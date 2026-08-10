@@ -147,6 +147,11 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
             discoveryTtlMs = b.oidcDiscoveryTtlMs,
             clockSkewSecInput = b.oidcClockSkewSec,
         )
+
+        // §19.2 rule 6: a setting we lowered is reported, not swallowed. The
+        // memo TTL is the only clamped setting here — §16.1's table is not
+        // configurable, only switchable — so it is the only emitter.
+        decisionMemo.reportClamp(b.decisionMemoTtl.toKotlinDuration(), telemetry)
     }
 
     // ---- SDK-internal accessors (middleware/§10 seam) --------------------
