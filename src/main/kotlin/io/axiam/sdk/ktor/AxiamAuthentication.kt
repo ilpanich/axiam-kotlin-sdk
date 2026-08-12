@@ -7,8 +7,12 @@ import io.axiam.sdk.annotations.AxiamRequireAuth
 import io.axiam.sdk.annotations.AxiamRequireRole
 import io.axiam.sdk.errors.AuthError
 import io.axiam.sdk.errors.AuthzError
+import io.axiam.sdk.errors.AxiamException
 import io.axiam.sdk.errors.NetworkError
+import io.axiam.sdk.oidc.RequestedPermission
+import io.axiam.sdk.oidc.umaChallengeHeader
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.createApplicationPlugin
@@ -59,8 +63,10 @@ val AxiamAuthentication = createApplicationPlugin(
     val client = requireNotNull(pluginConfig.client) {
         "AxiamAuthentication requires an AxiamClient (config.client = ...)"
     }
+    val challenger = pluginConfig.umaChallenge
     onCall { call ->
         call.attributes.put(CLIENT_KEY, client)
+        challenger?.let { call.attributes.put(CHALLENGER_KEY, it) }
         val token = extractToken(call)
         if (token != null) {
             try {
@@ -88,10 +94,20 @@ val AxiamAuthentication = createApplicationPlugin(
 class AxiamAuthConfig {
     /** The AXIAM client used to verify sessions and evaluate authorization checks. */
     var client: AxiamClient? = null
+
+    /**
+     * An optional §20.3 challenge emitter. When set, a [requireAccess] denial
+     * additionally carries `WWW-Authenticate: UMA` with a freshly minted ticket
+     * for the action that was refused; when left `null` (the default) a denial
+     * is the plain 403 it has always been. See [UmaChallenger] for why this is
+     * opt-in and why a minting failure still denies plainly.
+     */
+    var umaChallenge: UmaChallenger? = null
 }
 
 private val USER_KEY = AttributeKey<AxiamUser>("AxiamUser")
 private val CLIENT_KEY = AttributeKey<AxiamClient>("AxiamClient")
+private val CHALLENGER_KEY = AttributeKey<UmaChallenger>("AxiamUmaChallenger")
 
 /** The authenticated [AxiamUser] injected by [AxiamAuthentication], or `null`. */
 val ApplicationCall.axiamUser: AxiamUser?
@@ -155,11 +171,11 @@ suspend fun ApplicationCall.requireAccess(
         if (result.allowed) {
             user
         } else {
-            respondError(HttpStatusCode.Forbidden, "authorization_denied", "access denied")
+            denied(action, resourceId)
             null
         }
     } catch (_: AuthzError) {
-        respondError(HttpStatusCode.Forbidden, "authorization_denied", "access denied")
+        denied(action, resourceId)
         null
     } catch (_: NetworkError) {
         // §11.2.5: fail closed on transport failure — never a silent allow.
@@ -197,6 +213,43 @@ suspend fun ApplicationCall.enforce(vararg annotations: Annotation): AxiamUser? 
     // handled identically — auth is already enforced above).
     @Suppress("UNUSED_EXPRESSION") request.httpMethod
     return user
+}
+
+/**
+ * The single deny path for a resource check: a 403, carrying a
+ * `WWW-Authenticate: UMA` challenge when — and only when — a [UmaChallenger]
+ * was configured on the plugin.
+ */
+private suspend fun ApplicationCall.denied(action: String, resourceId: String) {
+    umaChallengeHeaderOrNull(action, resourceId)?.let {
+        // Set before responding: `respondText` commits the status line.
+        response.headers.append(HttpHeaders.WWWAuthenticate, it)
+    }
+    respondError(HttpStatusCode.Forbidden, "authorization_denied", "access denied")
+}
+
+/**
+ * Mints one ticket for the pair that was just refused and formats the
+ * challenge, or returns `null` when there is no challenger or minting fails.
+ *
+ * The requested scope is the AXIAM *action* (§20.2): asking for anything else
+ * would offer the caller authority other than the one they were denied, and
+ * would step outside the grants the engine just evaluated — deny rules
+ * included.
+ */
+private suspend fun ApplicationCall.umaChallengeHeaderOrNull(action: String, resourceId: String): String? {
+    val challenger = attributes.getOrNull(CHALLENGER_KEY) ?: return null
+    return try {
+        val ticket = challenger.client.umaRequestTicket(
+            challenger.pat,
+            listOf(RequestedPermission(resourceId, listOf(action))),
+        )
+        umaChallengeHeader(challenger.realm, challenger.asUri, ticket)
+    } catch (_: AxiamException) {
+        // Swallowed deliberately — see [UmaChallenger]. The denial stands on
+        // its own; only the sugar is lost.
+        null
+    }
 }
 
 private suspend fun ApplicationCall.respondError(status: HttpStatusCode, error: String, message: String) {

@@ -21,9 +21,9 @@ Source: [ilpanich/axiam-kotlin-sdk](https://github.com/ilpanich/axiam-kotlin-sdk
 
 ## Contract conformance
 
-This SDK conforms to CONTRACT.md §1–§7, §9–§13 and §12.7, §14, §15, §17, §19 (including §6.1 mTLS).
+This SDK conforms to CONTRACT.md §1–§7, §9–§13 and §12.7, §14, §15, §17, §19, §20 (including §6.1 mTLS).
 
-§12.7, §14 and §15 are named rather than folded into the range because they landed after this SDK
+§12.7, §14, §15 and §20 are named rather than folded into the range because they landed after this SDK
 already stated its coverage: widening the range silently would turn a statement that was true when
 written into a different claim without anyone editing it. (§8's AMQP surface remains out of scope,
 which is why the range is written with that gap rather than as §1–§13.)
@@ -287,6 +287,63 @@ material in this SDK (§7); `state` and `nonce` are not secrets and are plain st
 
 See [`examples/oidc-login/OidcLoginExample.kt`](examples/oidc-login/OidcLoginExample.kt) for a
 complete, framework-free walk-through of all nine operations.
+
+## UMA 2.0 — protecting resources whose owner isn't the caller (§20)
+
+For a resource server holding data that belongs to *users*: instead of answering an
+unauthorized request with a bare 403, tell the caller where to go and get authority.
+
+Registration and the ticket grant are suspending methods on `AxiamClient`
+(`umaRegisterResource` / `umaReadResource` / `umaUpdateResource` / `umaDeleteResource` /
+`umaListResources`, `umaRequestTicket`, `umaExchangeTicket`). Every Protection API call takes
+the **PAT** as an explicit first argument — a client-credentials token carrying
+`uma_protection` (§20.2 rule 1) rather than the client's ambient session, because that session
+is usually a *user* session and a minted ticket binds to a `client_id`.
+
+The registered id **is** the AXIAM resource id, so UMA scopes are AXIAM actions: the same
+grants — deny rules included — govern an RPT-carrying request and an ordinary one.
+
+### Emitting the challenge from the §11 guard
+
+Configure a `UmaChallenger` on the plugin and a `requireAccess` denial carries the ticket with
+it:
+
+```kotlin
+install(AxiamAuthentication) {
+    client = axiam
+    umaChallenge = UmaChallenger("invoices", configuration.issuer, pat, axiam)
+}
+// A denied requireAccess(...) now answers 403 with
+//   WWW-Authenticate: UMA realm="invoices", as_uri="…", ticket="…"
+```
+
+Opt-in, deliberately: minting on every denial by default would put a Protection API call — and
+a live credential — behind every unauthorized request, which is a denial-of-service amplifier
+pointed at your own authorization server. And a minting failure still denies plainly, never a
+503 and never an allow. The requested scope is the AXIAM **action**, so the ticket asks for
+exactly the authority just refused.
+
+### Consuming it
+
+`umaParseChallenge(header)` parses and *stops there*. It does not exchange the ticket, because
+the `as_uri` it names was chosen by the server that just refused you; auto-redeeming would send
+the requesting party's token wherever a 403 pointed. The trust decision is the caller's:
+
+```kotlin
+val challenge = umaParseChallenge(response.headers["WWW-Authenticate"] ?: "")
+val ticket = challenge?.ticket
+if (ticket != null && trustworthy(challenge.asUri)) {
+    val rpt = client.umaExchangeTicket(UmaExchangeTicketParams(ticket, userToken))
+}
+```
+
+`umaExchangeTicket` sends **one** request and never retries — the documented exception to the
+§16 retry policy, because a ticket is consumed before the request is evaluated, so a retry
+cannot succeed and under concurrency is exactly the double redemption to avoid. On failure,
+obtain a *new* ticket.
+
+Both halves run in [`examples/uma-resource-server`](examples/uma-resource-server) and
+[`examples/uma-client`](examples/uma-client).
 
 ## Device authorization grant (§14)
 
