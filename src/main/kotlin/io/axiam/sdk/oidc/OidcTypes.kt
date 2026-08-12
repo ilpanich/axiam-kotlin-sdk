@@ -536,3 +536,168 @@ data class VerifiedLogoutToken(
     val sub: String? = null,
     val jti: String,
 )
+
+// ---------------------------------------------------------------------------
+// §20 UMA 2.0 — Protection API and ticket grant
+// ---------------------------------------------------------------------------
+
+/**
+ * A UMA resource set — an AXIAM resource seen through the Protection API
+ * (CONTRACT.md §20.1).
+ *
+ * [id] is **the AXIAM resource id**, not a parallel identifier: the same UUID
+ * is directly usable as the [RequestedPermission.resourceId] of a later ticket
+ * request, and as the resource id anywhere else in this SDK.
+ *
+ * @property id assigned by the server on registration; `null` on the way in
+ * @property name human-readable name, shown in the admin UI
+ * @property type free-form resource type; defaults server-side to
+ *   `uma_resource` when `null`, so a resource server that omits it does not
+ *   produce a row that sorts oddly next to hand-made ones
+ * @property resourceScopes the scope names a resource server may ask for on
+ *   this resource. **Replaced wholesale by an update, never merged**
+ *   (§20.2 rule 8) — this SDK does not read the current scopes and fold them
+ *   into an update payload as a convenience, because that would make removing
+ *   a scope impossible through it
+ */
+data class ResourceSet(
+    val name: String,
+    val id: String? = null,
+    val type: String? = null,
+    val resourceScopes: List<String> = emptyList(),
+)
+
+/**
+ * One `(resource, scopes)` pair a resource server requires (§20.1).
+ *
+ * @property resourceId the AXIAM resource id — the same UUID the Protection
+ *   API returned as `_id`
+ * @property resourceScopes scope names, each of which the resource must
+ *   already declare; matched exactly, with no prefix or wildcard semantics in
+ *   either direction
+ */
+data class RequestedPermission(
+    val resourceId: String,
+    val resourceScopes: List<String>,
+)
+
+/**
+ * One entry of an RPT's `permissions` claim (§20.1).
+ *
+ * **A record of a decision already made, not a live authorization answer**
+ * (§20.2 rule 7). These are the pairs the engine allowed when the RPT was
+ * minted; a grant revoked afterwards does not empty a live RPT. Do not cache
+ * them beyond the token's own expiry — which is why that expiry is short.
+ *
+ * @property resourceId the resource the engine allowed
+ * @property resourceScopes the scopes it allowed on that resource
+ * @property exp absolute expiry, seconds since the epoch
+ */
+data class RptPermission(
+    val resourceId: String,
+    val resourceScopes: List<String>,
+    val exp: Long,
+)
+
+/**
+ * The result of the UMA ticket grant (§20.1).
+ *
+ * **There is no `refreshToken` property, and that is deliberate**
+ * (§20.2 rule 5). The grant issues none, so an RPT cannot outlive the ticket
+ * that authorised it; an application that wants a fresh one re-runs the grant.
+ * This result never enters the §9 single-flight refresh guard — there is
+ * nothing to refresh.
+ *
+ * @property accessToken the RPT itself (§20.6 secret)
+ * @property tokenType always `Bearer`
+ * @property expiresIn `min(claimToken remaining, server ceiling, 300 s)`
+ */
+data class RequestingPartyToken(
+    val accessToken: Sensitive<String>,
+    val tokenType: String,
+    val expiresIn: Long,
+)
+
+/**
+ * Arguments to `umaExchangeTicket` (§20.1).
+ *
+ * @property ticket the permission ticket, from `umaRequestTicket` or a parsed
+ *   challenge
+ * @property claimToken the requesting party's access token. **Required**,
+ *   though UMA 2.0 §3.3.1 marks it optional: v1 implements neither incremental
+ *   authorization nor claims-gathering, so this is the only channel that names
+ *   a requesting party (§20.2 rule 2)
+ * @property tenantId tenant UUID for the `tenant_id` query parameter
+ * @property configuration a pre-fetched discovery document
+ */
+data class UmaExchangeTicketParams(
+    val ticket: Sensitive<String>,
+    val claimToken: Sensitive<String>,
+    val tenantId: String? = null,
+    val configuration: OidcConfiguration? = null,
+)
+
+/**
+ * A parsed `WWW-Authenticate: UMA` challenge (UMA 2.0 §3.2, §20.3).
+ *
+ * @property realm the protection realm the resource server named
+ * @property asUri the authorization server the resource server nominates.
+ *   **Not automatically trusted** — see [umaParseChallenge]
+ * @property ticket the ticket to exchange — a bearer credential for its
+ *   60-second life
+ */
+data class UmaChallenge(
+    val realm: String? = null,
+    val asUri: String? = null,
+    val ticket: Sensitive<String>? = null,
+)
+
+/**
+ * Parse a `WWW-Authenticate: UMA …` header value (CONTRACT.md §20.3).
+ *
+ * **This deliberately does not exchange the ticket.** Parsing a challenge and
+ * acting on it are separate decisions: the `as_uri` names an authorization
+ * server the caller has not necessarily chosen to trust, and auto-exchanging
+ * would send the requesting party's `claimToken` to whatever host answered the
+ * 403. The caller decides.
+ *
+ * @return the parsed challenge, or `null` when the header is not a UMA
+ *   challenge
+ */
+public fun umaParseChallenge(header: String): UmaChallenge? {
+    val trimmed = header.trim()
+    if (!trimmed.startsWith("UMA")) return null
+    val rest = trimmed.substring(3)
+    // "UMA" alone is a valid, if useless, challenge; anything else must be
+    // separated by whitespace so `UMAX realm="…"` is not read as UMA.
+    if (rest.isNotEmpty() && !rest[0].isWhitespace()) return null
+
+    var realm: String? = null
+    var asUri: String? = null
+    var ticket: Sensitive<String>? = null
+    for (part in rest.split(",")) {
+        val eq = part.indexOf('=')
+        if (eq < 0) continue
+        val key = part.substring(0, eq).trim()
+        val value = part.substring(eq + 1).trim().removeSurrounding("\"")
+        when (key) {
+            "realm" -> realm = value
+            "as_uri" -> asUri = value
+            "ticket" -> ticket = Sensitive.of(value)
+            // Unknown parameters are ignored rather than rejected: UMA 2.0
+            // permits a server to add its own, and refusing the whole
+            // challenge over one would lose the ticket with it.
+            else -> Unit
+        }
+    }
+    return UmaChallenge(realm, asUri, ticket)
+}
+
+/**
+ * Format a `WWW-Authenticate: UMA` header value (§20.3, emit half).
+ *
+ * The resource-server side: having obtained a ticket from `umaRequestTicket`,
+ * tell the caller where to redeem it.
+ */
+public fun umaChallengeHeader(realm: String, asUri: String, ticket: Sensitive<String>): String =
+    """UMA realm="$realm", as_uri="$asUri", ticket="${ticket.expose()}""""

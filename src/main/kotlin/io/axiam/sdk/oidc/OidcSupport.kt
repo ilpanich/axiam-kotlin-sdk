@@ -15,8 +15,11 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
@@ -691,6 +694,274 @@ internal class OidcSupport(
         )
     }
 
+    // -- §20 UMA 2.0 — Protection API and ticket grant ---------------------
+
+    /**
+     * `POST /uma2/rreg/resource_set` — register a resource set (§20.1).
+     *
+     * The [pat] is an explicit parameter, not this client's session. A
+     * Protection API Token must be a **client-credentials** token, because a
+     * ticket binds to the `client_id` that minted it — and this client's
+     * session is usually a *user* session, which names no client to bind to
+     * (§20.2 rule 1).
+     */
+    suspend fun umaRegisterResource(pat: Sensitive<String>, resource: ResourceSet): ResourceSet =
+        resourceSetFromJson(
+            umaProtectionJson(
+                "POST", RREG_PATH, pat, umaResourcePayload(resource),
+                "uma resource registration failed",
+            )!!,
+        )
+
+    /** `GET /uma2/rreg/resource_set/{id}` — read a resource set (§20.1). */
+    suspend fun umaReadResource(pat: Sensitive<String>, resourceId: String): ResourceSet =
+        resourceSetFromJson(
+            umaProtectionJson("GET", "$RREG_PATH/$resourceId", pat, null, "uma resource read failed")!!,
+        )
+
+    /**
+     * `PUT /uma2/rreg/resource_set/{id}` — replace a resource set (§20.1).
+     *
+     * **The scope list is replaced, not merged** (§20.2 rule 8). Whatever
+     * [ResourceSet.resourceScopes] holds becomes the complete declared set;
+     * omitting a scope removes it, which is how a resource server drops an
+     * authority. This method performs no read-before-write.
+     */
+    suspend fun umaUpdateResource(
+        pat: Sensitive<String>,
+        resourceId: String,
+        resource: ResourceSet,
+    ): ResourceSet =
+        resourceSetFromJson(
+            umaProtectionJson(
+                "PUT", "$RREG_PATH/$resourceId", pat, umaResourcePayload(resource),
+                "uma resource update failed",
+            )!!,
+        )
+
+    /** `DELETE /uma2/rreg/resource_set/{id}` — deregister (§20.1). */
+    suspend fun umaDeleteResource(pat: Sensitive<String>, resourceId: String) {
+        umaProtectionJson("DELETE", "$RREG_PATH/$resourceId", pat, null, "uma resource delete failed")
+    }
+
+    /**
+     * `GET /uma2/rreg/resource_set` — list the ids **this client** registered
+     * (§20.1).
+     *
+     * Not the tenant's whole resource tree: a protection scope does not
+     * entitle a caller to enumerate it.
+     */
+    suspend fun umaListResources(pat: Sensitive<String>): List<String> {
+        val body = umaProtectionArray("GET", RREG_PATH, pat, "uma resource list failed")
+        return body.mapNotNull { (it as? JsonPrimitive)?.content }
+    }
+
+    /**
+     * `POST /uma2/perm` — mint a permission ticket (§20.1).
+     *
+     * Scope names are validated **here**, against each resource's declared
+     * set. Asking for an undeclared scope is a `400`, not a denial — the two
+     * are different failures, and this SDK surfaces the distinction the server
+     * draws rather than flattening it.
+     */
+    suspend fun umaRequestTicket(
+        pat: Sensitive<String>,
+        permissions: List<RequestedPermission>,
+    ): Sensitive<String> {
+        val body = JsonArray(
+            permissions.map { permission ->
+                JsonObject(
+                    mapOf(
+                        "resource_id" to JsonPrimitive(permission.resourceId),
+                        "resource_scopes" to JsonArray(permission.resourceScopes.map(::JsonPrimitive)),
+                    ),
+                )
+            },
+        )
+        val json = umaProtectionJsonBody("POST", "/uma2/perm", pat, body, "uma ticket request failed")
+        return Sensitive.of(json.str("ticket"))
+    }
+
+    /**
+     * `POST /oauth2/token` with the uma-ticket grant (§20.1) — exchange a
+     * ticket for an RPT.
+     *
+     * **This method never retries.** It issues exactly one request and is
+     * outside the §16 retry policy — not on `5xx`, not on timeout, not on any
+     * transport failure (§20.2 rule 6). The ticket is consumed *before* the
+     * request is evaluated, so a failed exchange has already spent it: a retry
+     * cannot succeed, and under concurrency it is precisely the second
+     * redemption that ilpanich/axiam#302's measured residual describes. On
+     * failure, request a **new** ticket.
+     *
+     * What this method deliberately does not do:
+     *
+     * * **No default `claimToken`** (rule 2) — it is required. Defaulting it
+     *   to the resource server's own PAT would mint an RPT for the resource
+     *   server instead of for the user.
+     * * **No auto-narrowing on `access_denied`** (rule 3). A partial grant is
+     *   refused whole.
+     * * **No adoption** (rule 4). The RPT is the *requesting party's* token.
+     *
+     * The four ticket refusals — unknown, expired, already used, wrong client
+     * — all answer `invalid_grant` with one message. This SDK does not try to
+     * tell them apart (§20.4): the server collapses them so a caller cannot
+     * probe for live ticket handles.
+     */
+    suspend fun umaExchangeTicket(params: UmaExchangeTicketParams): RequestingPartyToken {
+        val configuration = params.configuration ?: oidcDiscover()
+        val form = buildForm(
+            "grant_type" to UMA_TICKET_GRANT_TYPE,
+            "ticket" to params.ticket.expose(),
+            "claim_token" to params.claimToken.expose(),
+            "claim_token_format" to UMA_CLAIM_TOKEN_FORMAT,
+            "client_id" to requireClientId(),
+            "client_secret" to requireClientSecret("umaExchangeTicket"),
+        )
+        val url = endpointUrl(configuration.token_endpoint, params.tenantId)
+        // One POST, no retry wrapper. See the rule-6 note above — this is the
+        // §16 exception, and it is load-bearing rather than stylistic.
+        val request = Request.Builder().url(url).post(form).build()
+        val response = executeRequest(request)
+        response.use {
+            if (!it.isSuccessful) throw mapUmaGrantError(it, "uma ticket exchange request failed")
+            val json = parseJsonObject(it)
+            return RequestingPartyToken(
+                accessToken = Sensitive.of(json.str("access_token")),
+                tokenType = json.str("token_type"),
+                expiresIn = json.long("expires_in"),
+            )
+        }
+    }
+
+    /**
+     * Maps an error from the **uma-ticket grant**, where `access_denied`
+     * arrives as HTTP **403** (UMA 2.0 §3.3.6) rather than the 400 every other
+     * OAuth2 error uses.
+     *
+     * §20.4 requires dispatching on the `error` field rather than the status,
+     * so the code reaches the caller whichever status carries it. This is kept
+     * local to the ticket grant on purpose: [mapOAuth2ErrorResponse] applies
+     * the OAuth2 mapping to 400/401 only, and widening that globally would
+     * change how every OAuth2 endpoint's 403 is reported — a cross-cutting
+     * change this grant does not need. An ordinary REST 403 keeps mapping to
+     * `AuthzError`.
+     */
+    private fun mapUmaGrantError(response: Response, fallbackMessage: String): Throwable {
+        if (response.code == 403) {
+            try {
+                val body = response.peekBody(MAX_ERROR_BODY_PEEK_BYTES).string()
+                if (body.isNotBlank()) {
+                    val root = Json.parseToJsonElement(body) as? JsonObject
+                    val error = (root?.get("error") as? JsonPrimitive)?.content
+                    if (error != null) {
+                        val description = (root?.get("error_description") as? JsonPrimitive)?.content
+                            ?: fallbackMessage
+                        return OAuthProtocolError(error, description)
+                    }
+                }
+            } catch (_: Exception) {
+                // Malformed/non-JSON body: fall through rather than let a parse
+                // failure mask the real status.
+            }
+        }
+        return mapOAuth2ErrorResponse(response, fallbackMessage)
+    }
+
+    /**
+     * The wire body for a register/update.
+     *
+     * `resource_scopes` is always sent, even when empty: an update
+     * **replaces** the scope list, and omitting the key would leave the
+     * server's copy untouched (§20.2 rule 8).
+     */
+    private fun umaResourcePayload(resource: ResourceSet): JsonObject {
+        val fields = mutableMapOf<String, JsonElement>(
+            "name" to JsonPrimitive(resource.name),
+            "resource_scopes" to JsonArray(resource.resourceScopes.map(::JsonPrimitive)),
+        )
+        resource.type?.let { fields["type"] = JsonPrimitive(it) }
+        return JsonObject(fields)
+    }
+
+    private fun resourceSetFromJson(json: JsonObject): ResourceSet = ResourceSet(
+        name = json.str("name"),
+        id = json.strOrNull("_id"),
+        type = json.strOrNull("type"),
+        resourceScopes = (json["resource_scopes"] as? JsonArray)
+            ?.mapNotNull { (it as? JsonPrimitive)?.content }
+            ?: emptyList(),
+    )
+
+    /**
+     * A PAT-authenticated Protection API request returning a JSON object.
+     *
+     * The PAT goes in `Authorization`. It is an explicit argument on every
+     * Protection API call rather than this client's own session, because a PAT
+     * must be a **client-credentials** token — a ticket binds to the
+     * `client_id` that minted it — and this client's session is usually a
+     * *user* session (§20.2 rule 1).
+     */
+    private suspend fun umaProtectionJson(
+        method: String,
+        path: String,
+        pat: Sensitive<String>,
+        body: JsonObject?,
+        fallbackMessage: String,
+    ): JsonObject? {
+        val response = umaProtectionRequest(method, path, pat, body?.let { it as JsonElement })
+        response.use {
+            if (!it.isSuccessful) throw mapOAuth2ErrorResponse(it, fallbackMessage)
+            if (it.code == 204) return null
+            return parseJsonObject(it)
+        }
+    }
+
+    private suspend fun umaProtectionJsonBody(
+        method: String,
+        path: String,
+        pat: Sensitive<String>,
+        body: JsonElement,
+        fallbackMessage: String,
+    ): JsonObject {
+        val response = umaProtectionRequest(method, path, pat, body)
+        response.use {
+            if (!it.isSuccessful) throw mapOAuth2ErrorResponse(it, fallbackMessage)
+            return parseJsonObject(it)
+        }
+    }
+
+    private suspend fun umaProtectionArray(
+        method: String,
+        path: String,
+        pat: Sensitive<String>,
+        fallbackMessage: String,
+    ): JsonArray {
+        val response = umaProtectionRequest(method, path, pat, null)
+        response.use {
+            if (!it.isSuccessful) throw mapOAuth2ErrorResponse(it, fallbackMessage)
+            val text = it.body?.string().orEmpty()
+            return (Json.parseToJsonElement(text) as? JsonArray) ?: JsonArray(emptyList())
+        }
+    }
+
+    private suspend fun umaProtectionRequest(
+        method: String,
+        path: String,
+        pat: Sensitive<String>,
+        body: JsonElement?,
+    ): Response {
+        val payload = body?.let {
+            Json.encodeToString(JsonElement.serializer(), it).toRequestBody(JSON_MEDIA)
+        }
+        val request = Request.Builder()
+            .url(baseUrl + path)
+            .header("Authorization", "Bearer ${pat.expose()}")
+            .method(method, payload)
+            .build()
+        return executeRequest(request)
+    }
+
     // -- §12.7 Logout helpers ----------------------------------------------
 
     /**
@@ -1116,6 +1387,21 @@ internal class OidcSupport(
 
         /** The only `subject_token_type`/`actor_token_type` AXIAM accepts. */
         const val ACCESS_TOKEN_TYPE: String = "urn:ietf:params:oauth:token-type:access_token"
+
+        /** `grant_type` of the UMA ticket grant (UMA 2.0 §3.3.1, §20.1). */
+        const val UMA_TICKET_GRANT_TYPE: String = "urn:ietf:params:oauth:grant-type:uma-ticket"
+
+        /** The scope that makes an access token a Protection API Token (§20.2 rule 1). */
+        const val UMA_PROTECTION_SCOPE: String = "uma_protection"
+
+        /** The only `claim_token_format` AXIAM v1 accepts (§20.2 rule 2). */
+        const val UMA_CLAIM_TOKEN_FORMAT: String = "urn:ietf:params:oauth:token-type:access_token"
+
+        /** UMA 2.0 FedAuthz §2.2 fixes this path at the host root. */
+        private const val RREG_PATH: String = "/uma2/rreg/resource_set"
+
+        /** Bytes of a non-2xx body peeked when classifying a UMA grant error. */
+        private const val MAX_ERROR_BODY_PEEK_BYTES: Long = 8192
 
         /**
          * The `events` member that distinguishes a logout token from an ID
