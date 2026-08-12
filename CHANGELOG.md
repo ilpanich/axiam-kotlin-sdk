@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **§20 UMA 2.0 — Protection API and ticket grant (contract 1.10).** New suspending methods on
+  `AxiamClient`: `umaRegisterResource` / `umaReadResource` / `umaUpdateResource` /
+  `umaDeleteResource` / `umaListResources`, `umaRequestTicket`, `umaExchangeTicket`, plus the
+  top-level `umaParseChallenge` / `umaChallengeHeader` helpers and the `ResourceSet` /
+  `RequestedPermission` / `RptPermission` / `RequestingPartyToken` / `UmaChallenge` types.
+
+  Two behaviours are load-bearing rather than incidental, and both are asserted by counting
+  requests. **`umaExchangeTicket` never retries** — the one documented exception to the §16
+  retry policy, because a ticket is consumed before the request is evaluated, so a retry
+  cannot succeed and under concurrency is exactly the second redemption that
+  ilpanich/axiam#302's measured residual describes. And **`umaParseChallenge` does not
+  exchange the ticket it parsed**: the `as_uri` names an authorization server the caller has
+  not chosen to trust.
+
+  The PAT is an explicit first argument on every Protection API call rather than being taken
+  from the client's session, because that session is usually a *user* session and a ticket
+  binds to a `client_id`.
+
+  `access_denied` on the ticket grant arrives as **403** (UMA 2.0 §3.3.6), unlike RFC 8628's,
+  which is a 400. It is mapped to `OAuthProtocolError` by a mapper local to this grant rather
+  than by widening the shared 400/401 rows — an ordinary REST 403 still maps to `AuthzError`.
+
 - **§16 bounded read-only retry policy** (`internal/Retry.kt`), wired into `checkAccess`/`can`/
   `batchCheck`: 3 attempts, 200 ms base, 5 s cap, **full jitter** over `[0, backoff]`,
   `Retry-After` honored as a floor. This SDK had no §16 policy before — only §9.3's

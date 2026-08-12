@@ -10,6 +10,10 @@ import io.axiam.sdk.internal.SessionState
 import io.axiam.sdk.internal.TlsFactory
 import io.axiam.sdk.oidc.AuthorizationRequest
 import io.axiam.sdk.oidc.DeviceAuthorization
+import io.axiam.sdk.oidc.RequestedPermission
+import io.axiam.sdk.oidc.RequestingPartyToken
+import io.axiam.sdk.oidc.ResourceSet
+import io.axiam.sdk.oidc.UmaExchangeTicketParams
 import io.axiam.sdk.oidc.DeviceAuthorizeParams
 import io.axiam.sdk.oidc.DeviceLoginParams
 import io.axiam.sdk.oidc.DevicePollParams
@@ -496,6 +500,63 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
      */
     suspend fun tokenExchange(params: TokenExchangeParams): ExchangedToken =
         oidcSupport.tokenExchange(params)
+
+    // -- §20 UMA 2.0 — Protection API and ticket grant ----------------------
+
+    /**
+     * `POST /uma2/rreg/resource_set` — register a resource set (§20.1).
+     *
+     * The [pat] is an explicit parameter, not this client's session: a
+     * Protection API Token must be a **client-credentials** token, because a
+     * ticket binds to the `client_id` that minted it (§20.2 rule 1).
+     */
+    suspend fun umaRegisterResource(pat: Sensitive<String>, resource: ResourceSet): ResourceSet =
+        oidcSupport.umaRegisterResource(pat, resource)
+
+    /** `GET /uma2/rreg/resource_set/{id}` — read a resource set (§20.1). */
+    suspend fun umaReadResource(pat: Sensitive<String>, resourceId: String): ResourceSet =
+        oidcSupport.umaReadResource(pat, resourceId)
+
+    /**
+     * `PUT /uma2/rreg/resource_set/{id}` — replace a resource set (§20.1).
+     *
+     * **The scope list is replaced, not merged** (§20.2 rule 8); this performs
+     * no read-before-write.
+     */
+    suspend fun umaUpdateResource(
+        pat: Sensitive<String>,
+        resourceId: String,
+        resource: ResourceSet,
+    ): ResourceSet = oidcSupport.umaUpdateResource(pat, resourceId, resource)
+
+    /** `DELETE /uma2/rreg/resource_set/{id}` — deregister (§20.1). */
+    suspend fun umaDeleteResource(pat: Sensitive<String>, resourceId: String): Unit =
+        oidcSupport.umaDeleteResource(pat, resourceId)
+
+    /**
+     * `GET /uma2/rreg/resource_set` — list the ids **this client** registered
+     * (§20.1). Not the tenant's whole resource tree.
+     */
+    suspend fun umaListResources(pat: Sensitive<String>): List<String> =
+        oidcSupport.umaListResources(pat)
+
+    /** `POST /uma2/perm` — mint a permission ticket (§20.1). */
+    suspend fun umaRequestTicket(
+        pat: Sensitive<String>,
+        permissions: List<RequestedPermission>,
+    ): Sensitive<String> = oidcSupport.umaRequestTicket(pat, permissions)
+
+    /**
+     * `POST /oauth2/token` with the uma-ticket grant (§20.1).
+     *
+     * **Never retries** (§20.2 rule 6): the ticket is consumed before the
+     * request is evaluated, so a failed exchange has already spent it — and
+     * under concurrency a retry is the second redemption that
+     * ilpanich/axiam#302's measured residual describes. Request a new ticket
+     * instead.
+     */
+    suspend fun umaExchangeTicket(params: UmaExchangeTicketParams): RequestingPartyToken =
+        oidcSupport.umaExchangeTicket(params)
 
     /**
      * Build the RP-initiated logout URL to redirect the user agent to
