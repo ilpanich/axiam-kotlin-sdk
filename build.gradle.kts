@@ -89,6 +89,12 @@ configurations["examplesRuntimeOnly"].extendsFrom(configurations["runtimeOnly"])
 
 dependencies {
     "examplesImplementation"(sourceSets["main"].output)
+    // The UMA resource-server example runs a real Ktor server, which the SDK
+    // itself only depends on at compile time (Ktor users bring their own
+    // engine). The examples source set therefore needs both the server core the
+    // plugin is written against and an engine to actually listen on.
+    "examplesImplementation"("io.ktor:ktor-server-core:$ktorVersion")
+    "examplesImplementation"("io.ktor:ktor-server-netty:$ktorVersion")
 }
 
 // Point the examples compilation at the flat examples/ tree (mirrors the other
@@ -120,6 +126,20 @@ val runOidcLoginExample by tasks.registering(JavaExec::class) {
     classpath = examples.runtimeClasspath
     mainClass.set("io.axiam.sdk.examples.oidclogin.OidcLoginExample")
     standardInput = System.`in`
+}
+
+val runUmaResourceServerExample by tasks.registering(JavaExec::class) {
+    group = "examples"
+    description = "Run examples/uma-resource-server/UmaResourceServerExample.kt"
+    classpath = examples.runtimeClasspath
+    mainClass.set("io.axiam.sdk.examples.umaresourceserver.UmaResourceServerExample")
+}
+
+val runUmaClientExample by tasks.registering(JavaExec::class) {
+    group = "examples"
+    description = "Run examples/uma-client/UmaClientExample.kt"
+    classpath = examples.runtimeClasspath
+    mainClass.set("io.axiam.sdk.examples.umaclient.UmaClientExample")
 }
 
 // Dokka -> javadoc jar (javadoc.io serves this verbatim).
