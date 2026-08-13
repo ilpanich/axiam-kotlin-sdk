@@ -1395,7 +1395,7 @@ internal class OidcSupport(
          * caller names for the same-domain exchange of §15.1. There is no
          * default: the type is a required property of [TokenExchangeParams].
          */
-        const val ACCESS_TOKEN_TYPE: String = "urn:ietf:params:oauth:token-type:access_token"
+        const val ACCESS_TOKEN_TYPE: String = io.axiam.sdk.oidc.ACCESS_TOKEN_TYPE
 
         /**
          * A JWT from a trusted external issuer — the cross-domain exchange of
@@ -1405,7 +1405,7 @@ internal class OidcSupport(
          * partner IdP's token. AXIAM also accepts [ACCESS_TOKEN_TYPE] for an
          * external issuer, and refuses refresh and ID token types **by name**.
          */
-        const val JWT_TOKEN_TYPE: String = "urn:ietf:params:oauth:token-type:jwt"
+        const val JWT_TOKEN_TYPE: String = io.axiam.sdk.oidc.JWT_TOKEN_TYPE
 
         /** `grant_type` of the UMA ticket grant (UMA 2.0 §3.3.1, §20.1). */
         const val UMA_TICKET_GRANT_TYPE: String = "urn:ietf:params:oauth:grant-type:uma-ticket"

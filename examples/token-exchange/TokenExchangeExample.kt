@@ -3,6 +3,7 @@ package io.axiam.sdk.examples.tokenexchange
 import io.axiam.sdk.AxiamClient
 import io.axiam.sdk.Sensitive
 import io.axiam.sdk.errors.OAuthProtocolError
+import io.axiam.sdk.oidc.ACCESS_TOKEN_TYPE
 import io.axiam.sdk.oidc.TokenExchangeParams
 import kotlinx.coroutines.runBlocking
 
@@ -46,7 +47,9 @@ object TokenExchangeExample {
                 it.tokenExchange(
                     TokenExchangeParams(
                         subjectToken = Sensitive.of(userToken),
-                        subjectTokenType = OidcSupport.ACCESS_TOKEN_TYPE,
+                        // Required (§15.1), no default: only you know what kind of
+                        // token you are holding.
+                        subjectTokenType = ACCESS_TOKEN_TYPE,
                         scopes = listOf("orders:read"),
                         audience = "orders-service",
                         tenantId = tenantId,

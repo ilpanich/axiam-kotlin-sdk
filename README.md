@@ -391,7 +391,7 @@ next service.
 val exchanged = client.tokenExchange(
     TokenExchangeParams(
         subjectToken = Sensitive.of(userToken),
-        subjectTokenType = OidcSupport.ACCESS_TOKEN_TYPE, // required (§15.1)
+        subjectTokenType = ACCESS_TOKEN_TYPE, // required (§15.1)
         scopes = listOf("orders:read"),
         audience = "orders-service",
     ),
@@ -419,7 +419,7 @@ no separate operation:
 val exchanged = client.tokenExchange(
     TokenExchangeParams(
         subjectToken = Sensitive.of(partnerToken),
-        subjectTokenType = OidcSupport.JWT_TOKEN_TYPE, // required; named, never guessed
+        subjectTokenType = JWT_TOKEN_TYPE, // required; named, never guessed
         scopes = listOf("read:orders"),
         audience = "https://orders.internal",
     ),

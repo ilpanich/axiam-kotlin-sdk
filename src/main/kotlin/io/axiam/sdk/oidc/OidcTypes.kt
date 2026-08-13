@@ -357,6 +357,28 @@ data class SsoCompleteResult(
 // ---------------------------------------------------------------------------
 
 /**
+ * The `actor_token_type` this SDK sends, and the `subject_token_type` a caller
+ * names for the same-domain exchange of §15.1 — an AXIAM-issued access token.
+ *
+ * There is no default: [TokenExchangeParams.subjectTokenType] is required.
+ *
+ * Public because a caller must be able to name it. `OidcSupport` is `internal`,
+ * so the constants that lived only there were unreachable from outside the
+ * module — which was survivable while the type was optional and defaulted, and
+ * is not now that naming it is mandatory.
+ */
+public const val ACCESS_TOKEN_TYPE: String = "urn:ietf:params:oauth:token-type:access_token"
+
+/**
+ * A JWT from a trusted external issuer — the cross-domain exchange of §15.7.
+ *
+ * Pass it as [TokenExchangeParams.subjectTokenType] to exchange a partner IdP's
+ * token. AXIAM also accepts [ACCESS_TOKEN_TYPE] for an external issuer, and
+ * refuses refresh and ID token types **by name**.
+ */
+public const val JWT_TOKEN_TYPE: String = "urn:ietf:params:oauth:token-type:jwt"
+
+/**
  * Arguments to `deviceAuthorize` (CONTRACT.md §14.1).
  *
  * @property scope space-separated scope to request; omitted when `null`
@@ -446,8 +468,8 @@ data class DeviceLoginParams(
  *   **Required** (§15.1), with no default and deliberately no nullability: a
  *   property that can hold "no answer" forces the SDK to have one ready, and
  *   any answer it picks is the guess §15.7 forbids. Pass
- *   [OidcSupport.ACCESS_TOKEN_TYPE] for the same-domain exchange, or
- *   [OidcSupport.JWT_TOKEN_TYPE] for a trusted external issuer's JWT (§15.7).
+ *   [ACCESS_TOKEN_TYPE] for the same-domain exchange, or [JWT_TOKEN_TYPE] for
+ *   a trusted external issuer's JWT (§15.7).
  *   The SDK never reads [subjectToken] to decide it: which kind of token you
  *   hold is something only you know, AXIAM refuses refresh and ID token types
  *   by name, and the SDK will not retry a refusal as a different type
