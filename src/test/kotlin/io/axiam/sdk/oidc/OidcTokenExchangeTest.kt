@@ -66,6 +66,7 @@ class OidcTokenExchangeTest {
         val result = confidentialClient().tokenExchange(
             TokenExchangeParams(
                 subjectToken = Sensitive.of(subjectToken),
+                subjectTokenType = OidcSupport.ACCESS_TOKEN_TYPE,
                 scopes = listOf("orders:read", "orders:write"),
                 audience = "orders-service",
                 tenantId = tenantId,
@@ -103,7 +104,7 @@ class OidcTokenExchangeTest {
         assertThrows(AuthError::class.java) {
             runBlocking {
                 OidcTestKit.clientFor(server).tokenExchange(
-                    TokenExchangeParams(subjectToken = Sensitive.of(subjectToken), tenantId = tenantId),
+                    TokenExchangeParams(subjectToken = Sensitive.of(subjectToken), subjectTokenType = OidcSupport.ACCESS_TOKEN_TYPE, tenantId = tenantId),
                 )
             }
         }
@@ -119,7 +120,7 @@ class OidcTokenExchangeTest {
         mountExchange()
 
         confidentialClient().tokenExchange(
-            TokenExchangeParams(subjectToken = Sensitive.of(subjectToken), tenantId = tenantId),
+            TokenExchangeParams(subjectToken = Sensitive.of(subjectToken), subjectTokenType = OidcSupport.ACCESS_TOKEN_TYPE, tenantId = tenantId),
         )
 
         val body = decodedTokenBody()
@@ -136,6 +137,7 @@ class OidcTokenExchangeTest {
         confidentialClient().tokenExchange(
             TokenExchangeParams(
                 subjectToken = Sensitive.of(subjectToken),
+                subjectTokenType = OidcSupport.ACCESS_TOKEN_TYPE,
                 actorToken = Sensitive.of(actorToken),
                 tenantId = tenantId,
             ),
@@ -175,6 +177,7 @@ class OidcTokenExchangeTest {
                     confidentialClient().tokenExchange(
                         TokenExchangeParams(
                             subjectToken = Sensitive.of(subjectToken),
+                            subjectTokenType = OidcSupport.ACCESS_TOKEN_TYPE,
                             scopes = listOf("orders:read", "orders:admin"),
                             tenantId = tenantId,
                         ),
@@ -200,7 +203,7 @@ class OidcTokenExchangeTest {
         mountExchange(refreshToken = "should-not-exist")
 
         val result = confidentialClient().tokenExchange(
-            TokenExchangeParams(subjectToken = Sensitive.of(subjectToken), tenantId = tenantId),
+            TokenExchangeParams(subjectToken = Sensitive.of(subjectToken), subjectTokenType = OidcSupport.ACCESS_TOKEN_TYPE, tenantId = tenantId),
         )
 
         assertFalse(result.toString().contains("should-not-exist"))
@@ -214,6 +217,7 @@ class OidcTokenExchangeTest {
         val result = confidentialClient().tokenExchange(
             TokenExchangeParams(
                 subjectToken = Sensitive.of(subjectToken),
+                subjectTokenType = OidcSupport.ACCESS_TOKEN_TYPE,
                 scopes = listOf("orders:read", "orders:write"),
                 tenantId = tenantId,
             ),
@@ -231,6 +235,7 @@ class OidcTokenExchangeTest {
         val result = confidentialClient().tokenExchange(
             TokenExchangeParams(
                 subjectToken = Sensitive.of(subjectToken),
+                subjectTokenType = OidcSupport.ACCESS_TOKEN_TYPE,
                 scopes = emptyList(),
                 tenantId = tenantId,
             ),
@@ -246,7 +251,7 @@ class OidcTokenExchangeTest {
         mountExchange()
 
         val result = confidentialClient().tokenExchange(
-            TokenExchangeParams(subjectToken = Sensitive.of(subjectToken), tenantId = tenantId),
+            TokenExchangeParams(subjectToken = Sensitive.of(subjectToken), subjectTokenType = OidcSupport.ACCESS_TOKEN_TYPE, tenantId = tenantId),
         )
 
         assertFalse(
@@ -267,6 +272,7 @@ class OidcTokenExchangeTest {
                 confidentialClient().tokenExchange(
                     TokenExchangeParams(
                         subjectToken = Sensitive.of(subjectToken),
+                        subjectTokenType = OidcSupport.ACCESS_TOKEN_TYPE,
                         actorToken = Sensitive.of(actorToken),
                         tenantId = tenantId,
                     ),
@@ -286,6 +292,7 @@ class OidcTokenExchangeTest {
         confidentialClient().tokenExchange(
             TokenExchangeParams(
                 subjectToken = Sensitive.of(subjectToken),
+                subjectTokenType = OidcSupport.ACCESS_TOKEN_TYPE,
                 resource = "https://orders.example.com",
                 tenantId = tenantId,
             ),
@@ -358,12 +365,13 @@ class OidcTokenExchangeTest {
     fun `subject_token_type is never inferred from the token itself`(): Unit = runBlocking {
         mountExchange()
 
-        // A subject token that *looks* exactly like a JWT. An SDK that sniffed
-        // the token would send …:jwt here; §15.7 says it must not look, so the
-        // caller's silence still means the §15.1 same-domain default.
+        // A subject token that *looks* exactly like a JWT, presented as an access
+        // token. An SDK that sniffed the token would "correct" this to …:jwt;
+        // §15.7 says it must not look, so what the caller named is what goes
+        // out. Being able to hold this wrong is the point: only the caller knows.
         val jwtShaped = "eyJhbGciOiJFZERTQSJ9.eyJpc3MiOiJodHRwczovL3BhcnRuZXIuZXhhbXBsZS8ifQ.sig"
         confidentialClient().tokenExchange(
-            TokenExchangeParams(subjectToken = Sensitive.of(jwtShaped), tenantId = tenantId),
+            TokenExchangeParams(subjectToken = Sensitive.of(jwtShaped), subjectTokenType = OidcSupport.ACCESS_TOKEN_TYPE, tenantId = tenantId),
         )
 
         assertTrue(
@@ -371,6 +379,29 @@ class OidcTokenExchangeTest {
                 "subject_token_type=urn:ietf:params:oauth:token-type:access_token",
             ),
             "§15.7: the token's shape must not pick the type",
+        )
+    }
+
+    @Test
+    fun `subjectTokenType is required and cannot be omitted`(): Unit = runBlocking {
+        // §15.1 makes the type required, and Kotlin is one of the languages that
+        // can refuse the call outright: `TokenExchangeParams(subjectToken = …)`
+        // with no `subjectTokenType` does not compile, and the property is
+        // non-null so it cannot be set to "no answer" either. That refusal IS
+        // the enforcement — there is no runtime path to assert, because the
+        // compiler never lets one exist.
+        //
+        // What this test can pin is that the property is genuinely non-null and
+        // carries what the caller gave it, so a future change back to
+        // `String? = null` fails here as well as in review.
+        val params = TokenExchangeParams(
+            subjectToken = Sensitive.of(subjectToken),
+            subjectTokenType = OidcSupport.JWT_TOKEN_TYPE,
+        )
+        assertEquals(OidcSupport.JWT_TOKEN_TYPE, params.subjectTokenType)
+        assertTrue(
+            params.subjectTokenType.isNotEmpty(),
+            "§15.1: the type is required, so it always has a caller-chosen value",
         )
     }
 

@@ -7,25 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING (contract 1.13): `TokenExchangeParams.subjectTokenType` is now required**, and its
+  type narrows from `String?` to `String` with no default.
+
+  It shipped as `String? = null`, defaulting to `ACCESS_TOKEN_TYPE` — which satisfied §15.7's
+  "never inspect the subject token" while leaving the rule it serves unenforced: an optional
+  property with a default *is* a default the SDK applies whenever the caller says nothing. §15.1
+  now makes it required.
+
+  **`ACCESS_TOKEN_TYPE` and `JWT_TOKEN_TYPE` are now public top-level constants** in
+  `io.axiam.sdk.oidc`, rather than members of the `internal` `OidcSupport`. They were
+  unreachable from outside the module — survivable while the type was optional and defaulted,
+  and not once naming it is mandatory: a caller could not have named it at all without retyping
+  the URN. `OidcSupport`'s copies now delegate to them, so there is one source of truth. This
+  was caught by `compileExamplesKotlin`, which the example could not compile against.
+
+  **Dropping the nullability is the point rather than a side effect.** A property that can hold
+  "no answer" forces the SDK to have one ready, and any answer it picks is the guess §15.7
+  forbids. `String` cannot represent "the caller declined to say", so the compiler carries the
+  rule: omitting the argument does not compile.
+
+  **Migration** — one line, naming what you were previously getting by silence:
+
+  ```kotlin
+  val exchanged = client.tokenExchange(
+      TokenExchangeParams(
+          subjectToken = Sensitive.of(userToken),
+          subjectTokenType = ACCESS_TOKEN_TYPE, // <- add this
+          scopes = listOf("orders:read"),
+      ),
+  )
+  ```
+
+  This closes a gap rather than opening one: `subject_token_type` has always been required *on
+  the wire*, and the SDK was covering for that with a constant which stopped being the only legal
+  value when X4 landed. For a caller who actually held a refresh token, the old default traded
+  the `invalid_request` that names the type for a generic `invalid_grant`.
+
 ### Added
 
 - **§15.7 external-IdP subject tokens (X4).** `tokenExchange` can now exchange a token minted by a
   trusted external IdP — a partner's Entra, Okta or Keycloak — for an AXIAM token scoped to what
   the resolved AXIAM user may actually do. No new operation: the same method, plus
-  `TokenExchangeParams.subjectTokenType` and the new `OidcSupport.JWT_TOKEN_TYPE` constant
+  `TokenExchangeParams.subjectTokenType` and the new `JWT_TOKEN_TYPE` constant
   alongside the existing `ACCESS_TOKEN_TYPE`.
 
   **The type is the caller's to name, never the SDK's to guess.** §15.7 forbids inspecting the
   subject token to pick it, because which kind of token you hold is something only you know and a
   wrong guess is the difference between a request that is refused and one that is silently
-  reinterpreted. Leaving `subjectTokenType` null still sends `…:access_token`, so every existing
-  caller is unaffected; a JWT-shaped subject token does **not** change what is sent, which is
-  asserted by a test.
+  reinterpreted. A JWT-shaped subject token does **not** change what is sent, which is asserted by
+  a test. (This shipped as `String? = null` with an `…:access_token` default; contract 1.13 made
+  it non-null and required — see *Changed* above.)
 
-  The new property sits second in `TokenExchangeParams`, next to `subjectToken` it describes and
-  matching the other SDKs. Every call site in this repo and both examples use named arguments, as
-  the type's own documentation asks — a caller constructing it *positionally* would need to
-  adjust.
+  The property sits second in `TokenExchangeParams`, next to the `subjectToken` it describes and
+  matching the other SDKs.
 
   Also asserted: an `actorToken` alongside an external subject token surfaces `invalid_request`
   with no retry and no request rewriting; a refused refresh or ID token type is never retried as a

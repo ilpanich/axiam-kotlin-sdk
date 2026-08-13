@@ -675,7 +675,7 @@ internal class OidcSupport(
             // holds is the caller's to know, and a guess here is the
             // difference between a request that is refused and one that is
             // silently reinterpreted.
-            "subject_token_type" to (params.subjectTokenType ?: ACCESS_TOKEN_TYPE),
+            "subject_token_type" to params.subjectTokenType,
             "actor_token" to params.actorToken?.expose(),
             // Sent exactly when `actor_token` is: RFC 8693 §2.1 requires the
             // pair, and the type alone is a malformed request. `buildForm`
@@ -1391,11 +1391,11 @@ internal class OidcSupport(
             "urn:ietf:params:oauth:grant-type:token-exchange"
 
         /**
-         * The `actor_token_type` this SDK sends, and the `subject_token_type`
-         * it sends when the caller names none — an AXIAM-issued access token
-         * (§15.1).
+         * The `actor_token_type` this SDK sends, and the `subject_token_type` a
+         * caller names for the same-domain exchange of §15.1. There is no
+         * default: the type is a required property of [TokenExchangeParams].
          */
-        const val ACCESS_TOKEN_TYPE: String = "urn:ietf:params:oauth:token-type:access_token"
+        const val ACCESS_TOKEN_TYPE: String = io.axiam.sdk.oidc.ACCESS_TOKEN_TYPE
 
         /**
          * A JWT from a trusted external issuer — the cross-domain exchange of
@@ -1405,7 +1405,7 @@ internal class OidcSupport(
          * partner IdP's token. AXIAM also accepts [ACCESS_TOKEN_TYPE] for an
          * external issuer, and refuses refresh and ID token types **by name**.
          */
-        const val JWT_TOKEN_TYPE: String = "urn:ietf:params:oauth:token-type:jwt"
+        const val JWT_TOKEN_TYPE: String = io.axiam.sdk.oidc.JWT_TOKEN_TYPE
 
         /** `grant_type` of the UMA ticket grant (UMA 2.0 §3.3.1, §20.1). */
         const val UMA_TICKET_GRANT_TYPE: String = "urn:ietf:params:oauth:grant-type:uma-ticket"
