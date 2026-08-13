@@ -670,7 +670,12 @@ internal class OidcSupport(
         val form = buildForm(
             "grant_type" to TOKEN_EXCHANGE_GRANT_TYPE,
             "subject_token" to params.subjectToken.expose(),
-            "subject_token_type" to ACCESS_TOKEN_TYPE,
+            // Whatever the caller named, verbatim. The subject token is NEVER
+            // decoded to pick this (§15.7): which kind of token the caller
+            // holds is the caller's to know, and a guess here is the
+            // difference between a request that is refused and one that is
+            // silently reinterpreted.
+            "subject_token_type" to (params.subjectTokenType ?: ACCESS_TOKEN_TYPE),
             "actor_token" to params.actorToken?.expose(),
             // Sent exactly when `actor_token` is: RFC 8693 §2.1 requires the
             // pair, and the type alone is a malformed request. `buildForm`
@@ -1385,8 +1390,22 @@ internal class OidcSupport(
         const val TOKEN_EXCHANGE_GRANT_TYPE: String =
             "urn:ietf:params:oauth:grant-type:token-exchange"
 
-        /** The only `subject_token_type`/`actor_token_type` AXIAM accepts. */
+        /**
+         * The `actor_token_type` this SDK sends, and the `subject_token_type`
+         * it sends when the caller names none — an AXIAM-issued access token
+         * (§15.1).
+         */
         const val ACCESS_TOKEN_TYPE: String = "urn:ietf:params:oauth:token-type:access_token"
+
+        /**
+         * A JWT from a trusted external issuer — the cross-domain exchange of
+         * §15.7.
+         *
+         * Pass it as [TokenExchangeParams.subjectTokenType] to exchange a
+         * partner IdP's token. AXIAM also accepts [ACCESS_TOKEN_TYPE] for an
+         * external issuer, and refuses refresh and ID token types **by name**.
+         */
+        const val JWT_TOKEN_TYPE: String = "urn:ietf:params:oauth:token-type:jwt"
 
         /** `grant_type` of the UMA ticket grant (UMA 2.0 §3.3.1, §20.1). */
         const val UMA_TICKET_GRANT_TYPE: String = "urn:ietf:params:oauth:grant-type:uma-ticket"

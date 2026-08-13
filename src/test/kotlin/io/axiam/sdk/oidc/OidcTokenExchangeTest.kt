@@ -295,4 +295,231 @@ class OidcTokenExchangeTest {
         // they disagree, so the SDK passes both through rather than choosing.
         assertTrue(decodedTokenBody().contains("resource=https://orders.example.com"))
     }
+
+    // -----------------------------------------------------------------------
+    // §15.7 — external-IdP subject tokens (X4)
+    //
+    // No new operation: the same tokenExchange carries a partner IdP's token.
+    // What changes is which subject tokens the server accepts and what its
+    // refusals mean, so these tests are about not getting in the way of
+    // either.
+    // -----------------------------------------------------------------------
+
+    /**
+     * A token minted by a partner's IdP. Opaque to the SDK — deliberately not
+     * a well-formed JWT, because nothing here may decode it.
+     */
+    private val externalSubjectToken = "partner-idp-subject-token"
+
+    /**
+     * The one normative `error_description` (§15.7). It means "fix the AXIAM
+     * trust configuration", not "fix your token".
+     */
+    private val issuerNotConfigured =
+        "the subject token's issuer is not configured for token exchange"
+
+    @Test
+    fun `an external subject_token_type is sent verbatim and the result surfaces unchanged`(): Unit = runBlocking {
+        mountExchange(scope = "read:orders")
+
+        val result = confidentialClient().tokenExchange(
+            TokenExchangeParams(
+                subjectToken = Sensitive.of(externalSubjectToken),
+                subjectTokenType = OidcSupport.JWT_TOKEN_TYPE,
+                scopes = listOf("read:orders"),
+                audience = "https://orders.internal",
+                tenantId = tenantId,
+            ),
+        )
+
+        val body = decodedTokenBody()
+        // The caller named …:jwt, so …:jwt goes on the wire. §15.7: the SDK
+        // must not inspect the subject token to pick this, and must not
+        // override it.
+        assertTrue(
+            body.contains("subject_token_type=urn:ietf:params:oauth:token-type:jwt"),
+            "the caller's …:jwt must reach the wire, got: $body",
+        )
+        assertTrue(body.contains("subject_token=$externalSubjectToken"))
+        // Delegation across a trust boundary is unsupported; nothing may add one.
+        assertFalse(
+            body.contains("actor_token"),
+            "§15.7: no actor_token may be invented for an external exchange",
+        )
+
+        // The cross-domain path is not a different result shape, and §15.2
+        // rules 6-7 still hold.
+        assertEquals(OidcTestKit.ISSUED_TOKEN, result.accessToken.expose())
+        assertEquals("urn:ietf:params:oauth:token-type:access_token", result.issuedTokenType)
+        assertEquals("read:orders", result.scope)
+    }
+
+    @Test
+    fun `subject_token_type is never inferred from the token itself`(): Unit = runBlocking {
+        mountExchange()
+
+        // A subject token that *looks* exactly like a JWT. An SDK that sniffed
+        // the token would send …:jwt here; §15.7 says it must not look, so the
+        // caller's silence still means the §15.1 same-domain default.
+        val jwtShaped = "eyJhbGciOiJFZERTQSJ9.eyJpc3MiOiJodHRwczovL3BhcnRuZXIuZXhhbXBsZS8ifQ.sig"
+        confidentialClient().tokenExchange(
+            TokenExchangeParams(subjectToken = Sensitive.of(jwtShaped), tenantId = tenantId),
+        )
+
+        assertTrue(
+            decodedTokenBody().contains(
+                "subject_token_type=urn:ietf:params:oauth:token-type:access_token",
+            ),
+            "§15.7: the token's shape must not pick the type",
+        )
+    }
+
+    @Test
+    fun `an actor token with an external subject token is refused without retry`(): Unit = runBlocking {
+        val calls = AtomicInteger(0)
+        dispatcher.on("/oauth2/token") {
+            calls.incrementAndGet()
+            okhttp3.mockwebserver.MockResponse()
+                .setResponseCode(400)
+                .addHeader("Content-Type", "application/json")
+                .setBody(
+                    OidcTestKit.oauth2ErrorJson(
+                        "invalid_request",
+                        "actor_token is not supported for an external subject token",
+                    ),
+                )
+        }
+
+        val error = assertThrows(OAuthProtocolError::class.java) {
+            runBlocking {
+                confidentialClient().tokenExchange(
+                    TokenExchangeParams(
+                        subjectToken = Sensitive.of(externalSubjectToken),
+                        subjectTokenType = OidcSupport.JWT_TOKEN_TYPE,
+                        actorToken = Sensitive.of(actorToken),
+                        tenantId = tenantId,
+                    ),
+                )
+            }
+        }
+
+        assertEquals("invalid_request", error.error)
+        // §15.7: no retry, and no rewriting. Dropping the actor token and
+        // re-sending would turn a delegation the caller asked for into an
+        // impersonation they did not.
+        assertEquals(1, calls.get(), "exactly one request")
+        val body = decodedTokenBody()
+        assertTrue(
+            body.contains("actor_token=$actorToken"),
+            "the request must be sent as written, actor token included",
+        )
+        assertTrue(
+            body.contains("subject_token_type=urn:ietf:params:oauth:token-type:jwt"),
+            "subject_token_type must not be rewritten",
+        )
+    }
+
+    @Test
+    fun `a refused subject_token_type is never retried as another`(): Unit = runBlocking {
+        // A refresh token is a re-authentication credential and an ID token is
+        // an assertion to a client about a login; neither is a bearer
+        // credential for an API, so both are refused BY NAME. Retrying as
+        // …:jwt would present one as if it were.
+        for (refused in listOf(
+            "urn:ietf:params:oauth:token-type:refresh_token",
+            "urn:ietf:params:oauth:token-type:id_token",
+        )) {
+            val calls = AtomicInteger(0)
+            dispatcher.on("/oauth2/token") {
+                calls.incrementAndGet()
+                okhttp3.mockwebserver.MockResponse()
+                    .setResponseCode(400)
+                    .addHeader("Content-Type", "application/json")
+                    .setBody(
+                        OidcTestKit.oauth2ErrorJson(
+                            "invalid_request",
+                            "unsupported subject_token_type $refused",
+                        ),
+                    )
+            }
+
+            assertThrows(OAuthProtocolError::class.java) {
+                runBlocking {
+                    confidentialClient().tokenExchange(
+                        TokenExchangeParams(
+                            subjectToken = Sensitive.of(externalSubjectToken),
+                            subjectTokenType = refused,
+                            tenantId = tenantId,
+                        ),
+                    )
+                }
+            }
+
+            assertEquals(1, calls.get(), "no retry after a refused type")
+            assertTrue(
+                decodedTokenBody().contains("subject_token_type=$refused"),
+                "§15.7: the refused type must be sent as named, not swapped",
+            )
+        }
+    }
+
+    @Test
+    fun `the issuer-not-configured description reaches the caller intact`(): Unit = runBlocking {
+        dispatcher.onJson(
+            "/oauth2/token",
+            400,
+            OidcTestKit.oauth2ErrorJson("invalid_grant", issuerNotConfigured),
+        )
+
+        val error = assertThrows(OAuthProtocolError::class.java) {
+            runBlocking {
+                confidentialClient().tokenExchange(
+                    TokenExchangeParams(
+                        subjectToken = Sensitive.of(externalSubjectToken),
+                        subjectTokenType = OidcSupport.JWT_TOKEN_TYPE,
+                        tenantId = tenantId,
+                    ),
+                )
+            }
+        }
+
+        assertEquals("invalid_grant", error.error)
+        // This is the ONLY distinguishable external failure, and the whole
+        // point of it is that an integrator can tell "fix the AXIAM trust
+        // config" from "fix your token". Truncating or rewording it destroys
+        // that.
+        assertEquals(issuerNotConfigured, error.errorDescription)
+    }
+
+    @Test
+    fun `no helper re-exchanges an externally exchanged token`(): Unit = runBlocking {
+        // Tokens minted from an external subject token carry `ext_exchange`,
+        // and BOTH exchange paths refuse a subject token bearing it: exchanges
+        // do not compose. The SDK's part is to never feed a result back in by
+        // itself.
+        val calls = AtomicInteger(0)
+        dispatcher.on("/oauth2/token") {
+            calls.incrementAndGet()
+            okhttp3.mockwebserver.MockResponse()
+                .setResponseCode(200)
+                .addHeader("Content-Type", "application/json")
+                .setBody(OidcTestKit.exchangeResponseJson("read:orders", null))
+        }
+
+        val result = confidentialClient().tokenExchange(
+            TokenExchangeParams(
+                subjectToken = Sensitive.of(externalSubjectToken),
+                subjectTokenType = OidcSupport.JWT_TOKEN_TYPE,
+                tenantId = tenantId,
+            ),
+        )
+
+        assertEquals(OidcTestKit.ISSUED_TOKEN, result.accessToken.expose())
+        // Exactly one exchange happened: nothing looped the result back in.
+        // §15.2 rule 5 is what stops it — had the result been adopted, the next
+        // exchange would carry it as a *subject* token, which is exactly the
+        // re-exchange §15.7 forbids, arrived at by accident rather than by
+        // decision.
+        assertEquals(1, calls.get(), "exactly one exchange — nothing re-exchanged the result")
+    }
 }
