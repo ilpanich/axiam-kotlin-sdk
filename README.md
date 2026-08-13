@@ -408,6 +408,37 @@ Most of what this method does is refuse to be helpful:
 
 See [`examples/token-exchange/TokenExchangeExample.kt`](examples/token-exchange/TokenExchangeExample.kt).
 
+### External-IdP subject tokens (§15.7)
+
+The same method exchanges a token minted by a **trusted external IdP** — a partner's Entra, Okta
+or Keycloak — for an AXIAM token scoped to what the resolved AXIAM user may actually do. There is
+no separate operation:
+
+```kotlin
+val exchanged = client.tokenExchange(
+    TokenExchangeParams(
+        subjectToken = Sensitive.of(partnerToken),
+        subjectTokenType = OidcSupport.JWT_TOKEN_TYPE, // named, never guessed
+        scopes = listOf("read:orders"),
+        audience = "https://orders.internal",
+    ),
+)
+```
+
+- **`subjectTokenType` is yours to state.** The SDK never decodes the subject token to pick it, and
+  never overrides what you named. Leaving it `null` still means `OidcSupport.ACCESS_TOKEN_TYPE`,
+  the same-domain exchange above.
+- **No actor token.** Delegation across a trust boundary is unsupported in v1; sending one is
+  `invalid_request`, which the SDK will not work around by dropping it and re-sending.
+- **One refusal is distinguishable.** `invalid_grant` whose `errorDescription` is `the subject
+  token's issuer is not configured for token exchange` means *fix the AXIAM trust configuration*.
+  Every other `invalid_grant` means *fix your token*, and is deliberately generic.
+- **Forward the result as-is.** It carries an `ext_exchange` claim naming the partner issuer; never
+  strip it, and never read it as an authorization input. It also cannot be exchanged again —
+  exchanges do not compose.
+
+The operator guide is `docs/api/federated-token-exchange.md`.
+
 ## Logout — RP-initiated and back-channel (§12.7)
 
 `logoutUrl` builds the redirect; `verifyLogoutToken` validates a token the OP **pushed** to your
