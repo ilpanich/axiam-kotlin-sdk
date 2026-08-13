@@ -442,13 +442,15 @@ data class DeviceLoginParams(
  * strings in positional order is a bug waiting to be written (§15.1).
  *
  * @property subjectToken the token being exchanged (§15.5 secret)
- * @property subjectTokenType what kind of token [subjectToken] is. `null`
- *   sends [OidcSupport.ACCESS_TOKEN_TYPE], the same-domain exchange of §15.1;
- *   to exchange a token from a **trusted external issuer** (§15.7), set this
- *   explicitly — normally to [OidcSupport.JWT_TOKEN_TYPE]. The SDK never reads
- *   [subjectToken] to decide it: which kind of token you hold is something
- *   only you know, AXIAM refuses refresh and ID token types by name, and the
- *   SDK will not retry a refusal as a different type
+ * @property subjectTokenType what kind of token [subjectToken] is.
+ *   **Required** (§15.1), with no default and deliberately no nullability: a
+ *   property that can hold "no answer" forces the SDK to have one ready, and
+ *   any answer it picks is the guess §15.7 forbids. Pass
+ *   [OidcSupport.ACCESS_TOKEN_TYPE] for the same-domain exchange, or
+ *   [OidcSupport.JWT_TOKEN_TYPE] for a trusted external issuer's JWT (§15.7).
+ *   The SDK never reads [subjectToken] to decide it: which kind of token you
+ *   hold is something only you know, AXIAM refuses refresh and ID token types
+ *   by name, and the SDK will not retry a refusal as a different type
  * @property actorToken the acting party, when this is a **delegation** (§15.2
  *   rule 1). Its absence selects **impersonation** — a different operation with
  *   different risk. The SDK never fills this in for you
@@ -461,7 +463,7 @@ data class DeviceLoginParams(
  */
 data class TokenExchangeParams(
     val subjectToken: Sensitive<String>,
-    val subjectTokenType: String? = null,
+    val subjectTokenType: String,
     val actorToken: Sensitive<String>? = null,
     val scopes: List<String>? = null,
     val audience: String? = null,

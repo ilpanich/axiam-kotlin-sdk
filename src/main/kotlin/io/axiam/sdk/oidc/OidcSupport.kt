@@ -675,7 +675,7 @@ internal class OidcSupport(
             // holds is the caller's to know, and a guess here is the
             // difference between a request that is refused and one that is
             // silently reinterpreted.
-            "subject_token_type" to (params.subjectTokenType ?: ACCESS_TOKEN_TYPE),
+            "subject_token_type" to params.subjectTokenType,
             "actor_token" to params.actorToken?.expose(),
             // Sent exactly when `actor_token` is: RFC 8693 §2.1 requires the
             // pair, and the type alone is a malformed request. `buildForm`
@@ -1391,9 +1391,9 @@ internal class OidcSupport(
             "urn:ietf:params:oauth:grant-type:token-exchange"
 
         /**
-         * The `actor_token_type` this SDK sends, and the `subject_token_type`
-         * it sends when the caller names none — an AXIAM-issued access token
-         * (§15.1).
+         * The `actor_token_type` this SDK sends, and the `subject_token_type` a
+         * caller names for the same-domain exchange of §15.1. There is no
+         * default: the type is a required property of [TokenExchangeParams].
          */
         const val ACCESS_TOKEN_TYPE: String = "urn:ietf:params:oauth:token-type:access_token"
 

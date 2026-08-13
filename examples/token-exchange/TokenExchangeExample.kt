@@ -46,6 +46,7 @@ object TokenExchangeExample {
                 it.tokenExchange(
                     TokenExchangeParams(
                         subjectToken = Sensitive.of(userToken),
+                        subjectTokenType = OidcSupport.ACCESS_TOKEN_TYPE,
                         scopes = listOf("orders:read"),
                         audience = "orders-service",
                         tenantId = tenantId,

@@ -391,6 +391,7 @@ next service.
 val exchanged = client.tokenExchange(
     TokenExchangeParams(
         subjectToken = Sensitive.of(userToken),
+        subjectTokenType = OidcSupport.ACCESS_TOKEN_TYPE, // required (§15.1)
         scopes = listOf("orders:read"),
         audience = "orders-service",
     ),
@@ -418,16 +419,16 @@ no separate operation:
 val exchanged = client.tokenExchange(
     TokenExchangeParams(
         subjectToken = Sensitive.of(partnerToken),
-        subjectTokenType = OidcSupport.JWT_TOKEN_TYPE, // named, never guessed
+        subjectTokenType = OidcSupport.JWT_TOKEN_TYPE, // required; named, never guessed
         scopes = listOf("read:orders"),
         audience = "https://orders.internal",
     ),
 )
 ```
 
-- **`subjectTokenType` is yours to state.** The SDK never decodes the subject token to pick it, and
-  never overrides what you named. Leaving it `null` still means `OidcSupport.ACCESS_TOKEN_TYPE`,
-  the same-domain exchange above.
+- **`subjectTokenType` is yours to state, and is required** (§15.1). The SDK never decodes the
+  subject token to pick it, and never overrides what you named. It is non-null with no default —
+  omitting it does not compile, because a default would be the SDK choosing for you.
 - **No actor token.** Delegation across a trust boundary is unsupported in v1; sending one is
   `invalid_request`, which the SDK will not work around by dropping it and re-sending.
 - **One refusal is distinguishable.** `invalid_grant` whose `errorDescription` is `the subject
