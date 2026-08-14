@@ -551,9 +551,9 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
      *
      * **Never retries** (§20.2 rule 6): the ticket is consumed before the
      * request is evaluated, so a failed exchange has already spent it — and
-     * under concurrency a retry is the second redemption that
-     * ilpanich/axiam#302's measured residual describes. Request a new ticket
-     * instead.
+     * under concurrency a retry is the concurrent redemption a server whose
+     * storage engine this SDK cannot attest may admit twice
+     * (ilpanich/axiam#302). Request a new ticket instead.
      */
     suspend fun umaExchangeTicket(params: UmaExchangeTicketParams): RequestingPartyToken =
         oidcSupport.umaExchangeTicket(params)
