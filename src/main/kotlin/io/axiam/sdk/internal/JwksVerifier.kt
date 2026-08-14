@@ -20,6 +20,8 @@ import com.nimbusds.jwt.SignedJWT
 import io.axiam.sdk.errors.AuthError
 import java.net.URI
 import java.net.URL
+import java.security.MessageDigest
+import java.util.Base64
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
@@ -351,6 +353,92 @@ class JwksVerifier private constructor(jwksUrl: URL) {
                 }
             }
         }
+
+        /**
+         * CONTRACT.md §10.1 **rule 9** — enforce a token's sender constraint
+         * against the certificate the caller presented on **this** connection
+         * (RFC 8705 §3 / RFC 7800, contract 1.15).
+         *
+         * A token carrying `cnf` is **not** a bearer token. Accepting one
+         * without proving the caller holds the named key converts it straight
+         * back into one, discarding the whole protection the operator turned
+         * on — which is why this is a rule and not a recommendation.
+         *
+         * The four cases:
+         *
+         * | token's `cnf`          | [presentedThumbprint] | result  |
+         * |------------------------|-----------------------|---------|
+         * | absent                 | anything              | returns |
+         * | `x5t#S256`             | equal                 | returns |
+         * | `x5t#S256`             | different, or null    | throws  |
+         * | present, no `x5t#S256` | anything              | throws  |
+         *
+         * The first row is why adopting this rule breaks nothing: an
+         * **unbound** token is still accepted whether or not a certificate is
+         * present. Rule 9 constrains tokens that claim a constraint; it does
+         * not make certificates mandatory.
+         *
+         * The last row is the one that is easy to get wrong. A `cnf` naming a
+         * confirmation method this SDK cannot check — a DPoP `jkt`, say — is
+         * an *unverifiable constraint*, never *no constraint*. Read the other
+         * way, a sender-constrained token silently degrades to a bearer token
+         * the day a newer AXIAM issues a confirmation this SDK predates.
+         *
+         * **The thumbprint must come from the transport** — the TLS peer
+         * certificate, or a value a *trusted* terminating proxy forwarded over
+         * a channel your application controls. Never from a caller-settable
+         * request header: a forgeable input makes the whole mechanism
+         * decorative. [certificateThumbprintS256] computes it from DER bytes.
+         *
+         * Deliberately NOT folded into [assertLocalClaims]: that function has
+         * no transport to ask, and threading a nullable thumbprint through it
+         * would have every existing caller pass `null` — which reads as "no
+         * certificate" and rejects every bound token.
+         *
+         * @throws AuthError on any of the three rejecting rows.
+         */
+        fun verifyCertificateBinding(claims: JWTClaimsSet, presentedThumbprint: String?) {
+            val cnf = claims.getClaim("cnf") ?: return
+            val cnfMap = cnf as? Map<*, *>
+                ?: throw AuthError("token cnf claim is malformed")
+
+            val expected = cnfMap["x5t#S256"] as? String
+            if (expected.isNullOrEmpty()) {
+                throw AuthError(
+                    "token carries a cnf confirmation naming a method this SDK cannot verify " +
+                        "(CONTRACT.md §10.1 rule 9 — an unverifiable constraint is not an absent one)",
+                )
+            }
+            if (presentedThumbprint.isNullOrEmpty()) {
+                throw AuthError("token is certificate-bound but no client certificate was presented")
+            }
+            // Constant-time. The thumbprint is usually public — it derives
+            // from a certificate sent in the clear during the handshake — so
+            // this is defence in depth. It matters most for a self-signed
+            // client, where the registered thumbprint is the whole credential.
+            if (!MessageDigest.isEqual(
+                    expected.toByteArray(Charsets.UTF_8),
+                    presentedThumbprint.toByteArray(Charsets.UTF_8),
+                )
+            ) {
+                throw AuthError("token is bound to a different client certificate than the one presented")
+            }
+        }
+
+        /**
+         * Compute the RFC 8705 §3.1 `x5t#S256` thumbprint of a DER client
+         * certificate: base64url-encoded SHA-256, **without** padding.
+         *
+         * Unpadded is not a style choice — RFC 7515 §2 defines base64url in
+         * JOSE as omitting `=`, and a padded value will not compare equal to
+         * what AXIAM put in the token.
+         *
+         * @param der the DER encoding of the peer's leaf certificate
+         *   (`X509Certificate.encoded`).
+         */
+        fun certificateThumbprintS256(der: ByteArray): String =
+            Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(MessageDigest.getInstance("SHA-256").digest(der))
 
         /**
          * Cross-tenant carry-forward control (CONTRACT.md §10.1 rule 4): the
