@@ -3,7 +3,9 @@ package io.axiam.sdk.oidc
 import io.axiam.sdk.Sensitive
 import io.axiam.sdk.errors.OAuthProtocolError
 import kotlinx.coroutines.runBlocking
+import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.SocketPolicy
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -86,6 +88,50 @@ class OidcUmaTest {
             server.requestCount,
             "the ticket grant must issue exactly one request — retrying a spent " +
                 "ticket is the concurrent redemption ilpanich/axiam#302 describes",
+        )
+    }
+
+    /**
+     * A **timeout** must not be retried either.
+     *
+     * §20.7 names it alongside `5xx` and `invalid_grant`, and it is the case most
+     * tempting to treat as "the request never happened" — a §16 retry runner
+     * normally re-sends a request that produced no response at all.
+     *
+     * That instinct is wrong here. A timeout says nothing about whether the server
+     * saw the exchange; it may well have arrived and spent the ticket, and silence
+     * is not evidence that it did not. Re-sending is then the second redemption.
+     *
+     * [SocketPolicy.NO_RESPONSE] holds the socket open and never answers, so this is
+     * a real read timeout rather than a stand-in. The client's read timeout is cut to
+     * 300 ms so the assertion is fast instead of waiting out the 30-second default.
+     */
+    @Test
+    fun `a timeout on the ticket grant is not retried`(): Unit = runBlocking {
+        dispatcher.on("/oauth2/token") {
+            MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE)
+        }
+
+        assertThrows(Exception::class.java) {
+            runBlocking {
+                OidcTestKit.clientFor(
+                    server,
+                    clientSecret = OidcTestKit.CLIENT_SECRET,
+                    readTimeoutMillis = 300,
+                ).umaExchangeTicket(
+                    UmaExchangeTicketParams(ticket = ticket, claimToken = claimToken),
+                )
+            }
+        }
+
+        // Discovery plus exactly one token request — no retry.
+        assertEquals(
+            2,
+            server.requestCount,
+            "the ticket grant must issue exactly one request even when it times out — " +
+                "a timed-out exchange may already have spent the ticket, so a retry is " +
+                "the concurrent redemption a server whose storage engine this SDK " +
+                "cannot attest may admit twice",
         )
     }
 

@@ -40,12 +40,14 @@ object OidcTestKit {
         tenantId: String = "22222222-2222-2222-2222-222222222222",
         discoveryTtlMs: Long? = null,
         clockSkewSec: Int? = null,
+        readTimeoutMillis: Long? = null,
     ): AxiamClient {
         val builder = AxiamClient.builder(server.url("/").toString(), tenantId)
         clientId?.let { builder.oidcClientId(it) }
         clientSecret?.let { builder.oidcClientSecret(it) }
         discoveryTtlMs?.let { builder.oidcDiscoveryTtlMillis(it) }
         clockSkewSec?.let { builder.oidcClockSkewSeconds(it) }
+        readTimeoutMillis?.let { builder.readTimeout(java.time.Duration.ofMillis(it)) }
         return builder.build()
     }
 
