@@ -319,4 +319,97 @@ class LocalVerificationSetTest {
             assertThrows(AuthError::class.java) { c.verifySession(token) }
         }
     }
+
+    // --- Rule 9: sender-constrained (certificate-bound) access tokens -----------
+    //
+    // CONTRACT.md §10.1 rule 9 (contract 1.15, RFC 8705 §3 / RFC 7800). A token
+    // carrying `cnf` is not a bearer token and must not be accepted as one.
+    //
+    // Three negatives and one positive. The POSITIVE is the one that matters most:
+    // rule 9 must not become "every caller must present a certificate", which would
+    // break every deployment that does not use mTLS at all.
+
+    /** A real 43-character base64url x5t#S256, and a different one. */
+    private val thumbprint = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+    private val otherThumbprint = "bWluZS1ub3QteW91cnMtdGhpcy1pcy00My1jaGFyc18"
+
+    private fun boundClaims(tp: String): JWTClaimsSet =
+        JWTClaimsSet.Builder(claims()).claim("cnf", mapOf("x5t#S256" to tp)).build()
+
+    /** The regression test that keeps rule 9 from becoming a certificate mandate. */
+    @Test
+    fun `rule 9 - an unbound token is accepted with or without a certificate`() {
+        val unbound = claims()
+        JwksVerifier.verifyCertificateBinding(unbound, null)
+        JwksVerifier.verifyCertificateBinding(unbound, thumbprint)
+    }
+
+    @Test
+    fun `rule 9 - a bound token is accepted with its own certificate`() {
+        JwksVerifier.verifyCertificateBinding(boundClaims(thumbprint), thumbprint)
+    }
+
+    @Test
+    fun `rule 9 - a bound token is rejected with no certificate`() {
+        val e = assertThrows(AuthError::class.java) {
+            JwksVerifier.verifyCertificateBinding(boundClaims(thumbprint), null)
+        }
+        assertTrue(e.message!!.contains("no client certificate was presented"))
+    }
+
+    @Test
+    fun `rule 9 - a bound token is rejected with a different certificate`() {
+        val e = assertThrows(AuthError::class.java) {
+            JwksVerifier.verifyCertificateBinding(boundClaims(thumbprint), otherThumbprint)
+        }
+        assertTrue(e.message!!.contains("different client certificate"))
+    }
+
+    /**
+     * The subtle one. A `cnf` naming a confirmation method this SDK cannot check is
+     * an unverifiable constraint, never *no* constraint — read the other way, a
+     * sender-constrained token silently degrades to a bearer token the day a newer
+     * AXIAM issues a confirmation this SDK predates.
+     */
+    @Test
+    fun `rule 9 - an unverifiable confirmation is rejected not ignored`() {
+        val dpopish = JWTClaimsSet.Builder(claims())
+            .claim("cnf", mapOf("jkt" to "0ZcOCORZNYy-DWpqq30jZyJGHTN0d2HglBV3uiguA4I"))
+            .build()
+
+        for (presented in listOf(null, thumbprint)) {
+            val e = assertThrows(AuthError::class.java) {
+                JwksVerifier.verifyCertificateBinding(dpopish, presented)
+            }
+            assertTrue(e.message!!.contains("cannot verify"), e.message)
+        }
+    }
+
+    /**
+     * `assertLocalClaims` (rules 2-7) deliberately does not apply rule 9 — it has no
+     * transport to ask for a peer certificate. Asserted so the split cannot be
+     * collapsed by accident.
+     */
+    @Test
+    fun `rule 9 - assertLocalClaims does not apply it`() {
+        val bound = boundClaims(thumbprint)
+        JwksVerifier.assertLocalClaims(bound, TestSupport.TENANT_ID)
+        assertThrows(AuthError::class.java) {
+            JwksVerifier.verifyCertificateBinding(bound, null)
+        }
+    }
+
+    /**
+     * RFC 7515 §2 base64url: unpadded, `-`/`_` rather than `+`/`/`. A padded or
+     * standard-base64 value will not compare equal to what AXIAM put in the token.
+     */
+    @Test
+    fun `rule 9 - the thumbprint helper produces unpadded base64url`() {
+        val der = ByteArray(512) { 0x42 }
+        val tp = JwksVerifier.certificateThumbprintS256(der)
+
+        assertEquals(43, tp.length)
+        assertTrue(!tp.contains("=") && !tp.contains("+") && !tp.contains("/"))
+        assertEquals(tp, JwksVerifier.certificateThumbprintS256(der))
+    }
 }
