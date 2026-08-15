@@ -9,6 +9,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **CONTRACT.md §22 — the reactor runtime (`io.axiam.sdk.reactor`).** A reactor is an
+  external process subscribed to named hook events on the AMQP bus, answering
+  allow / deny / mutate inside a timeout the server declared. `reactorServe(options)`
+  consumes the **server-declared** queue, verifies each event under §8 v2 (key
+  version, MAC, freshness, nonce, in that order) before the handler sees it, and
+  signs the reply with the same tenant subkey.
+
+  **This closes half of Kotlin's §8 gap rather than working around it.** §22.10 is
+  explicit that a reactor runtime *is* an AMQP consumer and that there is no
+  reactor-shaped subset of §8 that would let one arrive without the other, so the
+  §8 v2 verification set (HKDF-derived tenant subkey via
+  `ReactorProtocol.deriveTenantKey`, constant-time `HMAC-SHA256`, the `key_version`
+  floor of 2, the ±300 s two-sided freshness window, a bounded nonce seen-set) and
+  §8b's transport rules arrive with it. `reactorConnectionFactory` **enforces** §8b:
+  `amqps://` only, a supplied CA bundle for a privately-issued broker certificate,
+  hostname verification with no switch to disable it, half a client identity
+  failing closed, and no plaintext fallback. §8's other two message types
+  (`AuthzRequest`, `AuditEventMessage`) remain out of scope.
+
+  The canonicalization difference that costs a day if it is not stated: a reactor
+  body is signed with `hmac_signature` **present and set to `null`**, where §8's own
+  two message types omit it. `ReactorProtocol` is the only place that rule lives,
+  and `ReactorVectorTest` proves it byte-for-byte against the server-generated
+  §22.13 vectors — canonical bytes, MAC, the omission of `reason`/`patch` when
+  absent and of `require_mfa` when false, the `nonce_binding` pair, the
+  `correlation_replay` refusal, the stale/future pair, and the topology strings.
+  Both fixtures ship on the test classpath under the same master key, tenant and
+  derived subkey, so one loader serves both and the §8-vs-§22 difference is a test
+  rather than a paragraph to remember.
+
+  Four rules are structural rather than documented. The runtime declares no
+  exchange, queue or binding — `ReactorTransport` has no method that could, and a
+  proxy-recorded `Channel` proves the bundled RabbitMQ transport never reaches past
+  it; a handler that throws produces **no reply** rather than a synthesized
+  `allow`, so the operator's `failure_policy` still decides; a patch is sent
+  **unfiltered**, because dropping a forbidden key would leave the author believing
+  it was set; and a reply is abandoned rather than published after `timeout_ms` has
+  elapsed. `ReactorDecision` is a sealed hierarchy in which `allow` cannot carry a
+  patch and `mutate` cannot be empty, and `ReactorListener` returns `Unit`, so a
+  listener cannot publish a reply at all.
+
+  §22.7 is honoured as the MUST NOT it is: `authz.check`, `authz.check_batch` and
+  `token.introspect` are absent from `ReactorEvents.REGISTRY` and from every
+  constant this SDK exposes, asserted against the list rather than a comment, and
+  no interceptor equivalent is offered for them anywhere.
+
+  Interacts with the existing surfaces as they already work: `close()` is
+  §18-deterministic (cancel, drain, idempotent), §19 emits one
+  `RequestStart`/`RequestEnd` pair per dispatch with the event name as the path
+  template, the signing key is wrapped in `Sensitive` per §22.12 and asserted absent
+  from every log line, and §16 retry deliberately does **not** apply to a reply — a
+  correlation is single-use, so a resend could only add load to a server that has
+  already moved on.
+
+  `com.rabbitmq:amqp-client` is a **`compileOnly`** dependency, exactly as Ktor is:
+  the core compiles and runs without it, and a consumer who writes no reactor never
+  carries it. Adds `examples/reactor` (a token enricher plus a login screen) and a
+  README chapter.
+
 - **CONTRACT.md §10.1 rule 9 extended for DPoP, and §21.7.2 proof verification
   implemented (contract 1.16/1.17).**
 

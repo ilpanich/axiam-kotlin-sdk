@@ -21,12 +21,21 @@ Source: [ilpanich/axiam-kotlin-sdk](https://github.com/ilpanich/axiam-kotlin-sdk
 
 ## Contract conformance
 
-This SDK conforms to CONTRACT.md §1–§7, §9–§13 and §12.7, §14, §15, §17, §19, §20, §21 (including §6.1 mTLS).
+This SDK conforms to CONTRACT.md §1–§7, §9–§13 and §12.7, §14, §15, §17, §19, §20, §21, §22
+(including §6.1 mTLS).
 
-§12.7, §14, §15 and §20 are named rather than folded into the range because they landed after this SDK
-already stated its coverage: widening the range silently would turn a statement that was true when
-written into a different claim without anyone editing it. (§8's AMQP surface remains out of scope,
-which is why the range is written with that gap rather than as §1–§13.)
+§12.7, §14, §15, §20 and §22 are named rather than folded into the range because they landed after
+this SDK already stated its coverage: widening the range silently would turn a statement that was
+true when written into a different claim without anyone editing it.
+
+**§8 is a narrower gap than it was.** The §22 reactor runtime *is* an AMQP consumer — §22.10 says so
+in as many words — so shipping it meant implementing §8's v2 verification set (HKDF-derived tenant
+subkey, `HMAC-SHA256` over the canonical bytes compared in constant time, the `key_version` floor of
+2, the ±300 s two-sided freshness window, the nonce seen-set) and §8b's transport rules
+(`amqps://` only, a supplied CA bundle, no verification-skip switch, no plaintext fallback) for the
+reactor exchange. What remains out of scope is §8's *other* two message types, `AuthzRequest` and
+`AuditEventMessage`, and the async-authz and audit-ingestion surfaces built on them — which is why
+the range is still written with a gap at §8 rather than as §1–§13.
 
 See [`CONTRACT.md`](CONTRACT.md) for the full cross-language behavioral contract. AXIAM is
 multi-tenant: a tenant identifier is a **required** constructor argument (§5) — there is no
@@ -40,12 +49,14 @@ default tenant.
   certificates, §7 `Sensitive`, §9 single-flight refresh, JWKS (EdDSA/Ed25519) session
   verification, the §10/§11 Ktor route guard + declarative-authorization helpers, the
   §12 OIDC/SSO relying-party helpers (see "OIDC / SSO relying-party helpers" below), and the
-  §13 webhook-signature verifier (see "Webhook signature verification" below).
+  §13 webhook-signature verifier (see "Webhook signature verification" below). Plus, on the AMQP
+  side, the §22 reactor runtime (see "Reactors" below) and the §8 v2 / §8b primitives it carries.
 - **Deferred follow-ups (not in v1):** the gRPC transport — including the gRPC-only
-  `getUserInfo` operation (CONTRACT §1.1, contract 1.3) — and §8 AMQP HMAC consumption. The
-  contract does not require AMQP of the Kotlin SDK; gRPC (and with it `getUserInfo`) is a
-  planned addition. Per CONTRACT §1.1, this SDK does **not** substitute the REST
-  `/oauth2/userinfo` endpoint for the gRPC operation.
+  `getUserInfo` operation (CONTRACT §1.1, contract 1.3) — and §8's `AuthzRequest` /
+  `AuditEventMessage` consumers (async authorization and audit ingestion). The contract does not
+  list Kotlin among the SDKs that speak those; gRPC (and with it `getUserInfo`) is a planned
+  addition. Per CONTRACT §1.1, this SDK does **not** substitute the REST `/oauth2/userinfo`
+  endpoint for the gRPC operation.
 
 ## Getting started
 
@@ -511,6 +522,159 @@ fun handleWebhook(rawBody: ByteArray, signatureHeader: String) {
     }
 }
 ```
+
+## Reactors — AMQP extension actors (`io.axiam.sdk.reactor`, §22)
+
+A **reactor** is your process, subscribed to named hook events on the AXIAM AMQP bus, answering
+allow / deny / mutate inside a timeout the server declared. It is AXIAM's answer to Zitadel Actions
+and Keycloak SPIs, and the difference is the whole design: those load third-party code *into* the
+authorization server, and this keeps it outside, reachable only through a signed reply schema the
+server validates before it believes a word of it.
+
+```kotlin
+val connection = reactorConnectionFactory(
+    uri = "amqps://broker.internal:5671",     // §8b: amqps only, enforced not documented
+    customCaPem = File(caPath).readBytes(),   // an in-cluster broker is not publicly issued
+).newConnection()
+
+val options = ReactorServeOptions(
+    transport = RabbitMqReactorTransport(connection.createChannel()),
+    tenantId = tenantId,
+    signingKey = Sensitive.of(subkeyBytes),   // §22.12 — a credential, never logged
+    reactorId = reactorId,                    // the queue is the server's; we only consume it
+    handler = ReactorHandler { event ->
+        when (event.event) {
+            ReactorEvents.TOKEN_PRE_ISSUE ->
+                ReactorDecision.mutate(mapOf("ext.department" to "engineering"))
+            ReactorEvents.LOGIN_POST_AUTH ->
+                if (embargoed(event)) ReactorDecision.deny("embargoed region")
+                else ReactorDecision.allow()
+            else -> ReactorDecision.allow()
+        }
+    },
+)
+
+reactorServe(options).use { server ->
+    println("serving ${server.queue}")
+    Thread.currentThread().join()
+}
+```
+
+Register the reactor first — the queue it consumes is declared by the **server**, from a
+`POST /api/v1/reactors` registration. See [`examples/reactor`](examples/reactor) for a runnable one
+that enriches a token and screens a login.
+
+The handler is a `suspend` function, so it can call the rest of this SDK — a fraud lookup, a
+`checkAccess` — without a thread being blocked by hand.
+
+### Both directions are signed
+
+The server signs the event with the tenant's HKDF-derived AMQP subkey; this SDK signs the reply with
+**the same** subkey. An unsigned or stale reply is not a weak reply — the server discards it as
+though the reactor had never answered, and the registration's `failure_policy` takes over.
+
+Everything is §8 v2 verbatim (same key derivation — `ReactorProtocol.deriveTenantKey` if you hold the
+master key rather than fetching the subkey from the management API — same constant-time
+HMAC-SHA256, same ±300 s window applied in **both** directions, same `key_version` floor of 2) with
+**one** difference, and it is the one that costs an implementer a day if it is not stated: a reactor
+body is signed with `hmac_signature` **present and set to `null`**, where §8's own two message types
+omit it. `ReactorProtocol` is the only place that rule lives, and it is proven byte-for-byte against
+the server-generated §22.13 vectors — including the omission rules for `reason`, `patch` and
+`require_mfa` (a reply serializing `"require_mfa": false` rather than omitting it produces a
+different MAC).
+
+Before your handler runs, the runtime rejects `key_version < 2`, verifies the MAC, checks freshness
+in **both** directions, and checks the nonce. A runtime that hands an unverified payload to user
+code has already lost.
+
+### Transport (§8b)
+
+`reactorConnectionFactory(uri, customCaPem, clientCertPem, clientKeyPem)` builds the broker
+connection factory, and it **enforces** §8b rather than documenting it: an `amqp://` URI is refused
+rather than downgraded, hostname verification is on with no switch anywhere to turn it off, a
+private CA is supported because an in-cluster broker's certificate is not publicly issued, and half
+a client identity (a certificate without its key, or the mirror case) fails closed rather than
+connecting without the mutual half. There is no plaintext fallback: a failed `amqps://` connection
+is an error to surface, not a condition to work around.
+
+The RabbitMQ Java client is a **`compileOnly`** dependency of this SDK, exactly as Ktor is — the
+core compiles and runs without it, and a consumer who writes no reactor never carries it. Reactor
+authors add `com.rabbitmq:amqp-client` themselves. `ReactorTransport` is the seam if you use a
+different client: five verbs, and deliberately no `declare` or `bind` among them.
+
+### Five events, and what each may change
+
+| Event | Mutable fields (the complete allow-list) | Default failure policy |
+|---|---|---|
+| `token.pre_issue` | **`ext.` namespace only** | `fail_open` |
+| `login.post_auth` | — (veto, or `require_mfa`) | `fail_closed` |
+| `user.pre_create` | `username`, `email`, `metadata.` namespace | `fail_closed` |
+| `user.pre_update` | `username`, `email`, `metadata.` namespace | `fail_closed` |
+| `grant.pre_assign` | — (veto only) | `fail_closed` |
+
+An entry ending in `.` is a namespace prefix and needs at least one character after the dot:
+`ext.department` and `ext.a.b.c` are in, and `ext.`, `ext`, `extra`, `external_id` and
+`evil.ext.department` are not. No standard claim is reachable from `token.pre_issue`, because none
+of them begins with `ext.` — a **correctly signed** reply setting `sub` is refused exactly as a
+forged one is.
+
+A registration naming no `failure_policy` inherits the **strictest** default among its events, in
+either array order (`ReactorEvents.defaultFailurePolicyFor`). A reactor registered for both
+`token.pre_issue` and `login.post_auth` can veto a login, so it gets `fail_closed`.
+
+### `authz.check` is not hookable, and never will be
+
+`authz.check`, `authz.check_batch` and `token.introspect` are **absent** from
+`ReactorEvents.REGISTRY` and from every constant this SDK exposes — asserted by a test against the
+list, not documented by a comment. The reason is arithmetic, not policy: a reactor round trip is
+milliseconds and the check path's budget is microseconds. Hooking it would not produce a slower
+check, it would produce a different product.
+
+This SDK also offers no interceptor, middleware hook or callback presenting itself as the reactor
+equivalent for those operations. An application that needs external input on an authorization
+decision writes a **deny grant**, which the engine evaluates in the hot path at hot-path cost.
+
+### What the runtime will not do for you
+
+- **It will not declare topology.** `ReactorTransport` has no declare or bind method at all, so this
+  is a property of the type rather than a discipline — a reactor that can bind is a reactor that can
+  bind itself to `*.token.pre_issue` and read another tenant's issuance events. `reactorId` names
+  your own queue and no other.
+- **It will not synthesize an `allow` for a handler that threw.** Throwing publishes *nothing*, and
+  the operator's `failure_policy` decides what that costs. Answering `allow` on your behalf would
+  defeat a `fail_closed` setting from inside the library.
+- **It will not filter your patch.** A forbidden key goes on the wire as written and the server
+  refuses the whole patch. Trimming it silently would leave you believing a field was set when it
+  was dropped. (`ReactorEventSpec.patchFieldAllowed` is there so you can check a key *before*
+  writing the handler — never to filter one afterwards.)
+- **It will not reply late.** When your handler returns after `event.timeoutMs` has elapsed, the
+  reply is abandoned — the server stopped listening, and publishing anyway only adds load. Consult
+  `event.remaining(now)` and shed load rather than push on.
+- **It will not retry a reply (§16).** A correlation is single-use and a late reply is discarded;
+  the recovery mechanism for an unanswered dispatch is the server-side `failure_policy`, not a
+  resend. Connection recovery is the RabbitMQ client's, left on.
+
+`close()` is §18-deterministic: it cancels the consumer so no new delivery starts, drains what is in
+flight up to `shutdownGrace`, and is idempotent. §19 telemetry emits one `RequestStart`/`RequestEnd`
+pair per dispatch with the event name as the path template — a closed set of five values, so it
+cannot become a cardinality bomb.
+
+### Listeners
+
+`mode: "listen"` is fire-and-forget observation: the server never waits and never reads a reply.
+Pass `listener = ReactorListener { ... }` instead of `handler` — it returns `Unit`, so a listener
+*cannot* publish a reply rather than merely being told not to. Write it idempotently: a redelivery
+after a broker hiccup is normal.
+
+### Logging
+
+The signing key is a credential and is wrapped in `Sensitive` — never logged at any level, never in
+a reconnect diagnostic. The `payload`, `patch`, `reason` and `decision` are **not** secrets and stay
+readable (a handler that cannot inspect the event cannot decide anything), but they are tenant
+business data: this SDK never logs the payload, and neither should you at `info` level. The `nonce`,
+`correlation_id` and `hmac_signature` are not secrets and may be logged for correlation.
+Diagnostics go to a `ReactorLog` you supply — a one-method sink, because this SDK does not pick a
+logging framework for its consumers.
 
 ## Building from source
 

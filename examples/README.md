@@ -9,6 +9,7 @@ all connection details from the environment, with safe defaults.
 | Login + MFA | [`login-mfa/LoginMfaExample.kt`](login-mfa/LoginMfaExample.kt) | The two-phase `login()` / `verifyMfa()` flow (CONTRACT.md §1, §5, §5.1) |
 | REST authz | [`rest-authz/RestAuthzExample.kt`](rest-authz/RestAuthzExample.kt) | `can()`, `checkAccess()`, and order-preserving `batchCheck()` (§1) |
 | OIDC / SSO login | [`oidc-login/OidcLoginExample.kt`](oidc-login/OidcLoginExample.kt) | The nine §12 operations: `oidcDiscover`/`oidcBegin`/`oidcExchange`, `loginClientCredentials`, `introspect`/`revoke` |
+| Reactor | [`reactor/ReactorExample.kt`](reactor/ReactorExample.kt) | The §22 AMQP extension actor: `reactorServe`, a signed allow/deny/mutate reply, and the `ext.` allow-list |
 
 ## Organization context (§5.1)
 
@@ -34,6 +35,11 @@ of `.orgSlug(...)` if you have the organization UUID.
 | `AXIAM_EMAIL` | `user@example.com` | Login username/email |
 | `AXIAM_PASSWORD` | `changeme` | Login password |
 | `AXIAM_TOTP_CODE` | `000000` | TOTP code (login-mfa only) |
+| `AXIAM_AMQP_URI` | _(required)_ | Broker URI, **`amqps://` only** (§8b) — reactor only |
+| `AXIAM_AMQP_CA_PEM` | _(unset)_ | Path to a PEM CA for a privately-issued broker certificate — reactor only |
+| `AXIAM_TENANT_ID` | _(required)_ | Tenant **UUID** (not the slug) the reactor is registered in — reactor only |
+| `AXIAM_REACTOR_ID` | _(required)_ | This reactor's own registration id (§22.1) — reactor only |
+| `AXIAM_AMQP_SUBKEY_HEX` | _(required)_ | The tenant's derived AMQP subkey, hex. A credential (§22.12) — reactor only |
 
 The defaults let the examples **compile and start** offline; running them
 end-to-end needs a reachable AXIAM server at `AXIAM_BASE_URL`.
@@ -62,6 +68,18 @@ AXIAM_BASE_URL=https://localhost:8443 AXIAM_TENANT_ID=<uuid> \
 AXIAM_OIDC_CLIENT_ID=my-app AXIAM_OIDC_CLIENT_SECRET=secret \
 AXIAM_OIDC_REDIRECT_URI=http://127.0.0.1:8081/auth/callback \
   ./gradlew runOidcLoginExample
+```
+
+The reactor example (§22) talks to the AMQP broker rather than the REST API, and
+needs a reactor registered through `POST /api/v1/reactors` first — the queue it
+consumes is declared by the **server**, never by the actor:
+
+```bash
+AXIAM_AMQP_URI=amqps://broker.internal:5671 \
+AXIAM_AMQP_CA_PEM=/etc/axiam/broker-ca.pem \
+AXIAM_TENANT_ID=<tenant-uuid> AXIAM_REACTOR_ID=<reactor-uuid> \
+AXIAM_AMQP_SUBKEY_HEX=<derived-subkey-hex> \
+  ./gradlew runReactorExample
 ```
 
 Every SDK auth/authz operation is a `suspend` function (§1); each example's
