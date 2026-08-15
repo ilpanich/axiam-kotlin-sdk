@@ -404,9 +404,23 @@ class JwksVerifier private constructor(jwksUrl: URL) {
 
             val expected = cnfMap["x5t#S256"] as? String
             if (expected.isNullOrEmpty()) {
+                // Includes the DPoP case: this entry point has no proof to
+                // check, so a jkt-bound token is refused rather than silently
+                // downgraded.
                 throw AuthError(
-                    "token carries a cnf confirmation naming a method this SDK cannot verify " +
-                        "(CONTRACT.md §10.1 rule 9 — an unverifiable constraint is not an absent one)",
+                    "token carries a cnf confirmation naming a method this entry point cannot " +
+                        "verify (CONTRACT.md §10.1 rule 9 — an unverifiable constraint is not an " +
+                        "absent one; use verifyTokenBinding for DPoP)",
+                )
+            }
+            // A token naming BOTH methods is a conjunction (contract 1.16):
+            // this function can establish one half and must not answer for the
+            // whole. Refusing here is what stops "check whichever we can".
+            val jkt = cnfMap["jkt"] as? String
+            if (!jkt.isNullOrEmpty()) {
+                throw AuthError(
+                    "token names both a certificate and a DPoP key; both must hold " +
+                        "(CONTRACT.md §10.1 rule 9) — use verifyTokenBinding",
                 )
             }
             if (presentedThumbprint.isNullOrEmpty()) {
@@ -422,6 +436,91 @@ class JwksVerifier private constructor(jwksUrl: URL) {
                 )
             ) {
                 throw AuthError("token is bound to a different client certificate than the one presented")
+            }
+        }
+
+        /**
+         * CONTRACT.md §10.1 **rule 9** in full — enforce a token's sender
+         * constraint against **every** proof the caller presented (contract
+         * 1.16).
+         *
+         * This is the complete rule, and the one to use unless your transport
+         * genuinely cannot produce a DPoP thumbprint.
+         *
+         * The ten cases:
+         *
+         * ```
+         * token's cnf             certificate     DPoP        result
+         * absent                  anything        anything    returns
+         * x5t#S256                equal           ignored     returns
+         * x5t#S256                different       ignored     throws
+         * x5t#S256                null            ignored     throws
+         * jkt                     ignored         equal       returns
+         * jkt                     ignored         different   throws
+         * jkt                     ignored         null        throws
+         * both                    equal           equal       returns
+         * both                    wrong/missing   —           throws
+         * present, names neither  anything        anything    throws
+         * ```
+         *
+         * Two rows carry the weight. **Both named is a conjunction**: an
+         * operator who turned on two constraints asked for two, and satisfying
+         * the more convenient one is not compliance. **Names neither is a
+         * refusal**: a confirmation this SDK cannot interpret is an
+         * unverifiable constraint, and reading it as "unconstrained" is the
+         * exact downgrade rule 9 exists to prevent. That includes an *empty*
+         * `cnf`, which is also how proto3 delivers an empty `CnfClaim` over
+         * gRPC (§10.3 rule 3).
+         *
+         * @param claims the verified claims of the token being guarded
+         * @param proofs what the caller proved on this connection and request
+         * @throws AuthError on any rejecting row
+         */
+        fun verifyTokenBinding(claims: JWTClaimsSet, proofs: PresentedProofs) {
+            // The fast path, and the common one. First on purpose: an unbound
+            // token is accepted with no proofs at all, which is what keeps
+            // existing deployments working when a guard adopts this rule.
+            val cnf = claims.getClaim("cnf") ?: return
+            val cnfMap = cnf as? Map<*, *>
+                ?: throw AuthError("token cnf claim is malformed")
+
+            val expectedCert = (cnfMap["x5t#S256"] as? String)?.takeIf { it.isNotEmpty() }
+            val expectedJkt = (cnfMap["jkt"] as? String)?.takeIf { it.isNotEmpty() }
+
+            if (expectedCert == null && expectedJkt == null) {
+                throw AuthError(
+                    "token carries a cnf confirmation naming no method this SDK can verify " +
+                        "(CONTRACT.md §10.1 rule 9 — an unverifiable constraint is not an absent one)",
+                )
+            }
+
+            // Each arm that applies must pass. Two independent checks rather
+            // than a `when` on the pair, precisely so "both named" needs no
+            // branch of its own — it is simply where both run.
+            if (expectedCert != null) {
+                if (proofs.certificateThumbprint.isNullOrEmpty()) {
+                    throw AuthError("token is certificate-bound but no client certificate was presented")
+                }
+                if (!MessageDigest.isEqual(
+                        expectedCert.toByteArray(Charsets.UTF_8),
+                        proofs.certificateThumbprint.toByteArray(Charsets.UTF_8),
+                    )
+                ) {
+                    throw AuthError("token is bound to a different client certificate than the one presented")
+                }
+            }
+
+            if (expectedJkt != null) {
+                if (proofs.dpopThumbprint.isNullOrEmpty()) {
+                    throw AuthError("token is DPoP-bound but no verified DPoP proof was presented")
+                }
+                if (!MessageDigest.isEqual(
+                        expectedJkt.toByteArray(Charsets.UTF_8),
+                        proofs.dpopThumbprint.toByteArray(Charsets.UTF_8),
+                    )
+                ) {
+                    throw AuthError("token is bound to a different DPoP key than the one presented")
+                }
             }
         }
 
