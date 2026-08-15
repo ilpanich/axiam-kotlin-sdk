@@ -55,6 +55,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CONTRACT.md §21** — the FAPI 2.0 posture as an SDK sees it. Only rule 9 is normative
   for this SDK.
 
+### Fixed
+
+- **F-13: the §12.4 rule 7 (all-or-nothing discard) test only asserted that `oidcExchange`
+  throws, not that the same response's sentinel access/refresh token is absent from the
+  outcome or the exception.** `OidcCoverageGapsTest`'s clock-skew test now uses a
+  `"should-never-be-returned"` sentinel and positively asserts it appears in neither
+  `AuthError.message` nor `AuthError.toString()`, matching the five sibling SDKs that
+  already did.
+- **F-14: `OidcSupport.executeRequest()` (the transport seam every §12 wire call goes
+  through) now documents, in a doc comment, the structural invariant that keeps a `401`
+  from `/oauth2/*` out of the §9 single-flight refresh guard — no OkHttp `Authenticator`
+  or response interceptor reacts to a `401` on this `httpClient`.** The prior regression
+  test polled the mock server's request queue with a fixed 200ms timeout; it is replaced
+  with a deterministic dispatcher-registered call counter for `POST /api/v1/auth/refresh`,
+  so `OidcIntrospectRevokeTest` now asserts `refreshCallCount == 0` rather than draining a
+  queue against a timeout.
+
 ### Changed
 
 - **Re-sync vendored `CONTRACT.md` / `openapi.json` to contract 1.15.**

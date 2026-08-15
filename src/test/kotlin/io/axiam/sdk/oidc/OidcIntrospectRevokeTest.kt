@@ -20,11 +20,27 @@ class OidcIntrospectRevokeTest {
     private lateinit var signingKey: com.nimbusds.jose.jwk.OctetKeyPair
     private lateinit var dispatcher: OidcTestKit.RoutingDispatcher
 
+    /**
+     * Deterministic call counter for `POST /api/v1/auth/refresh`, registered
+     * on every test in this class (F-14). Counting via a dispatcher handler
+     * — rather than draining [server]'s request queue with a fixed timeout —
+     * cannot under-count from a slow/scheduled coroutine and cannot
+     * over-count from an unrelated request landing in the same poll window,
+     * so `assertEquals(0, refreshCallCount)` is a positive, race-free
+     * assertion that the §9 refresh guard's endpoint was never dialed, not
+     * just "no such request happened to already be queued".
+     */
+    private var refreshCallCount = 0
+
     @BeforeEach
     fun setUp() {
         signingKey = OidcTestKit.generateSigningKey()
         server = MockWebServer()
         dispatcher = OidcTestKit.routingDispatcher(server, signingKey)
+        dispatcher.on("/api/v1/auth/refresh") {
+            refreshCallCount++
+            MockResponse().setResponseCode(401)
+        }
         server.dispatcher = dispatcher
         server.start()
     }
@@ -85,9 +101,13 @@ class OidcIntrospectRevokeTest {
         }
         assertEquals("invalid_client", ex.error)
         assertEquals("invalid_client: bad client_secret", ex.message)
-        // The §9 refresh guard's target — the cookie-session refresh endpoint
-        // — must never be reached from an introspect/revoke 401 (§12.3 rule 3).
-        assertFalse(hitRefreshEndpoint())
+        // F-14 / §12.3 rule 3: a 401 from /oauth2/introspect must trigger
+        // ZERO POST /api/v1/auth/refresh calls — the §9 refresh guard's
+        // target — because refreshing the cookie session cannot fix a bad
+        // OAuth2 client_secret. See executeRequest()'s doc comment in
+        // OidcSupport.kt for the structural (no-401-interceptor) invariant
+        // this assertion is a regression test for.
+        assertEquals(0, refreshCallCount)
     }
 
     @Test
@@ -118,7 +138,8 @@ class OidcIntrospectRevokeTest {
         assertThrows(OAuthProtocolError::class.java) {
             runBlocking { client.revoke(RevokeParams.of("t", tenantId = "22222222-2222-2222-2222-222222222222")) }
         }
-        assertFalse(hitRefreshEndpoint())
+        // F-14: same invariant as introspect, above.
+        assertEquals(0, refreshCallCount)
     }
 
     @Test
@@ -146,14 +167,5 @@ class OidcIntrospectRevokeTest {
             request = server.takeRequest(1, java.util.concurrent.TimeUnit.SECONDS)!!
         }
         assertTrue(request.body.readUtf8().contains("token_type_hint=refresh_token"))
-    }
-
-    private fun hitRefreshEndpoint(): Boolean {
-        var found = false
-        while (true) {
-            val request = server.takeRequest(200, java.util.concurrent.TimeUnit.MILLISECONDS) ?: break
-            if (request.path?.startsWith("/api/v1/auth/refresh") == true) found = true
-        }
-        return found
     }
 }
