@@ -18,6 +18,7 @@ repositories {
 }
 
 val ktorVersion = "2.3.12"
+val rabbitMqVersion = "5.25.0"
 
 dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
@@ -36,6 +37,15 @@ dependencies {
     // Ktor users add ktor-server-core themselves.
     compileOnly("io.ktor:ktor-server-core:$ktorVersion")
 
+    // The RabbitMQ Java client backs the §22 reactor runtime's bundled
+    // transport. Like Ktor above it is an OPTIONAL integration: the core
+    // compiles and runs without it, and a consumer who writes no reactor never
+    // carries it. Reactor authors add `com.rabbitmq:amqp-client` themselves.
+    // §22.10 is explicit that a reactor runtime IS an AMQP consumer, so this is
+    // the dependency that lets Kotlin ship one at all — and compileOnly is how
+    // it arrives without widening every other consumer's classpath.
+    compileOnly("com.rabbitmq:amqp-client:$rabbitMqVersion")
+
     testImplementation(platform("org.junit:junit-bom:5.11.3"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
@@ -44,6 +54,7 @@ dependencies {
     // In-memory test PKI (HeldCertificate / HandshakeCertificates) for the mTLS
     // test — no private key material is ever committed.
     testImplementation("com.squareup.okhttp3:okhttp-tls:4.12.0")
+    testImplementation("com.rabbitmq:amqp-client:$rabbitMqVersion")
     testImplementation("io.ktor:ktor-server-core:$ktorVersion")
     testImplementation("io.ktor:ktor-server-test-host:$ktorVersion")
 }
@@ -95,6 +106,8 @@ dependencies {
     // plugin is written against and an engine to actually listen on.
     "examplesImplementation"("io.ktor:ktor-server-core:$ktorVersion")
     "examplesImplementation"("io.ktor:ktor-server-netty:$ktorVersion")
+    // examples/reactor drives the bundled RabbitMQ transport.
+    "examplesImplementation"("com.rabbitmq:amqp-client:$rabbitMqVersion")
 }
 
 // Point the examples compilation at the flat examples/ tree (mirrors the other
@@ -133,6 +146,13 @@ val runUmaResourceServerExample by tasks.registering(JavaExec::class) {
     description = "Run examples/uma-resource-server/UmaResourceServerExample.kt"
     classpath = examples.runtimeClasspath
     mainClass.set("io.axiam.sdk.examples.umaresourceserver.UmaResourceServerExample")
+}
+
+val runReactorExample by tasks.registering(JavaExec::class) {
+    group = "examples"
+    description = "Run examples/reactor/ReactorExample.kt (needs a reachable amqps:// broker)"
+    classpath = examples.runtimeClasspath
+    mainClass.set("io.axiam.sdk.examples.reactor.ReactorExample")
 }
 
 val runUmaClientExample by tasks.registering(JavaExec::class) {
