@@ -91,7 +91,21 @@ class OidcCoverageGapsTest {
             expEpochSec = System.currentTimeMillis() / 1000 - 5,
             nonce = "n",
         )
-        dispatcher.onJson("/oauth2/token", 200, OidcTestKit.tokenResponseJson(idToken = idToken))
+        // §12.4 rule 7 (F-13): the /oauth2/token response also carries an
+        // access_token/refresh_token pair that MUST never reach the caller
+        // once id_token validation fails -- mirror the five sibling SDKs
+        // (Go, Python, Rust, PHP, TS) by using a sentinel value here and
+        // positively asserting it appears nowhere in the outcome or the
+        // error, not merely that *an* error was thrown.
+        dispatcher.onJson(
+            "/oauth2/token",
+            200,
+            OidcTestKit.tokenResponseJson(
+                accessToken = "should-never-be-returned",
+                refreshToken = "should-never-be-returned-either",
+                idToken = idToken,
+            ),
+        )
 
         val ex = assertThrows(AuthError::class.java) {
             runBlocking {
@@ -104,6 +118,12 @@ class OidcCoverageGapsTest {
             }
         }
         assertEquals("token_expired", ex.reason)
+        // oidcExchange threw rather than returning an OidcTokenSet, so there
+        // is no partial object a caller could read a token out of -- the
+        // only observable surface is the exception itself. Assert the
+        // sentinel tokens are absent from it.
+        assertFalse(ex.message?.contains("should-never-be-returned") ?: false)
+        assertFalse(ex.toString().contains("should-never-be-returned"))
     }
 
     @Test

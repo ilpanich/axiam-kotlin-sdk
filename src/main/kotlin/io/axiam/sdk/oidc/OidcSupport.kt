@@ -1117,6 +1117,30 @@ internal class OidcSupport(
         return executeRequest(request)
     }
 
+    /**
+     * Transport seam for every §12 wire call (discovery, token, introspect,
+     * revoke, ssoStart/ssoComplete). CONTRACT.md §12.3 rule 3: a `401` from
+     * any `/oauth2/` endpoint must NEVER enter the §9 single-flight refresh guard.
+     *
+     * This SDK realizes that invariant STRUCTURALLY (F-14, contract 1.5
+     * §1.2 note): [httpClient] carries only [io.axiam.sdk.internal.AuthHeaderInterceptor]
+     * (request-side headers) — there is no OkHttp [okhttp3.Authenticator] and
+     * no response interceptor here that reacts to a `401` by calling
+     * [io.axiam.sdk.internal.RefreshGuard] or [refreshFlight]. `execute()`
+     * below returns the raw response and every §12 caller (`postOAuth2Form`,
+     * `mapOAuth2ErrorResponse`, …) maps a `401` straight to
+     * [OAuthProtocolError]/[AuthError] without ever touching a refresh path.
+     *
+     * That structural guarantee holds only as long as nobody adds a generic
+     * 401-reactive interceptor/authenticator to THIS [httpClient] — the
+     * shared instance §1's `AxiamClient.httpPost` also uses, whose OWN
+     * 401-handling lives one layer up, in the coroutine call site
+     * (`AxiamClient.kt`), not on the client itself. If a future change moves
+     * that reactive refresh onto an OkHttp-level interceptor/authenticator
+     * instead, it would silently start firing for `/oauth2/` calls too and
+     * break this rule — see `OidcIntrospectRevokeTest` for the regression
+     * test that would catch it.
+     */
     private suspend fun executeRequest(request: Request): Response = withContext(Dispatchers.IO) {
         try {
             httpClient.newCall(request).execute()
