@@ -5,10 +5,10 @@ import io.axiam.sdk.reactor.RabbitMqReactorTransport
 import io.axiam.sdk.reactor.ReactorDecision
 import io.axiam.sdk.reactor.ReactorEvent
 import io.axiam.sdk.reactor.ReactorEvents
-import io.axiam.sdk.reactor.ReactorHandler
 import io.axiam.sdk.reactor.ReactorLog
 import io.axiam.sdk.reactor.ReactorServeOptions
 import io.axiam.sdk.reactor.reactorConnectionFactory
+import io.axiam.sdk.reactor.reactorHandlers
 import io.axiam.sdk.reactor.reactorServe
 import kotlinx.serialization.json.JsonPrimitive
 import java.io.File
@@ -105,7 +105,14 @@ object ReactorExample {
                 // from our own reactor id and consumes it; it declares nothing
                 // and binds nothing (§22.1).
                 reactorId = reactorId,
-                handler = ReactorHandler { event -> decide(event) },
+                // One handler per event (§22.14) instead of a `when` whose
+                // `else` branch answers `allow` on behalf of code that never
+                // ran. A misspelled name is refused HERE, at wiring time,
+                // rather than becoming an event that silently never fires.
+                handler = reactorHandlers {
+                    on(ReactorEvents.TOKEN_PRE_ISSUE) { event -> enrichToken(event) }
+                    on(ReactorEvents.LOGIN_POST_AUTH) { event -> screenLogin(event) }
+                },
                 log = ReactorLog { line -> System.err.println(line) },
             )
 
@@ -115,17 +122,6 @@ object ReactorExample {
                 Thread.currentThread().join()
             }
         }
-    }
-
-    /** The decision function. One event in, one of three answers out. */
-    private fun decide(event: ReactorEvent): ReactorDecision = when (event.event) {
-        ReactorEvents.TOKEN_PRE_ISSUE -> enrichToken(event)
-        ReactorEvents.LOGIN_POST_AUTH -> screenLogin(event)
-        // A reactor is only ever dispatched events it registered for, so this arm
-        // means the registration and the code have drifted. Allow rather than
-        // deny: refusing an operation because our own `when` is stale would be an
-        // outage caused by a typo.
-        else -> ReactorDecision.allow()
     }
 
     private fun enrichToken(event: ReactorEvent): ReactorDecision {

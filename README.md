@@ -560,6 +560,51 @@ reactorServe(options).use { server ->
 }
 ```
 
+### Binding handlers per event (§22.14)
+
+The `when` above is the shape every multi-event reactor grows, and its `else` branch —
+`ReactorDecision.allow()` — answers on behalf of code that never ran. That is the defect
+§22.10 rule 2 forbids the *runtime* from committing, relocated into your file where the rule
+does not reach it: an operator who set `fail_closed` on the registration has it defeated there.
+
+`reactorHandlers { }` is §22.14's declarative form for Kotlin:
+
+```kotlin
+val options = ReactorServeOptions(
+    transport = RabbitMqReactorTransport(connection.createChannel()),
+    tenantId = tenantId,
+    signingKey = Sensitive.of(subkeyBytes),
+    reactorId = reactorId,
+    handler = reactorHandlers {
+        on(ReactorEvents.TOKEN_PRE_ISSUE) { ReactorDecision.mutate(mapOf("ext.department" to "engineering")) }
+        on(ReactorEvents.LOGIN_POST_AUTH) { event -> screen(event) }
+    },
+)
+```
+
+- **A misspelled event is refused when you bind it** — `on(...)` accepts only §22.5 registry
+  names, which is also how it refuses the three hot-path operations §22.7 excludes: they are
+  in no registry row. The message names the registry, never the exclusions.
+- **An unbound event abstains** — the composed handler throws
+  `UnboundReactorEventException`, and `ReactorServer` publishes **nothing** for a handler
+  that threw, so the registration's `failure_policy` decides (§22.8) exactly as it decides a
+  timeout. Never a synthesized `allow`.
+- Binding the same event twice throws rather than silently overwriting, and
+  `reactorHandlerEvents { … }` feeds `ReactorEvents.defaultFailurePolicyFor` so you can see
+  what an unreachable reactor costs before you go live.
+
+A type-safe builder rather than the `@OnReactorEvent` annotation the Java SDK ships, and the
+reason is worth stating: a Kotlin handler is a `suspend` function, and collecting annotated
+`suspend` members needs `kotlin-reflect` on every consumer's runtime classpath to invoke
+through the hidden `Continuation` parameter. A builder is Kotlin's own declarative
+mechanism, costs no dependency, and — because the lambda is checked against
+`suspend (ReactorEvent) -> ReactorDecision` at compile time — catches a wrong-shaped handler
+earlier than reflection ever could.
+
+It is pure sugar: what it returns is exactly the `ReactorHandler` `reactorServe` already
+takes. It opens nothing, verifies nothing, signs nothing, does not filter a patch, and a
+handler's own throwable reaches the runtime unchanged so nothing is published.
+
 Register the reactor first — the queue it consumes is declared by the **server**, from a
 `POST /api/v1/reactors` registration. See [`examples/reactor`](examples/reactor) for a runnable one
 that enriches a token and screens a login.
