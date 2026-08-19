@@ -83,6 +83,23 @@ class SessionState(
     /** Resets locally-derived state after logout (the cookie jar is cleared by the server's Set-Cookie). */
     fun clear() = csrf.set(null)
 
+    /**
+     * Evicts the session cookies from the shared jar, in addition to [clear].
+     *
+     * The ordinary way a cookie leaves the jar is the server expiring it, which
+     * is exactly what is unavailable to the one caller here: the `M2` mismatch
+     * in `AxiamClient.loginSrp`, where the response came from an endpoint that
+     * has just failed to prove it holds the account's verifier. CONTRACT.md
+     * §23.3 rule 6 requires the session discarded "including any cookies the
+     * response set", so the client evicts them itself rather than trusting the
+     * other side to.
+     */
+    fun discardSessionCookies() {
+        clear()
+        val store = cookieManager.cookieStore
+        store.get(baseUri).toList().forEach { store.remove(baseUri, it) }
+    }
+
     private fun cookieValue(name: String): String? =
         cookieManager.cookieStore.get(baseUri).firstOrNull { it.name == name }?.value
 

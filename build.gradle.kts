@@ -32,6 +32,13 @@ dependencies {
     // EdDSA JWKS verification path (mirrors the Java SDK's tink dependency).
     implementation("com.google.crypto.tink:tink:1.15.0")
 
+    // Argon2id for the §23 SRP client. The JRE ships PBKDF2 but no Argon2, and
+    // §23.3 rule 4 makes BOTH KDFs mandatory for login — argon2id is what a
+    // default-configured AXIAM tenant names, so a compileOnly dependency here
+    // would mean SRP login failing out of the box against the server's own
+    // defaults. Hand-rolling Argon2 was the alternative and is not one.
+    implementation("org.bouncycastle:bcprov-jdk18on:1.83")
+
     // Ktor is an OPTIONAL integration (§10/§11): the core compiles and runs
     // without it. compileOnly keeps it off a non-Ktor consumer's classpath;
     // Ktor users add ktor-server-core themselves.
@@ -124,6 +131,13 @@ val runLoginMfaExample by tasks.registering(JavaExec::class) {
     description = "Run examples/login-mfa/LoginMfaExample.kt"
     classpath = examples.runtimeClasspath
     mainClass.set("io.axiam.sdk.examples.loginmfa.LoginMfaExample")
+}
+
+val runSrpLoginExample by tasks.registering(JavaExec::class) {
+    group = "examples"
+    description = "Run examples/srp-login/SrpLoginExample.kt"
+    classpath = examples.runtimeClasspath
+    mainClass.set("io.axiam.sdk.examples.srplogin.SrpLoginExample")
 }
 
 val runRestAuthzExample by tasks.registering(JavaExec::class) {
