@@ -10,6 +10,7 @@ all connection details from the environment, with safe defaults.
 | REST authz | [`rest-authz/RestAuthzExample.kt`](rest-authz/RestAuthzExample.kt) | `can()`, `checkAccess()`, and order-preserving `batchCheck()` (§1) |
 | OIDC / SSO login | [`oidc-login/OidcLoginExample.kt`](oidc-login/OidcLoginExample.kt) | The nine §12 operations: `oidcDiscover`/`oidcBegin`/`oidcExchange`, `loginClientCredentials`, `introspect`/`revoke` |
 | Reactor | [`reactor/ReactorExample.kt`](reactor/ReactorExample.kt) | The §22 AMQP extension actor: `reactorServe`, a signed allow/deny/mutate reply, and the `ext.` allow-list |
+| SRP login | [`srp-login/SrpLoginExample.kt`](srp-login/SrpLoginExample.kt) | The §23 SRP-6a exchange: `loginSrp`, the disabled-tenant fallback, and `srpEnrollment` |
 
 ## Organization context (§5.1)
 

@@ -35,6 +35,11 @@ import io.axiam.sdk.oidc.SsoCompleteParams
 import io.axiam.sdk.oidc.SsoCompleteResult
 import io.axiam.sdk.oidc.SsoStartParams
 import io.axiam.sdk.oidc.SsoStartResult
+import io.axiam.sdk.srp.Srp
+import io.axiam.sdk.srp.SrpClientSession
+import io.axiam.sdk.srp.SrpEnrollment
+import io.axiam.sdk.srp.SrpGroup
+import io.axiam.sdk.srp.SrpKdfParams
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -45,6 +50,7 @@ import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -264,6 +270,195 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
             session.clear()
         }
     }
+
+    // ---- Secure Remote Password (§23) -----------------------------------
+
+    /**
+     * `POST /api/v1/auth/srp/challenge` followed by `/verify` — SRP-6a login
+     * (CONTRACT.md §23).
+     *
+     * A sibling of [login], not a replacement. It takes the same arguments and
+     * returns the same [LoginResult], MFA branch included, so an application
+     * can switch a tenant to SRP without touching its own code (§23.1).
+     *
+     * **What this does that [login] does not.** The password never leaves this
+     * process. What crosses the wire is `A` and a proof, neither of which is
+     * useful without the account's verifier — so a TLS-terminating proxy, an
+     * accidentally verbose request log, or a heap dump on the server cannot
+     * capture a plaintext password, because the server never has one. It does
+     * **not** protect against a compromised AXIAM server.
+     *
+     * **Cost.** Runs the tenant's KDF: Argon2id at 19 MiB and t=2 by default,
+     * which is tens to hundreds of milliseconds of CPU plus that memory, per
+     * attempt. That cost is the point — it is what makes a leaked verifier no
+     * cheaper to attack than a leaked Argon2id hash. The KDF runs on
+     * [Dispatchers.Default] rather than the caller's thread.
+     *
+     * @param password the account password, as a [CharArray] so the caller can
+     *   clear it; this SDK clears every copy it makes but cannot clear the
+     *   caller's.
+     * @throws NetworkError if the tenant has SRP disabled (the endpoint answers
+     *   `404` — a property of the tenant, not of any user), or if this SDK
+     *   cannot perform the group or KDF the server named. Deliberately not
+     *   [AuthError]: reporting a client capability gap as a credential failure
+     *   would send a user off to reset a password that works.
+     * @throws AuthError for a wrong password, and for a server whose `M2` does
+     *   not verify — in the latter case no session is returned and the
+     *   response's cookies are discarded, because an endpoint that cannot prove
+     *   it holds the verifier is not the server it claims to be.
+     */
+    suspend fun loginSrp(usernameOrEmail: String, password: CharArray): LoginResult {
+        ensureOpen()
+        onCredentialChange()
+
+        var srpSession = SrpClientSession.begin(SRP_OPENING_GROUP)
+        var challenge = srpChallenge(usernameOrEmail, srpSession)
+
+        // The server named a group other than the one A was computed in, so the
+        // exchange has to restart. Rare — the opening guess is AXIAM's own
+        // default — but a tenant on a narrower group must work rather than fail.
+        val named = SrpGroup.fromWire(challenge["group"]?.jsonPrimitive?.content ?: "")
+        if (named != srpSession.group) {
+            srpSession = SrpClientSession.begin(named)
+            challenge = srpChallenge(usernameOrEmail, srpSession)
+        }
+
+        // challenge.identity, never usernameOrEmail (§23.3 rule 2).
+        val identity = challenge["identity"]?.jsonPrimitive?.content ?: ""
+        val saltHex = challenge["salt"]?.jsonPrimitive?.content ?: ""
+        val params = SrpKdfParams(
+            kdf = challenge["kdf"]?.jsonPrimitive?.content ?: "",
+            iterations = challenge["iterations"]?.jsonPrimitive?.int ?: 0,
+            memoryKib = challenge["memory_kib"]?.jsonPrimitive?.int ?: 0,
+            parallelism = challenge["parallelism"]?.jsonPrimitive?.int ?: 0,
+        )
+        // The KDF is deliberately CPU- and memory-bound; keeping it off the
+        // caller's dispatcher is the difference between a slow login and a
+        // stalled event loop.
+        val proofs = withContext(Dispatchers.Default) {
+            val x = Srp.deriveX(identity, password, Srp.fromHex(saltHex, "salt"), params)
+            try {
+                srpSession.finish(identity, saltHex, challenge["b_pub"]?.jsonPrimitive?.content ?: "", x)
+            } finally {
+                x.fill(0)
+            }
+        }
+
+        val body = buildJsonObject {
+            put("srp_session", challenge["srp_session"]?.jsonPrimitive?.content ?: "")
+            put("client_proof", proofs.clientProof)
+        }
+        postJson(SRP_VERIFY_PATH, body).use { response ->
+            if (response.code != 200 && response.code != 202) {
+                throw ErrorMapper.fromHttpStatus(response.code, "SRP login failed", response)
+            }
+            val wire = readJson(response)
+
+            // Mutual authentication (§23.3 rule 6), checked BEFORE anything from
+            // the response is read back as a session or reported. A rogue server
+            // that cannot prove itself must not get the chance to collect an MFA
+            // code either.
+            val serverProof = wire["server_proof"]?.jsonPrimitive?.content
+            if (!Srp.verifyServerProof(proofs.expectedServerProof, serverProof)) {
+                session.discardSessionCookies()
+                throw AuthError("SRP: the server failed to prove it holds this account's verifier")
+            }
+
+            if (response.code == 202) {
+                val token = wire["challenge_token"]?.jsonPrimitive?.content ?: ""
+                return LoginResult(mfaRequired = true, challengeToken = Sensitive.of(token))
+            }
+            return LoginResult(mfaRequired = false, user = buildUser())
+        }
+    }
+
+    /**
+     * Opens an SRP exchange and returns the challenge that answers it.
+     *
+     * Reuses the login body's tenant/org resolution so the two login paths
+     * cannot drift, and sends no `password` field — it has no business on this
+     * request.
+     */
+    private suspend fun srpChallenge(usernameOrEmail: String, srpSession: SrpClientSession): JsonObject {
+        val body = buildJsonObject {
+            put("tenant_slug", tenantId)
+            session.configuredOrgId()?.let { put("org_id", it.toString()) }
+                ?: session.configuredOrgSlug()?.let { put("org_slug", it) }
+            put("username_or_email", usernameOrEmail)
+            put("client_public", srpSession.clientPublic)
+        }
+        postJson(SRP_CHALLENGE_PATH, body).use { response ->
+            if (response.code == 404) {
+                // 404 is a property of the tenant ("SRP is off here"), not of the
+                // user, and not a credential failure — so a caller can fall back
+                // to login() without mistaking it for a bad password.
+                throw NetworkError(
+                    "SRP: this tenant does not offer Secure Remote Password " +
+                        "(srp_mode is disabled); use login() instead",
+                )
+            }
+            if (response.code != 200) {
+                throw ErrorMapper.fromHttpStatus(response.code, "SRP challenge failed", response)
+            }
+            return readJson(response)
+        }
+    }
+
+    /**
+     * Computes a verifier for [password], to send with any request that sets
+     * one: `POST /api/v1/users`, `/auth/password/change`,
+     * `/auth/reset/confirm` and `/admin/bootstrap` (§23.3 rule 11).
+     *
+     * The server cannot compute this — it never sees the plaintext — so it has
+     * to arrive with the request or not at all. The salt is 32 fresh bytes from
+     * the platform CSPRNG on every call.
+     *
+     * This performs no network I/O; it is a method on the client only so it
+     * sits beside [loginSrp] in the API.
+     *
+     * @param identity the account's **username** — the canonical identity the
+     *   challenge endpoint hands back. An email here produces a verifier no
+     *   login can ever satisfy.
+     * @param group the tenant's group, from `GET /api/v1/auth/me` or the reset
+     *   context; `null` means AXIAM's default.
+     * @throws NetworkError if [SrpKdfParams.kdf] is not one this SDK implements.
+     */
+    suspend fun srpEnrollment(
+        identity: String,
+        password: CharArray,
+        group: SrpGroup? = null,
+        params: SrpKdfParams = SrpKdfParams(SrpKdfParams.ARGON2ID, 0),
+    ): SrpEnrollment = withContext(Dispatchers.Default) {
+        val resolvedGroup = group ?: SRP_OPENING_GROUP
+        val resolved = params.withDefaults()
+        val salt = Srp.generateSalt()
+        val x = Srp.deriveX(identity, password, salt, resolved)
+        try {
+            SrpEnrollment(
+                group = resolvedGroup.wireName,
+                kdf = resolved.kdf,
+                memoryKib = resolved.memoryKib,
+                iterations = resolved.iterations,
+                parallelism = resolved.parallelism,
+                salt = Srp.toHex(salt),
+                verifier = Srp.computeVerifier(resolvedGroup, x),
+            )
+        } finally {
+            x.fill(0)
+        }
+    }
+
+    /**
+     * Whether this SDK build can perform SRP.
+     *
+     * Always `true` on the JVM: `BigInteger` is in the standard library,
+     * PBKDF2-HMAC-SHA256 comes from `javax.crypto`, and Argon2id from the
+     * BouncyCastle provider this SDK depends on. It exists because §23.1 puts
+     * it in the locked method vocabulary for every SDK, and in PHP — which
+     * needs `ext-gmp` or `ext-bcmath` and is guaranteed neither — it genuinely
+     * answers `false`.
+     */
+    fun srpAvailable(): Boolean = true
 
     // ---- Authz methods (§1): checkAccess / can / batchCheck -------------
 
@@ -878,6 +1073,19 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
     companion object {
         private const val LOGIN_PATH = "/api/v1/auth/login"
         private const val MFA_VERIFY_PATH = "/api/v1/auth/mfa/verify"
+        private const val SRP_CHALLENGE_PATH = "/api/v1/auth/srp/challenge"
+        private const val SRP_VERIFY_PATH = "/api/v1/auth/srp/verify"
+
+        /**
+         * The group an SRP exchange opens in before the server has named one.
+         *
+         * The challenge response names the group, but `A` has to be computed
+         * *before* that response exists — so the first attempt guesses, and
+         * the exchange restarts if the server names another. The guess is
+         * AXIAM's own default, so the restart is the exceptional path rather
+         * than the normal one.
+         */
+        private val SRP_OPENING_GROUP = SrpGroup.RFC5054_4096
         private const val LOGOUT_PATH = "/api/v1/auth/logout"
         private const val CHECK_PATH = "/api/v1/authz/check"
         private const val BATCH_CHECK_PATH = "/api/v1/authz/check/batch"
