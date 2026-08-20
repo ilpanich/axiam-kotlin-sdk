@@ -721,134 +721,213 @@ business data: this SDK never logs the payload, and neither should you at `info`
 Diagnostics go to a `ReactorLog` you supply — a one-method sink, because this SDK does not pick a
 logging framework for its consumers.
 
-## Secure Remote Password (`io.axiam.sdk.srp`, §23)
+## OPAQUE (`io.axiam.sdk.opaque`, §23)
 
-`loginSrp` proves the password to the server without the password — or anything
-from which it can be cheaply recovered — ever crossing the wire. The server
-stores a **verifier** `v = g^x mod N` instead of a password hash, and what
-travels is `A` and a proof, neither of which is useful without that verifier.
+`loginOpaque` proves the password to the server without the password — or
+anything from which it can be cheaply recovered — ever crossing the wire. The
+server stores a **registration record** sealed under a tenant-wide oblivious PRF
+seed, and what travels is a blinded group element and a MAC, neither useful
+without both.
 
 ```kotlin
-val password = readPassword()          // CharArray, so it can be cleared
+val password = readPassword()
 try {
-    val result = client.loginSrp("alice", password.copyOf())
+    val result = client.loginOpaque("alice", password.copyOf())
 } finally {
     password.fill(' ')
 }
 ```
 
 It takes the same arguments as `login` and returns the same `LoginResult`, MFA
-branch included, so switching a tenant to SRP needs no change to how the result
-is handled. A runnable end-to-end example, including the fallback and the
-enrolment call, is in [`examples/srp-login`](examples/srp-login).
+branch included, so switching a tenant to OPAQUE needs no change to how the
+result is handled. A runnable end-to-end example, including the fallback and the
+enrolment call, is in [`examples/opaque-login`](examples/opaque-login).
+
+Unlike the SRP-6a it replaces, there is no separate server-proof step and
+nothing has been dropped: RFC 9807's AKE authenticates the server during the
+handshake, so opening `KE2` **is** the proof that it holds the record. The old
+contract had to mandate an `M2` check in capitals because skipping it kept only
+half the protocol; there is now nothing to skip.
+
+### The protocol is not implemented here
+
+CONTRACT.md §23.1 forbids an SDK from writing its own OPAQUE. SRP-6a was
+arithmetic every language can express, which is why `io.axiam.sdk.srp` existed at
+~500 lines of modular exponentiation. OPAQUE is not: it needs an oblivious PRF,
+`hash_to_curve`, `expand_message_xmd`, an envelope construction and a
+three-message AKE, and eleven independent implementations of that is eleven
+chances to be subtly and silently wrong in a way that still interoperates until
+it does not.
+
+`io.axiam.sdk.opaque` therefore contains **no cryptography**. It is a JNA binding
+to `libaxiam_opaque_ffi`, the same implementation the AXIAM server links, plus
+the ownership bookkeeping a binding has to get right.
+
+### Installing
+
+Two things are needed, and both are deliberately optional:
+
+1. **JNA** — declared `compileOnly` here, exactly as Ktor and the RabbitMQ client
+   are, so it does not reach your classpath unless you ask for it. A
+   REST/gRPC/AMQP consumer whose tenant does not use OPAQUE should not be made to
+   carry a native-access library. Add it explicitly to use OPAQUE:
+
+   ```kotlin
+   implementation("net.java.dev.jna:jna:5.19.1")
+   ```
+
+2. **The shared library** — a Rust `cdylib` published as a per-platform asset on
+   the [axiam release page](https://github.com/ilpanich/axiam/releases), not an
+   artifact on Maven Central. Put it on `java.library.path`, or point at it:
+
+   ```bash
+   java -Daxiam.opaque.library=/opt/axiam/libaxiam_opaque_ffi.so ...
+   # or: export AXIAM_OPAQUE_LIBRARY=/opt/axiam/libaxiam_opaque_ffi.so
+   ```
+
+This SDK targets JVM 17, where the FFM API (`java.lang.foreign`) does not exist
+at all. Raising the target to 22 to avoid one optional dependency would be the
+larger break by a wide margin.
+
+Ask before you need it:
+
+```kotlin
+val result = if (client.opaqueAvailable()) {
+    client.loginOpaque(user, password.copyOf())
+} else {
+    client.login(user, String(password))
+}
+```
+
+Unlike the `srpAvailable()` it replaces — hard-coded `true` on the JVM because
+`BigInteger` and BouncyCastle are always there — this can genuinely answer
+`false`. It reports rather than throwing, so an application chooses the password
+path up front instead of discovering the gap mid-exchange.
+
+> **Note for existing users:** `org.bouncycastle:bcprov-jdk18on` is no longer a
+> dependency. It was here for the SRP client's Argon2id and nothing else in
+> `src/main` imported it, so keeping an ~8 MB provider on every consumer's
+> classpath for a code path that no longer exists would be a dependency nobody
+> could explain a year from now. Add it back yourself if your application was
+> relying on it transitively.
 
 ### What this buys, and what it does not
 
-SRP closes holes TLS 1.3 does not:
+OPAQUE closes holes TLS 1.3 does not:
 
 - a TLS-terminating reverse proxy, ingress controller, CDN or service mesh sees
-  every plaintext password today; under SRP it sees `A` and `M1`;
+  every plaintext password today; under OPAQUE it sees `KE1` and `KE3`;
 - an accidental request-body log, a heap dump or a crash reporter can no longer
   capture a plaintext password, because the server never has one;
-- a leaked verifier database still costs a full KDF evaluation per candidate
-  password, exactly as a leaked Argon2id database does.
+- **a stolen record database is not offline-crackable on its own.** This is the
+  substantive gain over SRP: cracking a record also requires the tenant's OPRF
+  seed, which is AES-256-GCM encrypted at rest under a key the database does not
+  hold.
 
-It does **not** protect against a compromised AXIAM server, and this SDK does
-not claim it does.
+It does **not** protect against a compromised AXIAM server, and this SDK does not
+claim it does.
 
-### Tenant policy, and the two errors that are not credential failures
+### Tenant policy, and the errors that are not credential failures
 
-`srp_mode` is an organization baseline a tenant may tighten:
+`opaque_mode` is an organization baseline a tenant may tighten:
 
-| mode | `login` | `loginSrp` |
+| mode | `login` | `loginOpaque` |
 |---|---|---|
 | `disabled` (default) | works | `NetworkError` — the endpoint answers `404` |
 | `optional` | works | works |
-| `required` | `AuthzError` (`srp_required`) | works |
+| `required` | `AuthzError` | works |
 
-Both of those are deliberately **not** `AuthError`:
+Which exception you get is most of what this SDK owns on this path:
 
-- `NetworkError` from `loginSrp` means *this tenant does not offer SRP*, a
-  property of the tenant rather than of any user. Fall back to `login`.
-- `AuthzError` from `login` means *this tenant refuses password login*. The
-  credentials were never examined. Showing "invalid username or password" to a
-  user whose password is perfectly good is the failure this mapping exists to
-  prevent.
+| condition | exception | why |
+|---|---|---|
+| tenant has OPAQUE disabled | `NetworkError` | a property of the tenant, not of any user — fall back to `login` |
+| shared library or JNA absent | `NetworkError` | a deployment fact, raised before any request is sent |
+| server named a KSF this build cannot perform | `NetworkError` | a configuration problem; substituting one would surface as a wrong password |
+| `/start` response missing `ke2` | `NetworkError` | malformed response |
+| envelope did not open / `KE2` did not verify | `AuthError` | the **whole** of the credential check |
+| tenant refuses password login (`login`) | `AuthzError` | the credentials were never examined |
 
-`required` refuses **every** principal in the tenant, not only the enrolled
-ones. Splitting the response on whether an account has a verifier would turn
+That `AuthError` covers both halves of the mutual authentication: a wrong
+password, an account that does not exist, and a server that does not hold the
+record are indistinguishable by design. **Nothing is sent to `login/finish` in
+that case** (§23.4 rule 7), and you must not retry over `login()` — that hands
+the plaintext to an endpoint that just failed to prove it holds the record.
+
+`required` refuses **every** principal in the tenant, not only the enrolled ones.
+Splitting the response on whether an account has a record would turn
 `/auth/login` into an enumeration oracle costing one junk password per name. It
-also means `required` locks out anyone not yet enrolled: a verifier needs the
+also means `required` locks out anyone not yet enrolled: a record needs the
 plaintext password, and a stored Argon2id hash is not invertible, so nobody can
 be enrolled retroactively. Operators turn it on last, after a password-reset
 campaign.
 
 ### Enrolment
 
-The server cannot compute a verifier, so any request that **sets** a password
-has to carry one. `srpEnrollment` produces the `srp` object for
+The server cannot build a registration record, so any request that **sets** a
+password has to carry one. `opaqueEnrollment` produces the `opaque` object for
 `POST /api/v1/users`, `/auth/password/change`, `/auth/reset/confirm` and
 `/admin/bootstrap`:
 
 ```kotlin
-val enrolment = client.srpEnrollment(
-    identity = "alice",                            // the USERNAME, not an email
-    password = newPassword,
-    params = SrpKdfParams(SrpKdfParams.ARGON2ID, 0),  // 0 = AXIAM's own costs
-)
+val enrolment = client.opaqueEnrollment(newPassword)
+requestBody["opaque"] = enrolment.toJson()
 ```
 
-The identity must be the account's **username**: `x` is derived over
-`identity ":" password` using the identity the challenge endpoint hands back, so
-a verifier enrolled against an email address can never satisfy a login. For the
-same reason, **renaming a user invalidates their verifier** — the server clears
-it, and the user re-enrols at their next password change.
+Note the parameters that are gone. There is no `identity`: the SRP version
+required the account's canonical **username**, an email there produced a verifier
+no login could ever satisfy — and renaming a user invalidated their verifier
+outright. A record binds to a credential identifier the server chooses, so
+neither is true any more. There is no `group` or `SrpKdfParams` either: those
+come from the `register/start` response, so a caller cannot pick a cost the
+server will not honour.
 
-The salt is 32 fresh bytes from `SecureRandom` on every call.
+Unlike `srpEnrollment` this is a genuinely suspending call that performs network
+I/O — one `register/start` round trip. The envelope is sealed under the server's
+oblivious PRF, so there is no offline computation that produces a valid record.
 
 ### Cost
 
-`loginSrp` runs the tenant's KDF: Argon2id at 19 MiB and t=2 by default, which
-is tens to hundreds of milliseconds of CPU plus that memory, per login attempt.
-That cost is the point — it is what makes a leaked verifier no cheaper to attack
-than a leaked Argon2id hash. Both `loginSrp` and `srpEnrollment` run the KDF on
-`Dispatchers.Default` rather than the caller's, which is the difference between
-a slow login and a stalled event loop; size that dispatcher accordingly.
+`loginOpaque` runs the tenant's key-stretching function: Argon2id at 19 MiB and
+t=2 by default, which is tens to hundreds of milliseconds of CPU plus that
+memory, per login attempt. That cost is the point — it is what makes a stolen
+record expensive to attack even by someone holding the OPRF seed. Both
+`loginOpaque` and `opaqueEnrollment` run it on `Dispatchers.Default` rather than
+the caller's dispatcher, which is the difference between a slow login and a
+stalled event loop. Size that pool and your request timeouts accordingly; it is
+not a cost `login` has.
 
 ### Cryptographic parameters
 
-RFC 5054 Appendix A groups `rfc5054_2048`, `rfc5054_3072` and `rfc5054_4096`
-(the AXIAM default), embedded as constants. A modulus is **never** accepted from
-the server — a server-supplied `N` is a server-supplied trapdoor — and a group
-this SDK does not recognise is refused rather than guessed.
+The ciphersuite is `OPAQUE-3DH` over **ristretto255** with **SHA-512**,
+HKDF-SHA-512 and HMAC-SHA-512, fixed AXIAM-wide. It is not negotiated and not
+read from the server: a client that accepted a suite from the endpoint it is
+authenticating would be accepting a downgrade.
 
-Two deliberate divergences from RFC 5054, both AXIAM-wide:
-
-- `H` is **SHA-256**, not SHA-1.
-- `x` is a **memory-hard KDF output**, not a bare hash. RFC 5054's bare-hash `x`
-  would make a leaked verifier *cheaper* to attack offline than the Argon2id
-  hashes AXIAM already stores, which would make adopting SRP a net regression at
-  rest.
-
-PBKDF2-HMAC-SHA256 comes from `javax.crypto`. Argon2id comes from
-**BouncyCastle** (`org.bouncycastle:bcprov-jdk18on`), which this SDK depends on
-as `implementation` rather than `compileOnly` like Ktor and the RabbitMQ client:
-§23.3 rule 4 makes both KDFs mandatory for login, and `argon2id` is what a
-default-configured AXIAM tenant names, so an optional dependency would mean SRP
-login failing out of the box against the server's own defaults.
+The key-stretching function *is* the server's to name, per exchange, and is
+honoured as given rather than cached or defaulted — a credential enrolled under
+one cost keeps working after a tenant raises its policy. `argon2id` and `scrypt`
+are accepted; anything else is refused rather than substituted. Costs outside the
+bands this SDK will act on (`memory_kib` 8 MiB–1 GiB, `iterations` 1–10,
+`parallelism` 1–16, `log_n` 14–20, `r`/`p` 1–16) are refused too: a server is
+trusted to name its own policy, not to name a cost that would wedge every device
+an account owns.
 
 ### Zeroization
 
-`loginSrp` and `srpEnrollment` take the password as a `CharArray` so the caller
-can clear it, and clear every copy they make of it along with `x`, `S` and `K`.
-They cannot clear the caller's array — do that yourself, in a `finally`. If your
-password arrives as a `String` (from a JSON body, say), it is already immutable
-and already copied; the `CharArray` signature is honest about where this SDK's
-reach ends rather than implying a guarantee it cannot keep.
+`loginOpaque` and `opaqueEnrollment` take the password as a `CharArray` so the
+caller can clear it, and clear every copy they make of it — including the UTF-8
+bytes handed across the ABI. They cannot clear the caller's array; do that
+yourself, in a `finally`. If your password arrives as a `String` (from a JSON
+body, say), it is already immutable and already copied; the `CharArray` signature
+is honest about where this SDK's reach ends rather than implying a guarantee it
+cannot keep.
 
-`srpAvailable()` always reports `true` here. It is in the API because §23.1 puts
-it in every SDK's vocabulary, and in PHP — the one language with no native
-bignum — it genuinely answers `false`.
+The password crosses the ABI as **UTF-8**, explicitly, never through JNA's
+`String` mapping — which uses the platform charset unless `jna.encoding` says
+otherwise. A password that encoded differently under a different default locale
+would derive a randomized password no AXIAM server agrees with, and would surface
+as a wrong password on that machine only.
 
 ## Building from source
 
