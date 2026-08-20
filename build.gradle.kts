@@ -19,6 +19,7 @@ repositories {
 
 val ktorVersion = "2.3.12"
 val rabbitMqVersion = "5.25.0"
+val jnaVersion = "5.19.1"
 
 dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
@@ -32,12 +33,29 @@ dependencies {
     // EdDSA JWKS verification path (mirrors the Java SDK's tink dependency).
     implementation("com.google.crypto.tink:tink:1.15.0")
 
-    // Argon2id for the §23 SRP client. The JRE ships PBKDF2 but no Argon2, and
-    // §23.3 rule 4 makes BOTH KDFs mandatory for login — argon2id is what a
-    // default-configured AXIAM tenant names, so a compileOnly dependency here
-    // would mean SRP login failing out of the box against the server's own
-    // defaults. Hand-rolling Argon2 was the alternative and is not one.
-    implementation("org.bouncycastle:bcprov-jdk18on:1.83")
+    // NOTE: org.bouncycastle:bcprov-jdk18on used to sit here, for the §23 SRP
+    // client's Argon2id. It is gone with SRP: CONTRACT §23.1 forbids an SDK
+    // from implementing OPAQUE, so this SDK derives nothing locally and the key
+    // stretching happens inside libaxiam_opaque_ffi. Nothing else in src/main
+    // imported org.bouncycastle, so keeping a ~8 MB provider on every
+    // consumer's classpath for a code path that no longer exists would be a
+    // dependency nobody could explain a year from now.
+
+    // JNA binds libaxiam_opaque_ffi, the OPAQUE (RFC 9807) client half.
+    // CONTRACT §23.1 forbids an SDK from implementing OPAQUE itself, so the
+    // protocol comes from the same shared library the AXIAM server links.
+    //
+    // compileOnly, like Ktor and the RabbitMQ client above: a REST/gRPC/AMQP
+    // consumer whose tenant does not use OPAQUE should not be made to carry a
+    // native-access library. OPAQUE users add net.java.dev.jna:jna themselves.
+    // Its absence is a NoClassDefFoundError the loader catches, after which
+    // AxiamClient.opaqueAvailable() answers false rather than throwing at
+    // login time.
+    //
+    // Not the Java 22 FFM API: this SDK targets JVM 17, where java.lang.foreign
+    // does not exist at all. Raising the target to 22 to avoid one optional
+    // dependency would be the larger break by a wide margin.
+    compileOnly("net.java.dev.jna:jna:$jnaVersion")
 
     // Ktor is an OPTIONAL integration (§10/§11): the core compiles and runs
     // without it. compileOnly keeps it off a non-Ktor consumer's classpath;
@@ -62,6 +80,9 @@ dependencies {
     // test — no private key material is ever committed.
     testImplementation("com.squareup.okhttp3:okhttp-tls:4.12.0")
     testImplementation("com.rabbitmq:amqp-client:$rabbitMqVersion")
+    // The OPAQUE tests implement the C ABI in plain Kotlin, which needs JNA's
+    // Pointer/Memory types even though no shared library is loaded.
+    testImplementation("net.java.dev.jna:jna:$jnaVersion")
     testImplementation("io.ktor:ktor-server-core:$ktorVersion")
     testImplementation("io.ktor:ktor-server-test-host:$ktorVersion")
 }
@@ -133,11 +154,11 @@ val runLoginMfaExample by tasks.registering(JavaExec::class) {
     mainClass.set("io.axiam.sdk.examples.loginmfa.LoginMfaExample")
 }
 
-val runSrpLoginExample by tasks.registering(JavaExec::class) {
+val runOpaqueLoginExample by tasks.registering(JavaExec::class) {
     group = "examples"
-    description = "Run examples/srp-login/SrpLoginExample.kt"
+    description = "Run examples/opaque-login/OpaqueLoginExample.kt"
     classpath = examples.runtimeClasspath
-    mainClass.set("io.axiam.sdk.examples.srplogin.SrpLoginExample")
+    mainClass.set("io.axiam.sdk.examples.opaquelogin.OpaqueLoginExample")
 }
 
 val runRestAuthzExample by tasks.registering(JavaExec::class) {
