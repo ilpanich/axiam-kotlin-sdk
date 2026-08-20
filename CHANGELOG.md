@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   first, so a refusal leaves the exchange intact: it is released normally, and a
   caller who fixes the parameters can retry.
 
+### Changed
+
+- Re-vendor `openapi.json` at **1.0.0-alpha32**, matching the server. The
+  content was already byte-identical in every path and schema; only
+  `info.version` differed, which is what the cross-repo artifact-drift gate
+  reports as `STALE`.
+
 ## [Unreleased]
 
 ### Added
