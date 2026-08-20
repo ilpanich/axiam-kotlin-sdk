@@ -86,10 +86,18 @@ public class RegistrationExchange internal constructor(
      *   response.
      */
     public fun finish(password: CharArray, registrationResponse: String, ksf: KsfParams): String {
-        val state = consume()
-        val encoded = Opaque.nulTerminatedUtf8(password)
+        // The key-stretching handle is built BEFORE the state is spent, and the
+        // order is load-bearing. `build` refuses an unrecognised function or an
+        // out-of-band cost, and if the state had already been taken out of its
+        // one-shot slot by then it could never be freed -- a leaked Rust
+        // allocation per refused attempt, which is once per login against a
+        // misconfigured tenant. Built first, a refusal leaves the exchange
+        // intact: `close()` still releases it, and a caller who fixes the
+        // parameters can retry.
         val ksfHandle = ksf.build(lib)
+        val encoded = Opaque.nulTerminatedUtf8(password)
         try {
+            val state = consume()
             val record = lib.axiam_opaque_registration_finish(
                 state,
                 encoded,
@@ -140,10 +148,18 @@ public class LoginExchange internal constructor(
      *   key-stretching function is one this SDK cannot ask for.
      */
     public fun finish(password: CharArray, ke2: String, ksf: KsfParams): String {
-        val state = consume()
-        val encoded = Opaque.nulTerminatedUtf8(password)
+        // The key-stretching handle is built BEFORE the state is spent, and the
+        // order is load-bearing. `build` refuses an unrecognised function or an
+        // out-of-band cost, and if the state had already been taken out of its
+        // one-shot slot by then it could never be freed -- a leaked Rust
+        // allocation per refused attempt, which is once per login against a
+        // misconfigured tenant. Built first, a refusal leaves the exchange
+        // intact: `close()` still releases it, and a caller who fixes the
+        // parameters can retry.
         val ksfHandle = ksf.build(lib)
+        val encoded = Opaque.nulTerminatedUtf8(password)
         try {
+            val state = consume()
             val ke3 = lib.axiam_opaque_login_finish(
                 state,
                 encoded,
