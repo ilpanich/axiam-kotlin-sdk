@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-alpha34] - 2026-08-21
+
+### Added
+
+- Replace SRP-6a with OPAQUE (RFC 9807), CONTRACT §23
+
+### Changed
+
+- Link to the AXIAM platform documentation site
+- Re-vendor openapi.json at alpha32 (#37)
+
+### Fixed
+
+- Build the KSF before spending the exchange's state handle
+
 ## [Unreleased]
 
 ### Added
