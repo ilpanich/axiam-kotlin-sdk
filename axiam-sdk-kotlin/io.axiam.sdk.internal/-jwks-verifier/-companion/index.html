@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html class="no-js">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" charset="UTF-8">
+    <title>Companion</title>
+    <link href="../../../../images/logo-icon.svg" rel="icon" type="image/svg">
+    <script>var pathToRoot = "../../../../";</script>
+    <script>document.documentElement.classList.replace("no-js","js");</script>
+    <script>const storage = localStorage.getItem("dokka-dark-mode")
+    if (storage == null) {
+        const osDarkSchemePreferred = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+        if (osDarkSchemePreferred === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    } else {
+        const savedDarkMode = JSON.parse(storage)
+        if(savedDarkMode === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    }
+    </script>
+<script type="text/javascript" src="https://unpkg.com/kotlin-playground@1/dist/playground.min.js" async="async"></script>
+<script type="text/javascript" src="../../../../scripts/sourceset_dependencies.js" async="async"></script>
+<link href="../../../../styles/style.css" rel="Stylesheet">
+<link href="../../../../styles/main.css" rel="Stylesheet">
+<link href="../../../../styles/prism.css" rel="Stylesheet">
+<link href="../../../../styles/logo-styles.css" rel="Stylesheet">
+<link href="../../../../styles/font-jb-sans-auto.css" rel="Stylesheet">
+<script type="text/javascript" src="../../../../scripts/clipboard.js" async="async"></script>
+<script type="text/javascript" src="../../../../scripts/navigation-loader.js" async="async"></script>
+<script type="text/javascript" src="../../../../scripts/platform-content-handler.js" async="async"></script>
+<script type="text/javascript" src="../../../../scripts/main.js" defer="defer"></script>
+<script type="text/javascript" src="../../../../scripts/prism.js" async="async"></script>
+<script type="text/javascript" src="../../../../scripts/symbol-parameters-wrapper_deferred.js" defer="defer"></script>
+</head>
+<body>
+    <div class="root">
+<nav class="navigation" id="navigation-wrapper">
+    <div class="navigation--inner">
+        <div class="navigation-title">
+            <button class="menu-toggle" id="menu-toggle" type="button">toggle menu</button>
+            <div class="library-name">
+                    <a class="library-name--link" href="../../../../index.html">
+                            axiam-sdk-kotlin
+                    </a>
+            </div>
+            <div class="library-version">
+1.0.0-alpha37            </div>
+        </div>
+        <div class="filter-section" id="filter-section">
+                <button class="platform-tag platform-selector jvm-like" data-active="" data-filter=":dokkaHtml/main">jvm</button>
+        </div>
+    </div>
+    <div class="navigation-controls">
+        <button class="navigation-controls--btn navigation-controls--theme" id="theme-toggle-button" type="button">switch theme</button>
+        <div class="navigation-controls--btn navigation-controls--search" id="searchBar" role="button">search in API</div>
+    </div>
+</nav>
+        <div id="container">
+            <div class="sidebar" id="leftColumn">
+                <div class="sidebar--inner" id="sideMenu"></div>
+            </div>
+            <div id="main">
+<div class="main-content" data-page-type="classlike" id="content" pageIds="axiam-sdk-kotlin::io.axiam.sdk.internal/JwksVerifier.Companion///PointingToDeclaration//769193423">
+  <div class="breadcrumbs"><a href="../../../../index.html">axiam-sdk-kotlin</a><span class="delimiter">/</span><a href="../../index.html">io.axiam.sdk.internal</a><span class="delimiter">/</span><a href="../index.html">JwksVerifier</a><span class="delimiter">/</span><span class="current">Companion</span></div>
+  <div class="cover ">
+    <h1 class="cover"><span><span>Companion</span></span></h1>
+    <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">object </span><a href="index.html">Companion</a></div></div></div>
+  </div>
+  <div class="tabbedcontent">
+    <div class="tabs-section" tabs-section="tabs-section"><button class="section-tab" data-active="" data-togglable="CONSTRUCTOR,TYPE,PROPERTY,FUNCTION">Members</button></div>
+    <div class="tabs-section-body">
+      <div data-togglable="PROPERTY">
+        <h2 class="">Properties</h2>
+        <div class="table"><a data-name="95865698%2FProperties%2F769193423" anchor-label="CLOCK_SKEW_SECONDS" id="95865698%2FProperties%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="-c-l-o-c-k_-s-k-e-w_-s-e-c-o-n-d-s.html"><span><span>CLOCK_SKEW_SECONDS</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="95865698%2FProperties%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">const </span><span class="token keyword">val </span><a href="-c-l-o-c-k_-s-k-e-w_-s-e-c-o-n-d-s.html">CLOCK_SKEW_SECONDS</a><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-long/index.html">Long</a><span class="token operator"> = </span><span class="token constant">60</span></div><div class="brief "><p class="paragraph">CONTRACT.md §10.1 rule 7 — the ONE named, bounded leeway applied to the <code class="lang-kotlin">exp</code> and <code class="lang-kotlin">nbf</code> comparisons. It is a constant, not an inline literal, and there is deliberately no setter: the contract forbids an operator raising it to an unbounded value.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div data-togglable="FUNCTION">
+        <h2 class="">Functions</h2>
+        <div class="table"><a data-name="1398853841%2FFunctions%2F769193423" anchor-label="assertLocalClaims" id="1398853841%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="assert-local-claims.html"><span>assert</span><wbr></wbr><span>Local</span><wbr></wbr><span><span>Claims</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="1398853841%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">fun </span><a href="assert-local-claims.html"><span class="token function">assertLocalClaims</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">claims<span class="token operator">: </span><span data-unresolved-link="com.nimbusds.jwt/JWTClaimsSet///PointingToDeclaration/">JWTClaimsSet</span><span class="token punctuation">, </span></span><span class="parameter ">configuredTenantId<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token punctuation">, </span></span><span class="parameter ">expectedIssuer<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">?</span><span class="token operator"> = </span>null<span class="token punctuation">, </span></span><span class="parameter ">expectedAudience<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">?</span><span class="token operator"> = </span>null<span class="token punctuation">, </span></span><span class="parameter ">nowEpochSec<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-long/index.html">Long</a><span class="token operator"> = </span>System.currentTimeMillis() / 1000</span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">CONTRACT.md §10.1 rules 2-7 — the <strong>minimum local-verification set</strong>, applied to an already-signature-verified <a href="assert-local-claims.html">claims</a> set (rule 1 lives in <a href="../verify-signature-only-unchecked.html">verifySignatureOnlyUnchecked</a>). Together those two calls are the whole guard; neither is sufficient alone.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-512938133%2FFunctions%2F769193423" anchor-label="assertTenant" id="-512938133%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="assert-tenant.html"><span>assert</span><wbr></wbr><span><span>Tenant</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-512938133%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">fun </span><a href="assert-tenant.html"><span class="token function">assertTenant</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">claims<span class="token operator">: </span><span data-unresolved-link="com.nimbusds.jwt/JWTClaimsSet///PointingToDeclaration/">JWTClaimsSet</span><span class="token punctuation">, </span></span><span class="parameter ">configuredTenantId<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">Cross-tenant carry-forward control (CONTRACT.md §10.1 rule 4): the JWKS endpoint is org-wide, so a valid signature alone does not imply the token belongs to <a href="assert-tenant.html">configuredTenantId</a>. Throws if the <code class="lang-kotlin">tenant_id</code> claim is absent, of the wrong JSON type, or mismatched — and also when there is no configured tenant to compare against, since a blank expectation would otherwise silently match nothing (or, with a blank claim, everything).</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-375951413%2FFunctions%2F769193423" anchor-label="certificateThumbprintS256" id="-375951413%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="certificate-thumbprint-s256.html"><span>certificate</span><wbr></wbr><span>Thumbprint</span><wbr></wbr><span><span>S256</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-375951413%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">fun </span><a href="certificate-thumbprint-s256.html"><span class="token function">certificateThumbprintS256</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">der<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-byte-array/index.html">ByteArray</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a></div><div class="brief "><p class="paragraph">Compute the RFC 8705 §3.1 <code class="lang-kotlin">x5t#S256</code> thumbprint of a DER client certificate: base64url-encoded SHA-256, <strong>without</strong> padding.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="2084609653%2FFunctions%2F769193423" anchor-label="forJwksUri" id="2084609653%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="for-jwks-uri.html"><span>for</span><wbr></wbr><span>Jwks</span><wbr></wbr><span><span>Uri</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="2084609653%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">fun </span><a href="for-jwks-uri.html"><span class="token function">forJwksUri</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">jwksUri<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../index.html">JwksVerifier</a></div><div class="brief "><p class="paragraph">Builds a verifier bound to the EXACT <a href="for-jwks-uri.html">jwksUri</a> given — no <code class="lang-kotlin">/oauth2/jwks</code> path is concatenated.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-1403863679%2FFunctions%2F769193423" anchor-label="verifyCertificateBinding" id="-1403863679%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="verify-certificate-binding.html"><span>verify</span><wbr></wbr><span>Certificate</span><wbr></wbr><span><span>Binding</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1403863679%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">fun </span><a href="verify-certificate-binding.html"><span class="token function">verifyCertificateBinding</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">claims<span class="token operator">: </span><span data-unresolved-link="com.nimbusds.jwt/JWTClaimsSet///PointingToDeclaration/">JWTClaimsSet</span><span class="token punctuation">, </span></span><span class="parameter ">presentedThumbprint<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">?</span></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">CONTRACT.md §10.1 <strong>rule 9</strong> — enforce a token's sender constraint against the certificate the caller presented on <strong>this</strong> connection (RFC 8705 §3 / RFC 7800, contract 1.15).</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-1277998342%2FFunctions%2F769193423" anchor-label="verifyTokenBinding" id="-1277998342%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="verify-token-binding.html"><span>verify</span><wbr></wbr><span>Token</span><wbr></wbr><span><span>Binding</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1277998342%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">fun </span><a href="verify-token-binding.html"><span class="token function">verifyTokenBinding</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">claims<span class="token operator">: </span><span data-unresolved-link="com.nimbusds.jwt/JWTClaimsSet///PointingToDeclaration/">JWTClaimsSet</span><span class="token punctuation">, </span></span><span class="parameter ">proofs<span class="token operator">: </span><a href="../../-presented-proofs/index.html">PresentedProofs</a></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">CONTRACT.md §10.1 <strong>rule 9</strong> in full — enforce a token's sender constraint against <strong>every</strong> proof the caller presented (contract 1.16).</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      <div class="footer">
+        <span class="go-to-top-icon"><a href="#content" id="go-to-top-link"></a></span><span>© 2026 Copyright</span><span
+                class="pull-right"><span>Generated by </span><a
+                href="https://github.com/Kotlin/dokka"><span>dokka</span><span class="padded-icon"></span></a></span>
+      </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
