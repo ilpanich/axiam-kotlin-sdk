@@ -7,25 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- OPAQUE: a refused key-stretching function no longer strands the exchange's
-  native state handle. `finish()` spent the handle before building the KSF, so
-  an unrecognised function or an out-of-band cost left it out of its one-shot
-  slot and unreachable by `close()` or the `Cleaner` — a leaked Rust allocation
-  once per login attempt against a misconfigured tenant. The KSF is now built
-  first, so a refusal leaves the exchange intact: it is released normally, and a
-  caller who fixes the parameters can retry.
-
-### Changed
-
-- Re-vendor `openapi.json` at **1.0.0-alpha32**, matching the server. The
-  content was already byte-identical in every path and schema; only
-  `info.version` differed, which is what the cross-repo artifact-drift gate
-  reports as `STALE`.
-
-## [Unreleased]
-
 ### Added
 
 - OPAQUE (RFC 9807) login and enrolment (CONTRACT §23): `loginOpaque`,
@@ -37,18 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `libaxiam_opaque_ffi`; a consumer whose tenant does not use OPAQUE does not
   receive it and does not need it. OPAQUE users add it themselves.
 
-### Removed
-
-- **BREAKING** — SRP-6a. `loginSrp`, `srpEnrollment`, `srpAvailable`, the whole
-  `io.axiam.sdk.srp` package, `srp-test-vectors.json` and `examples/srp-login`
-  are all gone. AXIAM's server-side SRP endpoints are removed in the same
-  release, so keeping the client would leave methods that only ever return 404.
-- **BREAKING** — `org.bouncycastle:bcprov-jdk18on` is no longer a dependency. It
-  was here for the SRP client's Argon2id and nothing else in `src/main` imported
-  it. Applications relying on it transitively must declare it themselves.
-
 ### Changed
 
+- Re-vendor `openapi.json` at **1.0.0-alpha32**, matching the server. The
+  content was already byte-identical in every path and schema; only
+  `info.version` differed, which is what the cross-repo artifact-drift gate
+  reports as `STALE`.
 - **BREAKING** — the OPAQUE protocol is NOT implemented in this SDK. CONTRACT
   §23.1 forbids it, so the client half is a JNA binding to
   `libaxiam_opaque_ffi` — the same implementation the AXIAM server links,
@@ -70,6 +45,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   library, and a key-stretching function this build cannot perform are all
   `NetworkError` (a caller can fall back, or an operator can act); everything
   else is `AuthError` and must NOT be retried over `login()` (§23.4 rule 7).
+
+### Removed
+
+- **BREAKING** — SRP-6a. `loginSrp`, `srpEnrollment`, `srpAvailable`, the whole
+  `io.axiam.sdk.srp` package, `srp-test-vectors.json` and `examples/srp-login`
+  are all gone. AXIAM's server-side SRP endpoints are removed in the same
+  release, so keeping the client would leave methods that only ever return 404.
+- **BREAKING** — `org.bouncycastle:bcprov-jdk18on` is no longer a dependency. It
+  was here for the SRP client's Argon2id and nothing else in `src/main` imported
+  it. Applications relying on it transitively must declare it themselves.
+
+### Fixed
+
+- OPAQUE: a refused key-stretching function no longer strands the exchange's
+  native state handle. `finish()` spent the handle before building the KSF, so
+  an unrecognised function or an out-of-band cost left it out of its one-shot
+  slot and unreachable by `close()` or the `Cleaner` — a leaked Rust allocation
+  once per login attempt against a misconfigured tenant. The KSF is now built
+  first, so a refusal leaves the exchange intact: it is released normally, and a
+  caller who fixes the parameters can retry.
 
 ## [1.0.0-alpha31] - 2026-08-20
 
@@ -120,24 +115,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Report a clamped decision-memo TTL (contract 1.9, §19.2 rule 6)
 - §16 retry, §17 memo, §18 close(), §19 telemetry (D5)
 - Device grant, token exchange, logout helpers; re-vendor (D6)
-
-### Changed
-
-- Re-vendor CONTRACT.md 1.19, openapi.json and proto/ from main (R5.8) (#29)
-- Contract 1.15 — §10.1 rule 9, sender-constrained access tokens (#26)
-- Add the §20.7 required timeout assertion
-- Retire the "measured residual" justification (contract 1.14)
-- Re-sync to contract 1.14 (#302 closed)
-
-### Fixed
-
-- R5.7 remediation — F-13, F-14 (F-03 already fixed) (#28)
-- Make the token-type constants public
-
-## [Unreleased]
-
-### Added
-
 - **CONTRACT.md §22 — the reactor runtime (`io.axiam.sdk.reactor`).** A reactor is an
   external process subscribed to named hook events on the AMQP bus, answering
   allow / deny / mutate inside a timeout the server declared. `reactorServe(options)`
@@ -242,82 +219,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **CONTRACT.md §21** — the FAPI 2.0 posture as an SDK sees it. Only rule 9 is normative
   for this SDK.
-
-### Fixed
-
-- **F-13: the §12.4 rule 7 (all-or-nothing discard) test only asserted that `oidcExchange`
-  throws, not that the same response's sentinel access/refresh token is absent from the
-  outcome or the exception.** `OidcCoverageGapsTest`'s clock-skew test now uses a
-  `"should-never-be-returned"` sentinel and positively asserts it appears in neither
-  `AuthError.message` nor `AuthError.toString()`, matching the five sibling SDKs that
-  already did.
-- **F-14: `OidcSupport.executeRequest()` (the transport seam every §12 wire call goes
-  through) now documents, in a doc comment, the structural invariant that keeps a `401`
-  from `/oauth2/*` out of the §9 single-flight refresh guard — no OkHttp `Authenticator`
-  or response interceptor reacts to a `401` on this `httpClient`.** The prior regression
-  test polled the mock server's request queue with a fixed 200ms timeout; it is replaced
-  with a deterministic dispatcher-registered call counter for `POST /api/v1/auth/refresh`,
-  so `OidcIntrospectRevokeTest` now asserts `refreshCallCount == 0` rather than draining a
-  queue against a timeout.
-
-### Changed
-
-- Re-vendor `openapi.json` at 1.0.0-alpha27 — the copy was pinned at alpha26 and
-  failing the cross-repo artifact-drift gate
-- **Re-sync vendored `CONTRACT.md` / `openapi.json` to contract 1.15.**
-
-
-### Changed
-
-- **Re-sync vendored `CONTRACT.md` to contract 1.14** — documentation only, no code change.
-  §20.2 rule 6 (a permission ticket MUST NOT be retried) cited a "measured residual
-  (ilpanich/axiam#302) … roughly 1 in 640" as its second reason. That residual is closed: the
-  server now decides the ticket race with a transaction its storage engine arbitrates plus a
-  redemption nonce read back after the commit. **The rule is unchanged, and this SDK's
-  behaviour is unchanged** — `uma_exchange_ticket` stays excluded from every automatic retry
-  path. What changed is the reasoning: the first reason (a spent ticket makes the retry
-  useless) always stood alone, and the second now rests on what an SDK can actually know —
-  it is talking to a server whose storage engine it cannot attest, and the guarantee is
-  conditional on that engine being persistent.
-- **BREAKING (contract 1.13): `TokenExchangeParams.subjectTokenType` is now required**, and its
-  type narrows from `String?` to `String` with no default.
-
-  It shipped as `String? = null`, defaulting to `ACCESS_TOKEN_TYPE` — which satisfied §15.7's
-  "never inspect the subject token" while leaving the rule it serves unenforced: an optional
-  property with a default *is* a default the SDK applies whenever the caller says nothing. §15.1
-  now makes it required.
-
-  **`ACCESS_TOKEN_TYPE` and `JWT_TOKEN_TYPE` are now public top-level constants** in
-  `io.axiam.sdk.oidc`, rather than members of the `internal` `OidcSupport`. They were
-  unreachable from outside the module — survivable while the type was optional and defaulted,
-  and not once naming it is mandatory: a caller could not have named it at all without retyping
-  the URN. `OidcSupport`'s copies now delegate to them, so there is one source of truth. This
-  was caught by `compileExamplesKotlin`, which the example could not compile against.
-
-  **Dropping the nullability is the point rather than a side effect.** A property that can hold
-  "no answer" forces the SDK to have one ready, and any answer it picks is the guess §15.7
-  forbids. `String` cannot represent "the caller declined to say", so the compiler carries the
-  rule: omitting the argument does not compile.
-
-  **Migration** — one line, naming what you were previously getting by silence:
-
-  ```kotlin
-  val exchanged = client.tokenExchange(
-      TokenExchangeParams(
-          subjectToken = Sensitive.of(userToken),
-          subjectTokenType = ACCESS_TOKEN_TYPE, // <- add this
-          scopes = listOf("orders:read"),
-      ),
-  )
-  ```
-
-  This closes a gap rather than opening one: `subject_token_type` has always been required *on
-  the wire*, and the SDK was covering for that with a constant which stopped being the only legal
-  value when X4 landed. For a caller who actually held a refresh token, the old default traded
-  the `invalid_request` that names the type for a generic `invalid_grant`.
-
-### Added
-
 - **§15.7 external-IdP subject tokens (X4).** `tokenExchange` can now exchange a token minted by a
   trusted external IdP — a partner's Entra, Okta or Keycloak — for an AXIAM token scoped to what
   the resolved AXIAM user may actually do. No new operation: the same method, plus
@@ -409,6 +310,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Re-vendor CONTRACT.md 1.19, openapi.json and proto/ from main (R5.8) (#29)
+- Contract 1.15 — §10.1 rule 9, sender-constrained access tokens (#26)
+- Add the §20.7 required timeout assertion
+- Retire the "measured residual" justification (contract 1.14)
+- Re-sync to contract 1.14 (#302 closed)
+- Re-vendor `openapi.json` at 1.0.0-alpha27 — the copy was pinned at alpha26 and
+  failing the cross-repo artifact-drift gate
+- **Re-sync vendored `CONTRACT.md` / `openapi.json` to contract 1.15.**
+- **Re-sync vendored `CONTRACT.md` to contract 1.14** — documentation only, no code change.
+  §20.2 rule 6 (a permission ticket MUST NOT be retried) cited a "measured residual
+  (ilpanich/axiam#302) … roughly 1 in 640" as its second reason. That residual is closed: the
+  server now decides the ticket race with a transaction its storage engine arbitrates plus a
+  redemption nonce read back after the commit. **The rule is unchanged, and this SDK's
+  behaviour is unchanged** — `uma_exchange_ticket` stays excluded from every automatic retry
+  path. What changed is the reasoning: the first reason (a spent ticket makes the retry
+  useless) always stood alone, and the second now rests on what an SDK can actually know —
+  it is talking to a server whose storage engine it cannot attest, and the guarantee is
+  conditional on that engine being persistent.
+- **BREAKING (contract 1.13): `TokenExchangeParams.subjectTokenType` is now required**, and its
+  type narrows from `String?` to `String` with no default.
+
+  It shipped as `String? = null`, defaulting to `ACCESS_TOKEN_TYPE` — which satisfied §15.7's
+  "never inspect the subject token" while leaving the rule it serves unenforced: an optional
+  property with a default *is* a default the SDK applies whenever the caller says nothing. §15.1
+  now makes it required.
+
+  **`ACCESS_TOKEN_TYPE` and `JWT_TOKEN_TYPE` are now public top-level constants** in
+  `io.axiam.sdk.oidc`, rather than members of the `internal` `OidcSupport`. They were
+  unreachable from outside the module — survivable while the type was optional and defaulted,
+  and not once naming it is mandatory: a caller could not have named it at all without retyping
+  the URN. `OidcSupport`'s copies now delegate to them, so there is one source of truth. This
+  was caught by `compileExamplesKotlin`, which the example could not compile against.
+
+  **Dropping the nullability is the point rather than a side effect.** A property that can hold
+  "no answer" forces the SDK to have one ready, and any answer it picks is the guess §15.7
+  forbids. `String` cannot represent "the caller declined to say", so the compiler carries the
+  rule: omitting the argument does not compile.
+
+  **Migration** — one line, naming what you were previously getting by silence:
+
+  ```kotlin
+  val exchanged = client.tokenExchange(
+      TokenExchangeParams(
+          subjectToken = Sensitive.of(userToken),
+          subjectTokenType = ACCESS_TOKEN_TYPE, // <- add this
+          scopes = listOf("orders:read"),
+      ),
+  )
+  ```
+
+  This closes a gap rather than opening one: `subject_token_type` has always been required *on
+  the wire*, and the SDK was covering for that with a constant which stopped being the only legal
+  value when X4 landed. For a caller who actually held a refresh token, the old default traded
+  the `invalid_request` that names the type for a generic `invalid_grant`.
 - Re-vendored `CONTRACT.md` at **1.8.2**. `openapi.json` unchanged — docs-only contract revs.
 - `login`, `verifyMfa`, `refresh` and `logout` clear the decision memo (§17.1 rule 9) and
   reject after close (§18.1 rule 4).
@@ -416,47 +371,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now enqueues three 500s rather than one. That is a direct consequence of §16 — the call now
   makes three attempts, and the assertion is about the error the caller finally sees.
 
+### Fixed
+
+- R5.7 remediation — F-13, F-14 (F-03 already fixed) (#28)
+- Make the token-type constants public
+- **F-13: the §12.4 rule 7 (all-or-nothing discard) test only asserted that `oidcExchange`
+  throws, not that the same response's sentinel access/refresh token is absent from the
+  outcome or the exception.** `OidcCoverageGapsTest`'s clock-skew test now uses a
+  `"should-never-be-returned"` sentinel and positively asserts it appears in neither
+  `AuthError.message` nor `AuthError.toString()`, matching the five sibling SDKs that
+  already did.
+- **F-14: `OidcSupport.executeRequest()` (the transport seam every §12 wire call goes
+  through) now documents, in a doc comment, the structural invariant that keeps a `401`
+  from `/oauth2/*` out of the §9 single-flight refresh guard — no OkHttp `Authenticator`
+  or response interceptor reacts to a `401` on this `httpClient`.** The prior regression
+  test polled the mock server's request queue with a fixed 200ms timeout; it is replaced
+  with a deterministic dispatcher-registered call counter for `POST /api/v1/auth/refresh`,
+  so `OidcIntrospectRevokeTest` now asserts `refreshCallCount == 0` rather than draining a
+  queue against a timeout.
+
 ## [1.0.0-alpha24] - 2026-08-04
 
 ### Added
 
 - Apply the full CONTRACT §10.1 local-verification set
-
-### Changed
-
-- Add the §10.1 rule-8 guardrail regression tests (#16)
-- Device (mTLS) tokens now carry aud=axiam:m2m (#15)
-- Service accounts can use login_client_credentials (#14)
-- Reject a failed token in the Ktor plugin (§15.3.3) (#13)
-- Close the coverage margin with real value-semantics tests (§12.6.4) (#12)
-
-### Fixed
-
-- Reject plaintext base URL, pin discovery jwks_uri origin, add webhook verifier
-
-## [Unreleased]
-
-### Security — BREAKING (behavioural)
-
-- **The Ktor plugin now rejects a token that fails verification (§15.3.3).**
-  `AxiamAuthentication` swallowed the `AuthError` and left the user attribute
-  absent, deferring the decision to the per-route helpers. A route that forgot
-  `requireAuth()` therefore ran **unauthenticated** for a caller who had
-  presented an expired, foreign-tenant or forged token — fail-open by omission.
-  The Java and C# SDKs make the same leave-it-absent choice deliberately, but
-  they sit behind Spring Security and ASP.NET Core authorization respectively;
-  Ktor has no equivalent layer behind this plugin, so nothing else caught it.
-
-  A presented-but-invalid credential now yields `401` from the plugin itself.
-  **A call carrying no token at all is unaffected** — that is not a failed
-  authentication, and public routes must keep working. The distinction is the
-  point: reject a bad credential, ignore an absent one.
-
-  Verified by falsification: reverting the plugin fails the two new
-  invalid-token tests while the public-route test keeps passing.
-
-### Added
-
 - **Webhook value-semantics and header-parsing tests (§12.6.4).** Coverage sat
   at 98.19% against a 98% floor — a 0.19-point margin, so the next unrelated
   addition would have tripped the gate. The untested surface was
@@ -469,38 +407,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   body's size rather than the body (a delivery body may carry sensitive data),
   and that a duplicate `t=`, a non-numeric `t=` and an odd-length `v1=` each fail
   closed. Coverage is now 98.94%.
-
-### Changed — BREAKING
-
-- **`AxiamClient.verifySession` now applies the full CONTRACT.md §10.1 "minimum
-  local-verification set", which tightens what it accepts.** Two rules change acceptance for
-  tokens that used to pass:
-
-  1. **An absent `exp` is now rejected.** The check was `if (exp != null && exp.time <= now)`, so
-     a token carrying **no** `exp` claim skipped the comparison entirely and was accepted with no
-     expiry ever applied — the `SEC-080` defect, found independently in a sibling SDK. An absent
-     `exp` is a *permanent* credential, not a token without an expiry constraint.
-  2. **`nbf` is now honoured.** It was not read at all; a token whose not-before instant is in
-     the future was accepted. It is now rejected.
-
-  **A token minted by the AXIAM server is unaffected** — it always carries `exp` and never a
-  future `nbf`. The break is real for a guard fed tokens from *another* signer that shares the
-  organization JWKS: such a guard may start rejecting tokens it used to accept. That is the
-  intent of the change. The Ktor plugin (`AxiamAuthentication`) inherits the tightening, since it
-  injects its identity via `verifySession`.
-
-- **`JwksVerifier.verify` is renamed `JwksVerifier.verifySignatureOnlyUnchecked`.** It is the raw
-  signature primitive §10.1 permits, and its name now says at the call site that it checks no
-  claims at all — not `exp`, not `nbf`, not `tenant_id`, not `iss`, not `aud`. It MUST NOT be
-  used as a guard; `AxiamClient.verifySession` is the guard entry point and routes through it.
-
-- **`JwksVerifier.assertTenant` now fails closed when the configured tenant is blank**, rather
-  than comparing against an empty expectation (§10.1 rule 4: "no configured tenant to compare
-  against MUST fail closed"). `AxiamClient.builder` already rejects a blank `tenantId`, so this
-  affects only direct callers of the assertion.
-
-### Added
-
 - **`iss` and `aud` verification, conditional on configuration (§10.1 rules 5 and 6).** New
   builder options `expectedIssuer(...)` and `expectedAudience(...)`, both optional and unset by
   default: unset means the claim is not checked, exactly as §10.1 specifies. When one is set,
@@ -536,6 +442,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   New `io.axiam.sdk.webhook` package: `AxiamWebhooks`, `WebhookEvent`, `WebhookVerifyResult`,
   `WebhookVerifyError`. Vendored `CONTRACT.md` re-synced to add §13.
 
+### Changed
+
+- Add the §10.1 rule-8 guardrail regression tests (#16)
+- Device (mTLS) tokens now carry aud=axiam:m2m (#15)
+- Service accounts can use login_client_credentials (#14)
+- Reject a failed token in the Ktor plugin (§15.3.3) (#13)
+- Close the coverage margin with real value-semantics tests (§12.6.4) (#12)
+
+### Changed — BREAKING
+
+- **`AxiamClient.verifySession` now applies the full CONTRACT.md §10.1 "minimum
+  local-verification set", which tightens what it accepts.** Two rules change acceptance for
+  tokens that used to pass:
+
+  1. **An absent `exp` is now rejected.** The check was `if (exp != null && exp.time <= now)`, so
+     a token carrying **no** `exp` claim skipped the comparison entirely and was accepted with no
+     expiry ever applied — the `SEC-080` defect, found independently in a sibling SDK. An absent
+     `exp` is a *permanent* credential, not a token without an expiry constraint.
+  2. **`nbf` is now honoured.** It was not read at all; a token whose not-before instant is in
+     the future was accepted. It is now rejected.
+
+  **A token minted by the AXIAM server is unaffected** — it always carries `exp` and never a
+  future `nbf`. The break is real for a guard fed tokens from *another* signer that shares the
+  organization JWKS: such a guard may start rejecting tokens it used to accept. That is the
+  intent of the change. The Ktor plugin (`AxiamAuthentication`) inherits the tightening, since it
+  injects its identity via `verifySession`.
+
+- **`JwksVerifier.verify` is renamed `JwksVerifier.verifySignatureOnlyUnchecked`.** It is the raw
+  signature primitive §10.1 permits, and its name now says at the call site that it checks no
+  claims at all — not `exp`, not `nbf`, not `tenant_id`, not `iss`, not `aud`. It MUST NOT be
+  used as a guard; `AxiamClient.verifySession` is the guard entry point and routes through it.
+
+- **`JwksVerifier.assertTenant` now fails closed when the configured tenant is blank**, rather
+  than comparing against an empty expectation (§10.1 rule 4: "no configured tenant to compare
+  against MUST fail closed"). `AxiamClient.builder` already rejects a blank `tenantId`, so this
+  affects only direct callers of the assertion.
+
+### Fixed
+
+- Reject plaintext base URL, pin discovery jwks_uri origin, add webhook verifier
+
 ### Security
 
 - **SEC-073 [MEDIUM]** — `AxiamClient.builder(...)` now rejects a plaintext `http://` `baseUrl`
@@ -550,6 +497,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Previously a compromised/misconfigured discovery response could point EdDSA key resolution at
   an attacker-chosen host.
 
+### Security — BREAKING (behavioural)
+
+- **The Ktor plugin now rejects a token that fails verification (§15.3.3).**
+  `AxiamAuthentication` swallowed the `AuthError` and left the user attribute
+  absent, deferring the decision to the per-route helpers. A route that forgot
+  `requireAuth()` therefore ran **unauthenticated** for a caller who had
+  presented an expired, foreign-tenant or forged token — fail-open by omission.
+  The Java and C# SDKs make the same leave-it-absent choice deliberately, but
+  they sit behind Spring Security and ASP.NET Core authorization respectively;
+  Ktor has no equivalent layer behind this plugin, so nothing else caught it.
+
+  A presented-but-invalid credential now yields `401` from the plugin itself.
+  **A call carrying no token at all is unaffected** — that is not a failed
+  authentication, and public routes must keep working. The distinction is the
+  point: reject a bad credential, ignore an absent one.
+
+  Verified by falsification: reverting the plugin fails the two new
+  invalid-token tests while the public-route test keeps passing.
+
 ## [1.0.0-alpha23] - 2026-08-02
 
 ### Changed
@@ -561,21 +527,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Add OIDC/SSO relying-party helpers (CONTRACT.md §12)
-
-### Changed
-
-- Re-sync vendored CONTRACT.md to contract 1.6
-- Re-sync vendored CONTRACT.md to contract 1.5
-
-### Fixed
-
-- §9 rule 6 — never let a caller's cancellation own the shared refresh
-- Widen Sensitive.expose() to public (F-03, CONTRACT §7 rule 3)
-
-## [Unreleased]
-
-### Added
-
 - OIDC / SSO relying-party helpers (CONTRACT.md §12, contract 1.4): the nine canonical
   operations as `suspend` functions directly on `AxiamClient` — `oidcDiscover`, `oidcBegin`
   (deliberately NOT `suspend`: pure local computation, no network I/O), `oidcExchange`,
@@ -609,8 +560,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - No new runtime dependency: PKCE/CSPRNG uses the JDK standard library; JWKS/ID-token
   verification reuses the existing `nimbus-jose-jwt` dependency.
 
+### Changed
+
+- Re-sync vendored CONTRACT.md to contract 1.6
+- Re-sync vendored CONTRACT.md to contract 1.5
+
 ### Fixed
 
+- §9 rule 6 — never let a caller's cancellation own the shared refresh
+- Widen Sensitive.expose() to public (F-03, CONTRACT §7 rule 3)
 - **Single-flight refresh: a cancelled caller could strand the rest of its burst and, in a
   narrow race, poison the guard permanently (CONTRACT.md §9 rule 6, contract 1.6).** Both
   refresh coalescers (`AxiamClient.refresh()`'s `RefreshGuard`, §1; `oidcRefresh`'s dedicated
@@ -656,11 +614,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Adopt CONTRACT 1.3; defer gRPC get_user_info
-
-## [Unreleased]
-
-### Changed
-
 - Adopt CONTRACT.md 1.3: the new gRPC-only `getUserInfo` operation (CONTRACT §1.1) is
   documented as a deferred follow-up (this SDK ships no gRPC transport in v1) and the
   vendored contract/proto copies are re-synced. Per §1.1 the REST `/oauth2/userinfo` endpoint is not substituted.
@@ -701,15 +654,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0-alpha10] - 2026-07-18
 
-### Changed
-
-- Publish API docs to gh-pages branch
-- Drop configure-pages step, mirror C SDK template
-- Auto-enable GitHub Pages (enablement: true)
-- Add docs publish workflow to GitHub Pages
-
-## [Unreleased]
-
 ### Added
 
 - Initial greenfield Kotlin client SDK for AXIAM (`io.github.ilpanich:axiam-sdk-kotlin`).
@@ -742,6 +686,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Gradle (Kotlin DSL) build with Dokka javadoc jar, Kover coverage, and a GPG-signed Sonatype
   Central Portal `publish` task; CI (`sdk-ci-kotlin.yml`, `coverage.yml`) with a TLS-bypass grep
   gate, a committed-private-key scan, a `verify-tag-on-main` gate, and Coveralls upload.
+
+### Changed
+
+- Publish API docs to gh-pages branch
+- Drop configure-pages step, mirror C SDK template
+- Auto-enable GitHub Pages (enablement: true)
+- Add docs publish workflow to GitHub Pages
 
 ### Deferred (follow-ups, not in this release)
 
