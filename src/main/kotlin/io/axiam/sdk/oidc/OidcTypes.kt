@@ -73,6 +73,16 @@ data class OidcConfiguration(
      */
     val device_authorization_endpoint: String? = null,
     /**
+     * RFC 9126 pushed authorization request endpoint, used by `oidcPar`
+     * (§26.1).
+     *
+     * `null` when the server does not implement PAR. Its absence is an error at
+     * call time, never a cue to build the URL by concatenation — and for a FAPI
+     * 2.0 client it is fatal rather than a fallback, since §21.1 refuses a
+     * `fapi2` registration that does not set `require_par`.
+     */
+    val pushed_authorization_request_endpoint: String? = null,
+    /**
      * OIDC RP-Initiated Logout 1.0 `end_session_endpoint`, used by `logoutUrl`
      * (§12.7.2 rule 1).
      *
@@ -733,3 +743,50 @@ public fun umaParseChallenge(header: String): UmaChallenge? {
  */
 public fun umaChallengeHeader(realm: String, asUri: String, ticket: Sensitive<String>): String =
     """UMA realm="$realm", as_uri="$asUri", ticket="${ticket.expose()}""""
+
+/** Arguments to `oidcPar` (CONTRACT.md §26.1). */
+data class OidcParParams(
+    /** The `AuthorizationRequest` `oidcBegin` returned. Its `state`, `nonce` and PKCE verifier are pushed as-is (§26.2 rule 1). */
+    val request: AuthorizationRequest,
+    /** The redirect URI that will also be sent at exchange time. */
+    val redirectUri: String,
+    /** The discovery document, or `null` to discover (and reuse the per-origin cache). */
+    val configuration: OidcConfiguration? = null,
+    /** Requested scope, space-separated. `openid` is added automatically when absent. */
+    val scope: String? = null,
+    /** A tenant override for the `?tenant_id=` query parameter. */
+    val tenantId: String? = null,
+)
+
+/**
+ * The result of `oidcPar` (CONTRACT.md §26.1).
+ *
+ * The server answered **201** — RFC 9126 §2.2 specifies Created, and a success
+ * predicate written `== 200` would treat every successful push as a failure.
+ *
+ * [state], [nonce] and [codeVerifier] are carried straight through from the
+ * [AuthorizationRequest] that was pushed: §26.2 rule 1 forbids a second
+ * generator, and rule 6 wants exactly one verifier so there is no second place
+ * for the two to disagree.
+ *
+ * @property url where to redirect the user agent. Carries **exactly**
+ *   `client_id` and `request_uri` — the server refuses a request that mixes a
+ *   `request_uri` with inline authorization parameters rather than merging
+ *   them, because merging is where parameter confusion lives (§26.2 rule 2).
+ * @property requestUri the opaque, single-use handle. [Sensitive] per §26.5:
+ *   between the push and the redirect it is a bearer handle to a fully-formed
+ *   authorization request, and a log line is the wrong place for it to sit for
+ *   the length of that window.
+ * @property expiresIn the handle's lifetime in seconds; not advisory (§26.2 rule 3)
+ * @property state the value to compare against the `state` the IdP returns
+ * @property nonce the value that must equal the ID token's `nonce` claim
+ * @property codeVerifier the PKCE verifier to pass into `oidcExchange`
+ */
+data class PushedAuthorizationRequest(
+    val url: String,
+    val requestUri: Sensitive<String>,
+    val expiresIn: Long,
+    val state: String,
+    val nonce: String,
+    val codeVerifier: Sensitive<String>,
+)
