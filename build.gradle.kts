@@ -190,6 +190,27 @@ val runReactorExample by tasks.registering(JavaExec::class) {
     mainClass.set("io.axiam.sdk.examples.reactor.ReactorExample")
 }
 
+val runWebauthnPasskeysExample by tasks.registering(JavaExec::class) {
+    group = "examples"
+    description = "Run examples/webauthn-passkeys/WebauthnPasskeysExample.kt"
+    classpath = examples.runtimeClasspath
+    mainClass.set("io.axiam.sdk.examples.webauthnpasskeys.WebauthnPasskeysExample")
+}
+
+val runAccountLifecycleExample by tasks.registering(JavaExec::class) {
+    group = "examples"
+    description = "Run examples/account-lifecycle/AccountLifecycleExample.kt"
+    classpath = examples.runtimeClasspath
+    mainClass.set("io.axiam.sdk.examples.accountlifecycle.AccountLifecycleExample")
+}
+
+val runParLoginExample by tasks.registering(JavaExec::class) {
+    group = "examples"
+    description = "Run examples/par-login/ParLoginExample.kt"
+    classpath = examples.runtimeClasspath
+    mainClass.set("io.axiam.sdk.examples.parlogin.ParLoginExample")
+}
+
 val runUmaClientExample by tasks.registering(JavaExec::class) {
     group = "examples"
     description = "Run examples/uma-client/UmaClientExample.kt"

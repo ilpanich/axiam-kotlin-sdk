@@ -15,20 +15,38 @@ data class AxiamUser(
 )
 
 /**
- * Outcome of [AxiamClient.login]/[AxiamClient.verifyMfa] (CONTRACT.md §1).
+ * Outcome of [AxiamClient.login]/[AxiamClient.verifyMfa] (CONTRACT.md §1, §25.2).
  *
- * An MFA challenge is an expected outcome represented as a flag, never thrown:
- * callers MUST check [mfaRequired] before assuming a session was established.
+ * **Three outcomes, not two.** An MFA challenge is an expected outcome
+ * represented as a flag, never thrown; so is the §25.2 rule 1 case where the
+ * tenant requires MFA and the account has none. Callers MUST check both
+ * [mfaRequired] and [mfaSetupRequired] before assuming a session was
+ * established — a client that branches only on the first reports a successful
+ * login that has no session the moment a tenant turns required MFA on.
+ *
+ * The two new properties default, so every call site written before contract
+ * 1.28 still compiles and still reads `false`.
  *
  * @property mfaRequired    `true` when the server returned an MFA challenge (HTTP 202)
  * @property challengeToken the sensitive MFA challenge token to pass to
  *                          [AxiamClient.verifyMfa]; present only when [mfaRequired]
  * @property user           the authenticated user; present only on a completed login
+ * @property mfaSetupRequired `true` when the tenant requires MFA and this
+ *                          account has no factor yet (HTTP 403 carrying
+ *                          `mfa_setup_required`). Not a failure: the server
+ *                          handed back a token to finish enrolment with.
+ * @property setupToken     the sensitive setup token to pass to
+ *                          [AxiamClient.mfaSetupEnroll] and
+ *                          [AxiamClient.mfaSetupConfirm]; present only when
+ *                          [mfaSetupRequired]. There is no session yet — this
+ *                          token IS the credential for those two calls.
  */
 data class LoginResult(
     val mfaRequired: Boolean,
     val challengeToken: Sensitive<String>? = null,
     val user: AxiamUser? = null,
+    val mfaSetupRequired: Boolean = false,
+    val setupToken: Sensitive<String>? = null,
 )
 
 /**

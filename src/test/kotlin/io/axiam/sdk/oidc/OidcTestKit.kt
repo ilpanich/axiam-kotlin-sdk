@@ -76,6 +76,7 @@ object OidcTestKit {
                 "urn:ietf:params:oauth:grant-type:token-exchange"
               ],
               "device_authorization_endpoint": "$origin/oauth2/device_authorization",
+              "pushed_authorization_request_endpoint": "$origin/oauth2/par",
               "end_session_endpoint": "$origin/oauth2/end_session",
               "backchannel_logout_supported": true,
               "backchannel_logout_session_supported": true

@@ -30,6 +30,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- CONTRACT.md §24 — WebAuthn / passkeys relying-party layer
+  (`io.axiam.sdk.webauthn`): the six wire operations, the two distinct
+  authentication ceremonies, and §24.6a's JSON bridge. `WebauthnChallenge.requestJson`
+  is what an Android app hands to `CreatePublicKeyCredentialRequest`, and
+  `registrationResponseJson` goes straight back into `webauthnRegisterFinish` —
+  so the same plain-JVM artifact serves a desktop or server JVM and an Android
+  app unchanged, with no AAR and no Android dependency. `WebauthnFailure`
+  classifies a caught platform exception into the five §24.6b rule 5 outcomes
+  without linking `androidx.credentials`.
+
+  §24.6b's linked-API helper is deliberately absent: the JVM has no
+  authenticator, and rule 2 forbids emulating one in software.
+- CONTRACT.md §25 — account lifecycle and MFA enrolment
+  (`io.axiam.sdk.account`): voluntary and forced TOTP enrolment, email
+  verification, and the password-reset triple including the `reset/context`
+  call a tenant with §23 enabled requires before a new password can be built.
+- CONTRACT.md §26 — Pushed Authorization Requests, RFC 9126 (`oidcPar`,
+  `OidcParParams`, `PushedAuthorizationRequest`). Required for a FAPI 2.0
+  client, which cannot authorize any other way (§21.1).
+- `examples/webauthn-passkeys`, `examples/account-lifecycle` and
+  `examples/par-login`, with `./gradlew run*Example` tasks for each.
+
+### Changed
+
+- `LoginResult` gained `mfaSetupRequired` and `setupToken` for §25.2 rule 1's
+  third login outcome. Both default, so every existing construction still
+  compiles and reads `false`. Callers that branch only on `mfaRequired` should
+  still add the new branch — a tenant that turns on required MFA will start
+  returning it, and ignoring it reports a successful login that has no session.
+- `OidcConfiguration` gained `pushed_authorization_request_endpoint`, defaulted
+  to `null` and parsed from discovery.
+- Re-vendored `CONTRACT.md` and `openapi.json` at contract 1.28.
+
+### Added
+
 - OPAQUE (RFC 9807) login and enrolment (CONTRACT §23): `loginOpaque`,
   `opaqueEnrollment` and `opaqueAvailable` on `AxiamClient`, plus the new
   `io.axiam.sdk.opaque` package.

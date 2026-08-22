@@ -38,6 +38,16 @@ import io.axiam.sdk.oidc.SsoStartResult
 import io.axiam.sdk.opaque.KsfParams
 import io.axiam.sdk.opaque.Opaque
 import io.axiam.sdk.opaque.OpaqueEnrollment
+import io.axiam.sdk.account.MfaEnrollment
+import io.axiam.sdk.account.PasswordResetConfirmation
+import io.axiam.sdk.account.PasswordResetContext
+import io.axiam.sdk.account.PasswordResetRequest
+import io.axiam.sdk.oidc.OidcParParams
+import io.axiam.sdk.oidc.PushedAuthorizationRequest
+import io.axiam.sdk.webauthn.WebauthnChallenge
+import io.axiam.sdk.webauthn.WebauthnCredential
+import io.axiam.sdk.webauthn.WebauthnLoginResult
+import io.axiam.sdk.webauthn.WebauthnWorkspace
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -53,6 +63,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -215,10 +226,48 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
                     val challenge = wire["challenge_token"]?.jsonPrimitive?.content ?: ""
                     return LoginResult(mfaRequired = true, challengeToken = Sensitive.of(challenge))
                 }
+                403 -> {
+                    // CONTRACT.md §25.2 rule 1: a 403 carrying
+                    // mfa_setup_required is an OUTCOME, not a refusal. The
+                    // tenant requires MFA, this account has none, and the
+                    // server handed back the token to finish with.
+                    //
+                    // Matched on the body's own discriminant rather than the
+                    // status alone: a genuine authorization refusal is also a
+                    // 403, and only one of the two carries a setup_token. Read
+                    // with peekBody so a non-matching 403 still reaches
+                    // ErrorMapper with its body intact, both for the §2 authz
+                    // mapping and so a non-JSON body stays an AuthzError rather
+                    // than becoming a parse failure.
+                    val setupToken = readSetupToken(response)
+                    if (setupToken != null) {
+                        return LoginResult(
+                            mfaRequired = false,
+                            mfaSetupRequired = true,
+                            setupToken = setupToken,
+                        )
+                    }
+                    throw ErrorMapper.fromHttpStatus(403, "login failed", response)
+                }
                 else -> throw ErrorMapper.fromHttpStatus(response.code, "login failed", response)
             }
         }
     }
+
+    /**
+     * The `setup_token` from a §25.2 rule 1 `403`, or `null` when this 403 is an
+     * ordinary authorization refusal.
+     *
+     * Non-destructive: the response body is left exactly as received.
+     */
+    private fun readSetupToken(response: Response): Sensitive<String>? = runCatching {
+        val wire = Json.parseToJsonElement(
+            response.peekBody(MAX_POLICY_PEEK_BYTES).string(),
+        ).jsonObject
+        val token = wire["setup_token"]?.jsonPrimitive?.contentOrNull
+        val flagged = wire["mfa_setup_required"]?.jsonPrimitive?.content?.toBoolean() ?: false
+        if (flagged && !token.isNullOrEmpty()) Sensitive.of(token) else null
+    }.getOrNull()
 
     /**
      * `POST /api/v1/auth/mfa/verify` (§1), completing the two-phase flow started
@@ -840,6 +889,499 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
         decisionMemo.clear()
     }
 
+    // ---- §24 WebAuthn / passkeys — the relying-party layer ---------------
+    //
+    // The JVM has no authenticator, so §24.6b's linked-API helper is
+    // deliberately absent: rule 2 forbids emulating one in software, and a
+    // "credential" held in process memory is not a second factor. What is here
+    // is the half that talks to AXIAM, plus §24.6a's JSON bridge — which is
+    // exactly what lets an Android app pass requestJson straight into
+    // CreatePublicKeyCredentialRequest and the response straight back, without
+    // this artifact linking a single Android class.
+
+    /**
+     * `POST /api/v1/auth/webauthn/register/start` (CONTRACT.md §24.1) — begin
+     * enrolling a passkey for the signed-in user.
+     *
+     * Requires a session, and refuses **client-side with no wire call** when
+     * there is none — the shape §1.1 rule 3 requires of `getUserInfo`.
+     *
+     * The returned options are the server's, untouched (§24.0). A `503` here
+     * means the tenant's attestation policy needs FIDO metadata the server
+     * cannot reach: a configuration state, not a transient one, and §24.4
+     * rule 2 deliberately does not retry it.
+     */
+    suspend fun webauthnRegisterStart(): WebauthnChallenge {
+        ensureOpen()
+        requireWebauthnSession("webauthnRegisterStart")
+        return webauthnStart(WEBAUTHN_REGISTER_START_PATH, JsonObject(emptyMap()))
+    }
+
+    /**
+     * `POST /api/v1/auth/webauthn/register/finish` (CONTRACT.md §24.1) — hand
+     * the authenticator's answer back and store the credential.
+     *
+     * [response] is the platform's own response JSON, **verbatim** (§24.6a
+     * rule 2): `registrationResponseJson` from Android's Credential Manager, or
+     * `credential.toJSON()` from a browser. It reaches the wire byte for byte,
+     * because re-encoding a signed buffer is three chances to corrupt it in
+     * service of nothing.
+     */
+    suspend fun webauthnRegisterFinish(
+        stateToken: Sensitive<String>,
+        credentialName: String,
+        response: String,
+    ): WebauthnCredential {
+        ensureOpen()
+        requireWebauthnSession("webauthnRegisterFinish")
+
+        val body = webauthnFinishBody(
+            stateToken,
+            response,
+            "webauthnRegisterFinish",
+            extraFields = mapOf("credential_name" to credentialName),
+        )
+        postRawJson(WEBAUTHN_REGISTER_FINISH_PATH, body).use { http ->
+            if (http.code != 200 && http.code != 201) {
+                throw registerFinishError(http)
+            }
+            val wire = readJson(http)
+            return WebauthnCredential(
+                id = UUID.fromString(wire.str("id")),
+                credentialId = wire.str("credential_id"),
+                name = wire.str("name"),
+                credentialType = wire.str("credential_type"),
+                createdAt = wire.str("created_at"),
+                lastUsedAt = wire["last_used_at"]?.jsonPrimitive?.contentOrNull,
+            )
+        }
+    }
+
+    /**
+     * `POST /api/v1/auth/webauthn/authenticate/start` (CONTRACT.md §24.1) —
+     * begin the **second-factor** ceremony.
+     *
+     * Continues a [login] that answered `mfaRequired` with `"webauthn"` among
+     * its available methods; [challengeToken] is that login's token. A
+     * different flow from [webauthnDiscoverableStart], not the same one with a
+     * flag (§24.2) — which is why the token is required here and absent there.
+     */
+    suspend fun webauthnAuthenticateStart(challengeToken: Sensitive<String>): WebauthnChallenge {
+        ensureOpen()
+        val body = buildJsonObject { put("challenge_token", challengeToken.expose()) }
+        return webauthnStart(WEBAUTHN_AUTH_START_PATH, body)
+    }
+
+    /**
+     * `POST /api/v1/auth/webauthn/authenticate/finish` (CONTRACT.md §24.1).
+     *
+     * On success the client is signed in: the server sets the same cookie
+     * triple `POST /api/v1/auth/login` sets, and the §17 decision memo is
+     * cleared because the subject changed (§24.3).
+     */
+    suspend fun webauthnAuthenticateFinish(
+        stateToken: Sensitive<String>,
+        response: String,
+    ): WebauthnLoginResult =
+        webauthnFinish(WEBAUTHN_AUTH_FINISH_PATH, stateToken, response, "webauthnAuthenticateFinish")
+
+    /**
+     * `POST /api/v1/auth/webauthn/authenticate/discoverable/start`
+     * (CONTRACT.md §24.1) — begin the usernameless ceremony.
+     *
+     * A **primary factor**: nothing precedes it, `allowCredentials` comes back
+     * empty, and the assertion itself identifies the user. Pass `null` for
+     * [workspace] to have it filled from this client's own configured identity.
+     *
+     * Unlike `authenticate/finish`, `discoverable/finish` fires the
+     * `login.post_auth` reactor hook (§22.5) — the latter continues a login
+     * already gated at its password step, and this one has no such step.
+     */
+    suspend fun webauthnDiscoverableStart(workspace: WebauthnWorkspace? = null): WebauthnChallenge {
+        ensureOpen()
+        return webauthnStart(WEBAUTHN_DISCOVERABLE_START_PATH, webauthnWorkspaceBody(workspace))
+    }
+
+    /**
+     * `POST /api/v1/auth/webauthn/authenticate/discoverable/finish`
+     * (CONTRACT.md §24.1). Adopts credentials exactly as
+     * [webauthnAuthenticateFinish] does.
+     */
+    suspend fun webauthnDiscoverableFinish(
+        stateToken: Sensitive<String>,
+        response: String,
+    ): WebauthnLoginResult =
+        webauthnFinish(WEBAUTHN_DISCOVERABLE_FINISH_PATH, stateToken, response, "webauthnDiscoverableFinish")
+
+    /** Run either `*_start` call and return the options untouched. */
+    private suspend fun webauthnStart(path: String, body: JsonObject): WebauthnChallenge {
+        postJson(path, body).use { http ->
+            if (http.code != 200) {
+                throw ErrorMapper.fromHttpStatus(http.code, "webauthn start failed", http)
+            }
+            val wire = readJson(http)
+            return WebauthnChallenge(
+                challenge = wire["challenge"]?.jsonObject ?: JsonObject(emptyMap()),
+                stateToken = Sensitive.of(wire.str("state_token")),
+            )
+        }
+    }
+
+    /** The shared tail of both authentication ceremonies. */
+    private suspend fun webauthnFinish(
+        path: String,
+        stateToken: Sensitive<String>,
+        response: String,
+        operation: String,
+    ): WebauthnLoginResult {
+        ensureOpen()
+        // §17.1 rule 9 / §24.3 rule 4: memo entries are keyed by subject, and
+        // this call changes the subject.
+        onCredentialChange()
+
+        val body = webauthnFinishBody(stateToken, response, operation)
+        postRawJson(path, body).use { http ->
+            if (http.code != 200) {
+                throw ErrorMapper.fromHttpStatus(http.code, "$operation failed", http)
+            }
+            val wire = readJson(http)
+            return WebauthnLoginResult(
+                accessToken = Sensitive.of(wire.str("access_token")),
+                refreshToken = Sensitive.of(wire.str("refresh_token")),
+                sessionId = UUID.fromString(wire.str("session_id")),
+                expiresIn = wire["expires_in"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L,
+            )
+        }
+    }
+
+    /**
+     * Build a `*_finish` body **as text**, splicing the caller's response JSON
+     * in verbatim (§24.0, §24.6a rule 2).
+     *
+     * Parsing the string into a [JsonObject] and re-serializing would round
+     * every number, drop nothing but reorder nothing predictably, and generally
+     * hand the server a byte sequence the authenticator never signed. The one
+     * thing this does check is that the string IS a JSON object — the SDK will
+     * not POST a body it already knows the server cannot verify.
+     */
+    private fun webauthnFinishBody(
+        stateToken: Sensitive<String>,
+        response: String,
+        operation: String,
+        extraFields: Map<String, String> = emptyMap(),
+    ): String {
+        val trimmed = response.trim()
+        val parsed = try {
+            Json.parseToJsonElement(trimmed)
+        } catch (e: Exception) {
+            throw AuthError(
+                "$operation: the authenticator response string is not valid JSON. Pass the " +
+                    "platform's response JSON verbatim (CONTRACT.md §24.6a).",
+            )
+        }
+        if (parsed !is JsonObject) {
+            throw AuthError(
+                "$operation: the authenticator response must be a JSON object " +
+                    "(CONTRACT.md §24.6a).",
+            )
+        }
+        return buildString {
+            append('{')
+            appendJsonString(this, "state_token", stateToken.expose())
+            for ((key, value) in extraFields) {
+                append(',')
+                appendJsonString(this, key, value)
+            }
+            append(",\"response\":")
+            append(trimmed)
+            append('}')
+        }
+    }
+
+    /**
+     * §24.1: `register/...` needs a session, and the refusal is raised
+     * client-side with **no wire call**.
+     *
+     * The signal is the cached access token rather than a separate flag: this
+     * SDK has never kept one, and a second source of truth for "am I signed in"
+     * is a second thing to get out of step with the jar.
+     */
+    private fun requireWebauthnSession(operation: String) {
+        if (session.cachedAccessToken() == null) {
+            throw AuthError(
+                "$operation requires an authenticated session: enrol a passkey while signed in " +
+                    "(CONTRACT.md §24.1).",
+            )
+        }
+    }
+
+    /**
+     * §24.4 rule 1: the `403` from `register/finish` is the one whose *body*
+     * matters.
+     *
+     * The generic §2 mapping would raise an authorization error reading
+     * "webauthnRegisterFinish failed", which tells the person holding the key
+     * nothing they can act on. The tenant's attestation policy rejected *this*
+     * authenticator, and the server's message is the only place that says which
+     * one would be accepted.
+     */
+    private fun registerFinishError(http: Response): Throwable {
+        var message = "webauthnRegisterFinish failed"
+        if (http.code == 403) {
+            val policy = runCatching {
+                Json.parseToJsonElement(http.peekBody(MAX_POLICY_PEEK_BYTES).string())
+                    .jsonObject["message"]?.jsonPrimitive?.contentOrNull
+            }.getOrNull()
+            if (!policy.isNullOrEmpty()) message = "$message: $policy"
+        }
+        return ErrorMapper.fromHttpStatus(http.code, message, http)
+    }
+
+    /**
+     * Fill the discoverable ceremony's workspace from this client's own
+     * configuration when the caller passed none.
+     *
+     * Only fields that actually have a value are emitted: the server takes
+     * either form at either level, and sending `null` for the ones it does not
+     * have is indistinguishable from asking it to resolve nothing.
+     */
+    private fun webauthnWorkspaceBody(workspace: WebauthnWorkspace?): JsonObject = buildJsonObject {
+        var orgId = workspace?.orgId
+        var orgSlug = workspace?.orgSlug
+        if (orgId == null && orgSlug == null) {
+            orgId = session.configuredOrgId()
+            orgSlug = session.configuredOrgSlug()
+        }
+        when {
+            orgId != null -> put("org_id", orgId.toString())
+            orgSlug != null -> put("org_slug", orgSlug)
+            else -> throw AuthError(
+                "webauthnDiscoverableStart needs an organization: construct the client with one, " +
+                    "or pass it in the workspace argument (CONTRACT.md §24.1).",
+            )
+        }
+        val tenantUuid = workspace?.tenantId
+        if (tenantUuid != null) {
+            put("tenant_id", tenantUuid.toString())
+        } else {
+            put("tenant_slug", workspace?.tenantSlug ?: tenantId)
+        }
+    }
+
+    // ---- §25 Account lifecycle and MFA enrolment -------------------------
+
+    /**
+     * `POST /api/v1/auth/mfa/enroll` (CONTRACT.md §25.1) — start voluntary TOTP
+     * enrolment for the signed-in user.
+     *
+     * Changes nothing about the current session. In particular it does **not**
+     * clear the §17 decision memo: the subject has not changed, and discarding
+     * a warm memo on an unrelated profile action costs a round trip on every
+     * check that follows (§25.2 rule 3).
+     */
+    suspend fun mfaEnroll(): MfaEnrollment {
+        ensureOpen()
+        postJson(MFA_ENROLL_PATH, JsonObject(emptyMap())).use { http ->
+            return readMfaEnrollment(http, "mfaEnroll")
+        }
+    }
+
+    /**
+     * `POST /api/v1/auth/mfa/confirm` (CONTRACT.md §25.1) — activate the factor
+     * [mfaEnroll] offered. Returns whether MFA is now enabled.
+     */
+    suspend fun mfaConfirm(totpCode: String): Boolean {
+        ensureOpen()
+        val body = buildJsonObject { put("totp_code", totpCode) }
+        postJson(MFA_CONFIRM_PATH, body).use { http ->
+            if (http.code != 200) {
+                throw ErrorMapper.fromHttpStatus(http.code, "mfaConfirm failed", http)
+            }
+            return readJson(http)["mfa_enabled"]?.jsonPrimitive?.content?.toBoolean() ?: false
+        }
+    }
+
+    /**
+     * `POST /api/v1/auth/mfa/setup/enroll` (CONTRACT.md §25.1) — start the
+     * enrolment a [login] demanded.
+     *
+     * Reached when `login()` returns [LoginResult.mfaSetupRequired]: the tenant
+     * requires MFA and this account has none. There is no session yet — the
+     * setup token *is* the credential.
+     */
+    suspend fun mfaSetupEnroll(setupToken: Sensitive<String>): MfaEnrollment {
+        ensureOpen()
+        val body = buildJsonObject { put("setup_token", setupToken.expose()) }
+        postJson(MFA_SETUP_ENROLL_PATH, body).use { http ->
+            return readMfaEnrollment(http, "mfaSetupEnroll")
+        }
+    }
+
+    /**
+     * `POST /api/v1/auth/mfa/setup/confirm` (CONTRACT.md §25.1) — finish forced
+     * enrolment and, with it, the login that was interrupted.
+     *
+     * Adopts credentials exactly as [login] does, because it *is* the
+     * completion of a login (§25.2 rule 2).
+     */
+    suspend fun mfaSetupConfirm(setupToken: Sensitive<String>, totpCode: String): LoginResult {
+        ensureOpen()
+        onCredentialChange()
+        val body = buildJsonObject {
+            put("setup_token", setupToken.expose())
+            put("totp_code", totpCode)
+        }
+        postJson(MFA_SETUP_CONFIRM_PATH, body).use { http ->
+            if (http.code != 200) {
+                throw ErrorMapper.fromHttpStatus(http.code, "mfaSetupConfirm failed", http)
+            }
+            return LoginResult(mfaRequired = false, user = buildUser())
+        }
+    }
+
+    /**
+     * `POST /api/v1/auth/verify-email` (CONTRACT.md §25.1).
+     *
+     * Unauthenticated: a user whose address is unverified may have no session
+     * at all. [tenantId] is a **body** field here — this is not an `/oauth2/...`
+     * endpoint, so §12.1 rule 2's query-parameter convention does not reach it.
+     */
+    suspend fun verifyEmail(token: Sensitive<String>, tenantId: UUID) {
+        ensureOpen()
+        val body = buildJsonObject {
+            put("token", token.expose())
+            put("tenant_id", tenantId.toString())
+        }
+        postExpectingNoContent(VERIFY_EMAIL_PATH, body, "verifyEmail")
+    }
+
+    /** `POST /api/v1/auth/resend-verification` (CONTRACT.md §25.1). */
+    suspend fun resendVerification(email: String, tenantId: UUID) {
+        ensureOpen()
+        val body = buildJsonObject {
+            put("email", email)
+            put("tenant_id", tenantId.toString())
+        }
+        postExpectingNoContent(RESEND_VERIFICATION_PATH, body, "resendVerification")
+    }
+
+    /**
+     * `POST /api/v1/auth/reset` (CONTRACT.md §25.1) — ask for a reset mail.
+     *
+     * **Returns normally whether or not the address exists**, and this SDK
+     * exposes no way to tell the two apart. That is not an omission to improve
+     * on: a client that surfaced a "no such user" state — even one inferred
+     * from timing — would turn the endpoint into the account-enumeration oracle
+     * its uniform response exists to prevent (§25.4).
+     */
+    suspend fun requestPasswordReset(request: PasswordResetRequest) {
+        ensureOpen()
+        val body = buildJsonObject {
+            put("email", request.email)
+            (request.orgSlug ?: session.configuredOrgSlug())?.let { put("org_slug", it) }
+            if (request.tenantId != null) {
+                put("tenant_id", request.tenantId.toString())
+            } else {
+                put("tenant_slug", request.tenantSlug ?: tenantId)
+            }
+        }
+        postExpectingNoContent(RESET_PATH, body, "requestPasswordReset")
+    }
+
+    /**
+     * `GET /api/v1/auth/reset/context` (CONTRACT.md §25.1) — the OPAQUE policy
+     * for the account a reset token belongs to.
+     *
+     * Call this before [confirmPasswordReset] on any tenant that might have §23
+     * enabled: the client has to build a registration record, and building one
+     * needs parameters it cannot know before it has a token to ask with.
+     * Sending a plaintext password to a tenant in `opaque_mode: required` is
+     * refused, and refused late (§25.4 rule 1).
+     *
+     * A `404` means unknown, expired **or** already-consumed, deliberately
+     * without distinguishing them; this SDK does not distinguish them either
+     * (§25.4 rule 3).
+     */
+    suspend fun passwordResetContext(token: Sensitive<String>): PasswordResetContext {
+        ensureOpen()
+        val url = (baseUrl + RESET_CONTEXT_PATH).toHttpUrlOrNull()
+            ?.newBuilder()
+            // Through the URL builder, never string concatenation: a token
+            // spliced onto "?token=" is percent-escaped into the PATH, which
+            // 404s in a way that reads exactly like an expired token.
+            ?.addQueryParameter("token", token.expose())
+            ?.build()
+            ?: throw NetworkError("invalid base URL for the password-reset context call")
+
+        val request = Request.Builder().url(url).get().build()
+        val http = withContext(Dispatchers.IO) {
+            try {
+                httpClient.newCall(request).execute()
+            } catch (e: IOException) {
+                throw NetworkError("passwordResetContext request failed: ${e.message}", e)
+            }
+        }
+        http.use {
+            if (it.code != 200) {
+                throw ErrorMapper.fromHttpStatus(it.code, "passwordResetContext failed", it)
+            }
+            return PasswordResetContext(opaque = readJson(it)["opaque"] as? JsonObject)
+        }
+    }
+
+    /**
+     * `POST /api/v1/auth/reset/confirm` (CONTRACT.md §25.1) — set the new
+     * password.
+     */
+    suspend fun confirmPasswordReset(confirmation: PasswordResetConfirmation) {
+        ensureOpen()
+        val body = buildJsonObject {
+            put("token", confirmation.token.expose())
+            put("new_password", confirmation.newPassword.expose())
+            put("tenant_id", confirmation.tenantId.toString())
+            confirmation.opaque?.let { put("opaque", it) }
+        }
+        postExpectingNoContent(RESET_CONFIRM_PATH, body, "confirmPasswordReset")
+    }
+
+    private fun readMfaEnrollment(http: Response, operation: String): MfaEnrollment {
+        if (http.code != 200) {
+            throw ErrorMapper.fromHttpStatus(http.code, "$operation failed", http)
+        }
+        val wire = readJson(http)
+        return MfaEnrollment(
+            secretBase32 = Sensitive.of(wire.str("secret_base32")),
+            totpUri = Sensitive.of(wire.str("totp_uri")),
+        )
+    }
+
+    private suspend fun postExpectingNoContent(path: String, body: JsonObject, operation: String) {
+        postJson(path, body).use { http ->
+            if (http.code != 200 && http.code != 202 && http.code != 204) {
+                throw ErrorMapper.fromHttpStatus(http.code, "$operation failed", http)
+            }
+        }
+    }
+
+    // ---- §26 Pushed Authorization Requests (RFC 9126) --------------------
+
+    /**
+     * `POST /oauth2/par` (CONTRACT.md §26.1) — push the authorization request
+     * over the back channel and get an opaque handle to redirect with.
+     *
+     * PAR moves the authorization request off the browser. Instead of putting
+     * `scope`, `redirect_uri`, `state` and the PKCE challenge into a URL the
+     * user agent carries, the client POSTs them straight to AXIAM over an
+     * authenticated channel and puts an opaque `request_uri` in the redirect.
+     * What travels through the browser is then a random string that cannot be
+     * edited into meaning something else.
+     *
+     * **Required for a FAPI 2.0 client**: `profile: "fapi2"` refuses a
+     * registration that does not set `require_par`, so such a client cannot
+     * authorize any other way (§21.1).
+     */
+    suspend fun oidcPar(params: OidcParParams): PushedAuthorizationRequest = oidcSupport.oidcPar(params)
+
     // ---- shared HTTP mechanics ------------------------------------------
 
     private suspend fun sendCheck(body: JsonObject, operation: String, attempt: Int): AccessResult {
@@ -904,6 +1446,19 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
             throw AuthError("failed to decode access token claims after login")
         }
         return AxiamUser(claims.sub, claims.tenantId, claims.roles)
+    }
+
+    /**
+     * POST a body that is already JSON **text**, so the caller's bytes reach
+     * the wire unmodified (§24.0).
+     */
+    private suspend fun postRawJson(path: String, body: String): Response = withContext(Dispatchers.IO) {
+        val request = Request.Builder().url(baseUrl + path).post(body.toRequestBody(JSON_MEDIA)).build()
+        try {
+            httpClient.newCall(request).execute()
+        } catch (e: IOException) {
+            throw NetworkError("request failed: ${e.message}", e)
+        }
     }
 
     private fun readJson(response: Response): JsonObject {
@@ -1086,10 +1641,43 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
         private const val OPAQUE_LOGIN_FINISH_PATH = "/api/v1/auth/opaque/login/finish"
 
         private const val LOGOUT_PATH = "/api/v1/auth/logout"
+        private const val WEBAUTHN_REGISTER_START_PATH = "/api/v1/auth/webauthn/register/start"
+        private const val WEBAUTHN_REGISTER_FINISH_PATH = "/api/v1/auth/webauthn/register/finish"
+        private const val WEBAUTHN_AUTH_START_PATH = "/api/v1/auth/webauthn/authenticate/start"
+        private const val WEBAUTHN_AUTH_FINISH_PATH = "/api/v1/auth/webauthn/authenticate/finish"
+        private const val WEBAUTHN_DISCOVERABLE_START_PATH =
+            "/api/v1/auth/webauthn/authenticate/discoverable/start"
+        private const val WEBAUTHN_DISCOVERABLE_FINISH_PATH =
+            "/api/v1/auth/webauthn/authenticate/discoverable/finish"
+
+        private const val MFA_ENROLL_PATH = "/api/v1/auth/mfa/enroll"
+        private const val MFA_CONFIRM_PATH = "/api/v1/auth/mfa/confirm"
+        private const val MFA_SETUP_ENROLL_PATH = "/api/v1/auth/mfa/setup/enroll"
+        private const val MFA_SETUP_CONFIRM_PATH = "/api/v1/auth/mfa/setup/confirm"
+        private const val VERIFY_EMAIL_PATH = "/api/v1/auth/verify-email"
+        private const val RESEND_VERIFICATION_PATH = "/api/v1/auth/resend-verification"
+        private const val RESET_PATH = "/api/v1/auth/reset"
+        private const val RESET_CONTEXT_PATH = "/api/v1/auth/reset/context"
+        private const val RESET_CONFIRM_PATH = "/api/v1/auth/reset/confirm"
+
         private const val CHECK_PATH = "/api/v1/authz/check"
         private const val BATCH_CHECK_PATH = "/api/v1/authz/check/batch"
 
         private val JSON_MEDIA = "application/json; charset=utf-8".toMediaType()
+
+        /** Only the first few KB of a §24.4 rule 1 attestation-policy body are read. */
+        private const val MAX_POLICY_PEEK_BYTES = 8192L
+
+        /** Reads a required string field, or `""` when the server omitted it. */
+        private fun JsonObject.str(key: String): String =
+            this[key]?.jsonPrimitive?.contentOrNull ?: ""
+
+        /** Appends `"key":"value"` with both halves properly JSON-escaped. */
+        private fun appendJsonString(sink: StringBuilder, key: String, value: String) {
+            sink.append(JsonPrimitive(key).toString())
+            sink.append(':')
+            sink.append(JsonPrimitive(value).toString())
+        }
 
         /**
          * The ONLY construction path (§5). Requires a base URL and a tenant

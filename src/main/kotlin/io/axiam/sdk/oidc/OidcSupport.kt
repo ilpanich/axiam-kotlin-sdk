@@ -22,6 +22,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -145,6 +146,7 @@ internal class OidcSupport(
         claims_supported = json.strList("claims_supported"),
         grant_types_supported = json.strList("grant_types_supported"),
         device_authorization_endpoint = json.strOrNull("device_authorization_endpoint"),
+        pushed_authorization_request_endpoint = json.strOrNull("pushed_authorization_request_endpoint"),
         end_session_endpoint = json.strOrNull("end_session_endpoint"),
         backchannel_logout_supported = json.boolOrFalse("backchannel_logout_supported"),
         backchannel_logout_session_supported = json.boolOrFalse("backchannel_logout_session_supported"),
@@ -197,6 +199,87 @@ internal class OidcSupport(
 
         val url = appendQuery(params.configuration.authorization_endpoint, query)
         return AuthorizationRequest(url = url, state = state, nonce = nonce, codeVerifier = codeVerifier)
+    }
+
+    // -- 2b. oidcPar: §26 Pushed Authorization Requests (RFC 9126) ----------
+
+    /**
+     * `POST /oauth2/par` (CONTRACT.md §26.1) — push the authorization request
+     * over the back channel and get an opaque handle to redirect with.
+     *
+     * Not retried on a `5xx` or a transport failure: it is a POST that creates
+     * server state, so it falls outside §16.2's read-only eligibility exactly
+     * as [oidcExchange] does. The safe recovery is a fresh push, which costs one
+     * round trip and cannot double-consume anything (§26.2 rule 4).
+     *
+     * @throws AuthError client-side, with no wire call, when the discovery
+     *   document advertises no PAR endpoint — §12.7.2 rule 1's discipline:
+     *   never synthesise the URL from the issuer.
+     */
+    suspend fun oidcPar(params: OidcParParams): PushedAuthorizationRequest {
+        val configuration = params.configuration ?: oidcDiscover()
+        val clientId = requireClientId()
+        val endpoint = configuration.pushed_authorization_request_endpoint
+        if (endpoint.isNullOrEmpty()) {
+            throw AuthError(
+                "the authorization server's discovery document advertises no " +
+                    "pushed_authorization_request_endpoint: this server does not support RFC 9126 " +
+                    "(CONTRACT.md §26.1).",
+            )
+        }
+
+        // §26.2 rule 1: everything below was computed by oidcBegin. There is no
+        // second generator here, and there must not be — two sources for state
+        // or the PKCE pair are two things that can disagree.
+        val form = buildForm(
+            "client_id" to clientId,
+            "response_type" to "code",
+            "redirect_uri" to params.redirectUri,
+            "scope" to normalizeScope(params.scope),
+            "state" to params.request.state,
+            "nonce" to params.request.nonce,
+            "code_challenge" to OidcPkce.computeCodeChallenge(params.request.codeVerifier.expose()),
+            "code_challenge_method" to OidcPkce.CODE_CHALLENGE_METHOD_S256,
+            "client_secret" to oidcClientSecret?.expose(),
+        )
+
+        // 201, not 200. RFC 9126 §2.2 specifies Created, and this is the one
+        // thing an implementation of this section gets wrong: a success
+        // predicate written == 200 treats every successful push as a failure
+        // while passing every other assertion. postOAuth2Form tests
+        // isSuccessful, which admits both.
+        val url = endpointUrl(endpoint, params.tenantId)
+        val wire = postOAuth2Form(url, form, "pushed authorization request failed")
+        val requestUri = wire["request_uri"]?.jsonPrimitive?.contentOrNull
+            ?: throw NetworkError("pushed authorization response carried no request_uri")
+
+        // §26.2 rule 2: exactly two query parameters. The server REFUSES a
+        // request carrying both a request_uri and any inline authorization
+        // parameter rather than merging them: an attacker supplies the inline
+        // value they want and lets the pushed copy satisfy whichever check
+        // reads the other one. Re-adding them "for compatibility" restores the
+        // attack — which is why any query the discovered endpoint already
+        // carried is dropped here rather than preserved.
+        val authorizationEndpoint = configuration.authorization_endpoint.toHttpUrlOrNull()
+            ?: throw NetworkError(
+                "discovery document authorization_endpoint is not a valid URL: " +
+                    configuration.authorization_endpoint,
+            )
+        val authorizationUrl = authorizationEndpoint.newBuilder()
+            .query(null)
+            .addQueryParameter("client_id", clientId)
+            .addQueryParameter("request_uri", requestUri)
+            .build()
+            .toString()
+
+        return PushedAuthorizationRequest(
+            url = authorizationUrl,
+            requestUri = Sensitive.of(requestUri),
+            expiresIn = wire["expires_in"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L,
+            state = params.request.state,
+            nonce = params.request.nonce,
+            codeVerifier = params.request.codeVerifier,
+        )
     }
 
     // -- 3. oidcExchange ------------------------------------------------------
