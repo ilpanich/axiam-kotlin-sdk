@@ -108,8 +108,37 @@ tasks.withType<KotlinCompile>().configureEach {
     }
 }
 
+// The JVM that EXECUTES the tests, chosen independently of the JVM running
+// Gradle. These are not the same question, and conflating them is what broke
+// the first attempt at a JDK 25 CI leg: Gradle 8.10.2 cannot itself run on
+// Java 25 (it fails with a bare, unrecognised "25.0.4"), so pointing
+// setup-java at 25 killed the build before a single test ran.
+//
+// What the SDK actually claims is that its JVM 17 bytecode RUNS on a modern
+// JVM — which is a statement about the test launcher, not about Gradle's own
+// runtime. A toolchain launcher says exactly that and nothing more: Gradle
+// stays on a JDK it supports, compiles to JVM 17 as always, and forks the test
+// JVM on the requested version.
+//
+// Absent the property, tests run on Gradle's own JVM, as before.
+val testJavaVersion: Provider<String> = providers.gradleProperty("testJavaVersion")
+val javaToolchainService = extensions.getByType<JavaToolchainService>()
+
 tasks.test {
     useJUnitPlatform()
+
+    if (testJavaVersion.isPresent) {
+        javaLauncher.set(
+            javaToolchainService.launcherFor {
+                languageVersion.set(JavaLanguageVersion.of(testJavaVersion.get().toInt()))
+            },
+        )
+        // Hand the requested version to the suite so VersionPolicyTest can
+        // confirm the fork actually happened. A toolchain that silently fell
+        // back to Gradle's own JVM would otherwise leave the leg reporting
+        // green while testing nothing it was added to test.
+        systemProperty("axiam.expectedTestJvm", testJavaVersion.get())
+    }
 
     // VersionPolicyTest reads these three files to assert that the declared
     // support range, the published Kotlin version and the CI matrix still

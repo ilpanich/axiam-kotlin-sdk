@@ -184,6 +184,21 @@ class VersionPolicyTest {
     }
 
     @Test
+    fun `the test JVM is the one the build asked for`() {
+        // Set only when -PtestJavaVersion is passed (i.e. in CI). Locally,
+        // tests run on Gradle's own JVM and there is nothing to verify.
+        val expected = System.getProperty("axiam.expectedTestJvm")?.toIntOrNull() ?: return
+
+        assertEquals(
+            expected,
+            Runtime.version().feature(),
+            "the build requested a JDK $expected test launcher but the suite is running on " +
+                "${Runtime.version().feature()} — the toolchain fell back to Gradle's own JVM, " +
+                "so this leg is testing nothing it was added to test",
+        )
+    }
+
+    @Test
     fun `the compiling Kotlin version is one of the declared legs`() {
         // KotlinVersion.CURRENT is the version of the compiler that built THIS
         // test, so it identifies the leg from the inside — the one declaration

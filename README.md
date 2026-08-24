@@ -123,12 +123,30 @@ would be locked out. So the published compiler stays at the floor and the newest
 leg proves the forward direction still holds. That is the same shape as the JVM
 axis: build at the floor, prove it works at the newest.
 
-The compiler version is a Gradle property, so either end is reproducible locally:
+Both ends are Gradle properties, so either leg is reproducible locally:
 
 ```bash
-./gradlew test                          # floor — Kotlin 2.1.0
-./gradlew test -PkotlinVersion=2.4.10   # newest
+./gradlew test                                              # floor
+./gradlew test -PkotlinVersion=2.4.10 -PtestJavaVersion=25  # newest
 ```
+
+### Why the tests fork a separate JVM
+
+`-PtestJavaVersion` selects a **toolchain launcher for the test JVM only** —
+Gradle itself keeps running on JDK 17.
+
+That separation is not incidental. Gradle 8.10.2 cannot run on Java 25 at all;
+it aborts with a bare, unrecognised `25.0.4` before configuring anything. So
+simply pointing `JAVA_HOME` at 25 does not test the SDK on Java 25 — it kills
+the build. And the claim being made here was never about Gradle's own runtime:
+it is that the SDK's **JVM 17 bytecode runs on a modern JVM**, which is a
+statement about the process the tests execute in. A toolchain launcher says
+exactly that and nothing more.
+
+`VersionPolicyTest` asserts the fork actually happened, comparing the JVM it is
+running on against the version the build requested. A toolchain that silently
+fell back to Gradle's JVM would otherwise leave the leg green while testing
+nothing it was added to test.
 
 Kotlin 2.2 and 2.3 and JDKs 18–24 sit between two green legs. See
 [`examples/version-compatibility`](./examples/version-compatibility) for a

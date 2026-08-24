@@ -47,6 +47,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   publishing from 2.4 would not widen support — it would lock out every
   consumer still on 2.1-2.3.
 
+- **The `newest` leg forks its test JVM via a Gradle toolchain
+  (`-PtestJavaVersion`) rather than running Gradle itself on JDK 25.** Gradle
+  8.10.2 cannot run on Java 25 — it aborts with a bare, unrecognised `25.0.4`
+  before configuring anything — so pointing `JAVA_HOME` at 25 does not test the
+  SDK on Java 25, it kills the build. The claim being made is that the SDK's
+  JVM 17 bytecode *runs* on a modern JVM, which is a property of the test
+  process, not of Gradle's runtime. `VersionPolicyTest` asserts the fork
+  actually happened, so a silent fallback to Gradle's own JVM cannot leave the
+  leg green while testing nothing.
+
 - **Kover 0.8.3 → 0.9.9.** 0.8.3 cannot configure a build compiled by Kotlin
   2.4: `koverGenerateArtifactJvm` fails to resolve `compileKotlinTask` for the
   `examples` compilation. 0.9.9 works on both legs with the existing DSL

@@ -49,23 +49,42 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up JDK ${{ matrix.java }}
+      # Both JDKs on every leg, with 17 LAST so it becomes JAVA_HOME and is
+      # therefore the JVM Gradle itself runs on.
+      #
+      # That ordering is load-bearing. Gradle 8.10.2 cannot run on Java 25 — it
+      # aborts with a bare, unrecognised "25.0.4" before configuring anything —
+      # so pointing JAVA_HOME at 25 does not test the SDK on Java 25, it just
+      # kills the build. What the SDK actually claims is that its JVM 17
+      # bytecode RUNS on a modern JVM, which is a statement about the test
+      # launcher rather than about Gradle's own runtime. `-PtestJavaVersion`
+      # (see build.gradle.kts) forks the test JVM on exactly that version while
+      # Gradle stays on a JDK it supports.
+      - name: Set up JDKs (Gradle runs on 17; tests fork on ${{ matrix.java }})
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: ${{ matrix.java }}
+          java-version: |
+            25
+            17
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
       - name: Build, test, and coverage report
-        run: ./gradlew build test koverXmlReport --no-daemon -PkotlinVersion=${{ matrix.kotlin }}
+        run: >
+          ./gradlew build test koverXmlReport --no-daemon
+          -PkotlinVersion=${{ matrix.kotlin }}
+          -PtestJavaVersion=${{ matrix.java }}
 
       # The coverage floor is a property of the source, not of the toolchain, so
       # it is verified once — on the floor leg, which is what gets published.
       - name: Coverage verification (>= 98% line, enforced floor)
         if: matrix.kotlin == '2.1.0'
-        run: ./gradlew koverVerify --no-daemon -PkotlinVersion=${{ matrix.kotlin }}
+        run: >
+          ./gradlew koverVerify --no-daemon
+          -PkotlinVersion=${{ matrix.kotlin }}
+          -PtestJavaVersion=${{ matrix.java }}
 
   tls-bypass-gate:
     name: TLS-bypass gate (§6)
