@@ -31,7 +31,10 @@ import kotlinx.coroutines.runBlocking
  *  3. A tenant with `opaque_mode: disabled` answers the start endpoint with
  *     `404`, which reaches the caller as [NetworkError] and NOT as a credential
  *     failure — so falling back to `login()` is correct and safe. An
- *     [AuthError] is the opposite case and must NOT be retried that way.
+ *     [AuthError] is the opposite case and must NOT be retried that way: under
+ *     `opaque_mode: optional` the SDK has already made that retry itself
+ *     (§23.4 rule 7), so a second one only re-sends a password that just
+ *     failed.
  *  4. A tenant with `opaque_mode: required` answers `/auth/login` with `403`,
  *     which is an [AuthzError]. A user whose password is perfectly good must
  *     never be shown "invalid username or password".
@@ -90,9 +93,12 @@ object OpaqueLoginExample {
                         // This covers BOTH halves of the mutual authentication:
                         // the envelope only opens under the right password, and
                         // KE2's MAC only verifies if the server actually holds
-                        // the record. Do NOT retry over login(), which would
-                        // hand the plaintext to an endpoint that just failed to
-                        // prove it holds the record (§23.4 rule 7).
+                        // the record. Do NOT retry over login() here: §23.4
+                        // rule 7 puts that decision inside the SDK, which
+                        // retries by itself when the tenant runs
+                        // `opaque_mode: optional` and refuses to when it runs
+                        // `required` (or is too old to say). Either way this
+                        // AuthError is the final answer.
                         System.err.println("login failed: ${e.message}")
                         System.err.println("Not retrying with a password.")
                         return@runBlocking
