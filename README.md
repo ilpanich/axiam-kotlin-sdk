@@ -20,6 +20,7 @@ Source: [ilpanich/axiam-kotlin-sdk](https://github.com/ilpanich/axiam-kotlin-sdk
 - **Registry:** Maven Central (Sonatype Central Portal) _(reserved, not yet published)_
 - **API docs:** [javadoc.io](https://javadoc.io/doc/io.github.ilpanich/axiam-sdk-kotlin) — served from the Dokka `-javadoc.jar`
 - **License:** Apache-2.0
+- **Kotlin:** 2.1.0 minimum · **JVM:** 17 minimum — see [Supported Kotlin and JVM versions](#supported-kotlin-and-jvm-versions)
 
 ## Contract conformance
 
@@ -89,6 +90,69 @@ dependencies {
   <version>1.0.0-alpha41</version>
 </dependency>
 ```
+
+## Supported Kotlin and JVM versions
+
+This SDK has **two** version axes, and floor + newest applies to each:
+
+| Axis | Floor | Newest tested | What the floor means |
+|---|---|---|---|
+| **JVM** | 17 | 25 | `jvmTarget` — the bytecode level in every class file. An older JVM fails with `UnsupportedClassVersionError` at class-load. |
+| **Kotlin** | 2.1.0 | 2.4.10 | The compiler the artifact is *published* with. An older consumer compiler cannot read the SDK's `@Metadata`. |
+
+Both are exported as `io.axiam.sdk.SupportedVersions`.
+
+**Each floor enforces itself downward; neither enforces itself upward.** That
+asymmetry is the whole reason this section exists. JVM 17 bytecode loads on
+JDK 25 whether or not anybody ever ran it there, and 2.1-compiled metadata is
+read by a 2.4 compiler whether or not anybody ever compiled against it. Both
+upper claims are unproven unless something builds them — so the gating matrix in
+`sdk-ci-kotlin.yml` runs two legs, each pinning one end of *both* axes:
+
+| Leg | JDK | Kotlin |
+|---|---|---|
+| floor | 17 | 2.1.0 |
+| newest | 25 | 2.4.10 |
+
+### Why the published Kotlin stays at 2.1.0
+
+Kotlin metadata is forward-compatible: a library compiled with 2.1 is readable
+by any later compiler. Compiling the *published* artifact with 2.4 would not
+widen support, it would **narrow** it — every consumer still on 2.1, 2.2 or 2.3
+would be locked out. So the published compiler stays at the floor and the newest
+leg proves the forward direction still holds. That is the same shape as the JVM
+axis: build at the floor, prove it works at the newest.
+
+Both ends are Gradle properties, so either leg is reproducible locally:
+
+```bash
+./gradlew test                                              # floor
+./gradlew test -PkotlinVersion=2.4.10 -PtestJavaVersion=25  # newest
+```
+
+### Why the tests fork a separate JVM
+
+`-PtestJavaVersion` selects a **toolchain launcher for the test JVM only** —
+Gradle itself keeps running on JDK 17.
+
+That separation is not incidental. Gradle 8.10.2 cannot run on Java 25 at all;
+it aborts with a bare, unrecognised `25.0.4` before configuring anything. So
+simply pointing `JAVA_HOME` at 25 does not test the SDK on Java 25 — it kills
+the build. And the claim being made here was never about Gradle's own runtime:
+it is that the SDK's **JVM 17 bytecode runs on a modern JVM**, which is a
+statement about the process the tests execute in. A toolchain launcher says
+exactly that and nothing more.
+
+`VersionPolicyTest` asserts the fork actually happened, comparing the JVM it is
+running on against the version the build requested. A toolchain that silently
+fell back to Gradle's JVM would otherwise leave the leg green while testing
+nothing it was added to test.
+
+Kotlin 2.2 and 2.3 and JDKs 18–24 sit between two green legs. See
+[`examples/version-compatibility`](./examples/version-compatibility) for a
+runnable preflight, and `VersionPolicyTest` for the gate that fails the build
+when `jvmTarget`, `gradle.properties`, the CI matrix and `SupportedVersions`
+stop agreeing.
 
 ## Quickstart
 

@@ -190,7 +190,15 @@ class OidcExchangeTest {
                 )
             }
         }
-        assertTrue(ex !is OAuthProtocolError)
+        // `assertThrows(NetworkError::class.java)` above already carries the
+        // claim in this test's name: NetworkError and OAuthProtocolError are
+        // unrelated types (OAuthProtocolError extends AuthError), so nothing
+        // that satisfies the former can be the latter. `ex !is
+        // OAuthProtocolError` was therefore a tautology, which the Kotlin 2.4
+        // compiler rejects outright rather than warning about. Assert the
+        // concrete runtime type instead — that can actually fail, if the
+        // fallback ever starts producing a NetworkError subtype.
+        assertEquals(NetworkError::class.java, ex.javaClass)
     }
 
     @Test

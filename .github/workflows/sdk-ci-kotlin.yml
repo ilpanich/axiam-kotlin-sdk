@@ -12,26 +12,79 @@ permissions:
 
 jobs:
   build-test:
-    name: Build + Test (Gradle)
+    name: Build + Test (${{ matrix.name }})
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # This SDK has TWO version axes, and floor + newest applies to both:
+        #
+        #   JVM     — jvmTarget stays JVM_17 on every leg; the question is which
+        #             runtime executes that bytecode.
+        #   Kotlin  — the compiler that produces the .class files and the
+        #             @Metadata a consumer's compiler reads back.
+        #
+        # Rather than a 2x2 grid, the two legs pin the two ENDS: everything at
+        # its floor, and everything at its newest. A failure on `newest` is
+        # worth bisecting by hand precisely because it should be rare.
+        #
+        # The Kotlin axis matters in a way the JVM one does not: 2.1.0 is what
+        # is PUBLISHED, and Kotlin metadata is forward-compatible, so a consumer
+        # on 2.4 must be able to read a 2.1-compiled library. Bumping the
+        # published compiler would instead RAISE the floor for every consumer
+        # still on 2.1-2.3, so it stays at 2.1.0 and the newest leg proves the
+        # forward direction. This is the same shape as the JVM axis: build at
+        # the floor, prove it runs at the newest.
+        #
+        # VersionPolicyTest fails if these legs and the build's own declared
+        # versions ever stop agreeing.
+        include:
+          - name: floor — JDK 17, Kotlin 2.1.0
+            java: '17'
+            kotlin: '2.1.0'
+          - name: newest — JDK 25, Kotlin 2.4.10
+            java: '25'
+            kotlin: '2.4.10'
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      # Both JDKs on every leg, with 17 LAST so it becomes JAVA_HOME and is
+      # therefore the JVM Gradle itself runs on.
+      #
+      # That ordering is load-bearing. Gradle 8.10.2 cannot run on Java 25 — it
+      # aborts with a bare, unrecognised "25.0.4" before configuring anything —
+      # so pointing JAVA_HOME at 25 does not test the SDK on Java 25, it just
+      # kills the build. What the SDK actually claims is that its JVM 17
+      # bytecode RUNS on a modern JVM, which is a statement about the test
+      # launcher rather than about Gradle's own runtime. `-PtestJavaVersion`
+      # (see build.gradle.kts) forks the test JVM on exactly that version while
+      # Gradle stays on a JDK it supports.
+      - name: Set up JDKs (Gradle runs on 17; tests fork on ${{ matrix.java }})
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
+          java-version: |
+            25
+            17
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
       - name: Build, test, and coverage report
-        run: ./gradlew build test koverXmlReport --no-daemon
+        run: >
+          ./gradlew build test koverXmlReport --no-daemon
+          -PkotlinVersion=${{ matrix.kotlin }}
+          -PtestJavaVersion=${{ matrix.java }}
 
+      # The coverage floor is a property of the source, not of the toolchain, so
+      # it is verified once — on the floor leg, which is what gets published.
       - name: Coverage verification (>= 98% line, enforced floor)
-        run: ./gradlew koverVerify --no-daemon
+        if: matrix.kotlin == '2.1.0'
+        run: >
+          ./gradlew koverVerify --no-daemon
+          -PkotlinVersion=${{ matrix.kotlin }}
+          -PtestJavaVersion=${{ matrix.java }}
 
   tls-bypass-gate:
     name: TLS-bypass gate (§6)

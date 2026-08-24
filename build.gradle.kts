@@ -2,10 +2,10 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
-    kotlin("jvm") version "2.1.0"
-    kotlin("plugin.serialization") version "2.1.0"
+    kotlin("jvm")
+    kotlin("plugin.serialization")
     id("org.jetbrains.dokka") version "1.9.20"
-    id("org.jetbrains.kotlinx.kover") version "0.8.3"
+    id("org.jetbrains.kotlinx.kover") version "0.9.9"
     `maven-publish`
     signing
 }
@@ -108,8 +108,50 @@ tasks.withType<KotlinCompile>().configureEach {
     }
 }
 
+// The JVM that EXECUTES the tests, chosen independently of the JVM running
+// Gradle. These are not the same question, and conflating them is what broke
+// the first attempt at a JDK 25 CI leg: Gradle 8.10.2 cannot itself run on
+// Java 25 (it fails with a bare, unrecognised "25.0.4"), so pointing
+// setup-java at 25 killed the build before a single test ran.
+//
+// What the SDK actually claims is that its JVM 17 bytecode RUNS on a modern
+// JVM — which is a statement about the test launcher, not about Gradle's own
+// runtime. A toolchain launcher says exactly that and nothing more: Gradle
+// stays on a JDK it supports, compiles to JVM 17 as always, and forks the test
+// JVM on the requested version.
+//
+// Absent the property, tests run on Gradle's own JVM, as before.
+val testJavaVersion: Provider<String> = providers.gradleProperty("testJavaVersion")
+val javaToolchainService = extensions.getByType<JavaToolchainService>()
+
 tasks.test {
     useJUnitPlatform()
+
+    if (testJavaVersion.isPresent) {
+        javaLauncher.set(
+            javaToolchainService.launcherFor {
+                languageVersion.set(JavaLanguageVersion.of(testJavaVersion.get().toInt()))
+            },
+        )
+        // Hand the requested version to the suite so VersionPolicyTest can
+        // confirm the fork actually happened. A toolchain that silently fell
+        // back to Gradle's own JVM would otherwise leave the leg reporting
+        // green while testing nothing it was added to test.
+        systemProperty("axiam.expectedTestJvm", testJavaVersion.get())
+    }
+
+    // VersionPolicyTest reads these three files to assert that the declared
+    // support range, the published Kotlin version and the CI matrix still
+    // agree. Gradle knows nothing about that: the test task's declared inputs
+    // are sources and classpath, so with `org.gradle.caching=true` (and the
+    // cache that gradle/actions/setup-gradle restores in CI) a change to the
+    // workflow YAML alone leaves :test UP-TO-DATE and Gradle serves the
+    // previous PASS — the exact drift the test exists to catch would sail
+    // through green. Declaring them as inputs is what makes the gate real.
+    inputs.file("gradle.properties").withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.file("build.gradle.kts").withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.file(".github/workflows/sdk-ci-kotlin.yml")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
     testLogging {
         events("passed", "skipped", "failed")
     }
@@ -166,6 +208,15 @@ val runRestAuthzExample by tasks.registering(JavaExec::class) {
     description = "Run examples/rest-authz/RestAuthzExample.kt"
     classpath = examples.runtimeClasspath
     mainClass.set("io.axiam.sdk.examples.restauthz.RestAuthzExample")
+}
+
+val runVersionCompatibilityExample by tasks.registering(JavaExec::class) {
+    group = "examples"
+    description = "Run examples/version-compatibility/VersionCompatibilityExample.kt"
+    classpath = examples.runtimeClasspath
+    mainClass.set(
+        "io.axiam.sdk.examples.versioncompatibility.VersionCompatibilityExample",
+    )
 }
 
 val runOidcLoginExample by tasks.registering(JavaExec::class) {
