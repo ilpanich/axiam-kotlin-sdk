@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha43] - 2026-08-24
+
 ### Added
+
+- Gate on both ends of both version axes (JDK 17/25, Kotlin 2.1/2.4) (#44)
 
 - **JDK 25 and Kotlin 2.4.10 are now CI-built.** The gating matrix runs two
   legs pinning both ends of both version axes: `floor` (JDK 17, Kotlin 2.1.0)
