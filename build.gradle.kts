@@ -2,10 +2,10 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
-    kotlin("jvm") version "2.1.0"
-    kotlin("plugin.serialization") version "2.1.0"
+    kotlin("jvm")
+    kotlin("plugin.serialization")
     id("org.jetbrains.dokka") version "1.9.20"
-    id("org.jetbrains.kotlinx.kover") version "0.8.3"
+    id("org.jetbrains.kotlinx.kover") version "0.9.9"
     `maven-publish`
     signing
 }
@@ -110,6 +110,19 @@ tasks.withType<KotlinCompile>().configureEach {
 
 tasks.test {
     useJUnitPlatform()
+
+    // VersionPolicyTest reads these three files to assert that the declared
+    // support range, the published Kotlin version and the CI matrix still
+    // agree. Gradle knows nothing about that: the test task's declared inputs
+    // are sources and classpath, so with `org.gradle.caching=true` (and the
+    // cache that gradle/actions/setup-gradle restores in CI) a change to the
+    // workflow YAML alone leaves :test UP-TO-DATE and Gradle serves the
+    // previous PASS — the exact drift the test exists to catch would sail
+    // through green. Declaring them as inputs is what makes the gate real.
+    inputs.file("gradle.properties").withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.file("build.gradle.kts").withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.file(".github/workflows/sdk-ci-kotlin.yml")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
     testLogging {
         events("passed", "skipped", "failed")
     }
@@ -166,6 +179,15 @@ val runRestAuthzExample by tasks.registering(JavaExec::class) {
     description = "Run examples/rest-authz/RestAuthzExample.kt"
     classpath = examples.runtimeClasspath
     mainClass.set("io.axiam.sdk.examples.restauthz.RestAuthzExample")
+}
+
+val runVersionCompatibilityExample by tasks.registering(JavaExec::class) {
+    group = "examples"
+    description = "Run examples/version-compatibility/VersionCompatibilityExample.kt"
+    classpath = examples.runtimeClasspath
+    mainClass.set(
+        "io.axiam.sdk.examples.versioncompatibility.VersionCompatibilityExample",
+    )
 }
 
 val runOidcLoginExample by tasks.registering(JavaExec::class) {

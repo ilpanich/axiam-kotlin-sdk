@@ -5,6 +5,71 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **JDK 25 and Kotlin 2.4.10 are now CI-built.** The gating matrix runs two
+  legs pinning both ends of both version axes: `floor` (JDK 17, Kotlin 2.1.0)
+  and `newest` (JDK 25, Kotlin 2.4.10). Previously CI ran one JDK and one
+  Kotlin, so the upper half of both compatibility claims was untested —
+  including a claim the build file made in a comment ("a strict toolchain(17)
+  is intentionally NOT pinned so the build runs on either JDK 17 or a newer
+  JDK") which was true but had nothing keeping it true.
+
+- **`io.axiam.sdk.SupportedVersions`** — `MIN_JVM_TARGET`, `NEWEST_TESTED_JVM`,
+  `MIN_KOTLIN_VERSION` and `NEWEST_TESTED_KOTLIN`. Each floor enforces itself
+  downward (an old JVM cannot load the class files; an old compiler cannot read
+  the metadata) and neither enforces itself upward, so the upper values are the
+  ones nothing else records.
+
+- **`VersionPolicyTest`** — binds `jvmTarget`, `gradle.properties`'
+  `kotlinVersion`, the CI matrix and all four constants together, failing the
+  build when they disagree.
+
+- **`examples/version-compatibility`** — a runnable preflight reporting the
+  running JVM and the compiling Kotlin against both ranges. Compile-checked by
+  the existing `examples` source set and runnable via
+  `./gradlew runVersionCompatibilityExample`.
+
+- **A "Supported Kotlin and JVM versions" section in the README**, including why
+  the published compiler deliberately stays at the floor.
+
+### Changed
+
+- **The Kotlin plugin version is now the `kotlinVersion` Gradle property**
+  (default `2.1.0`, unchanged), so the same sources can be compiled with a
+  newer compiler without changing what is published:
+  `./gradlew test -PkotlinVersion=2.4.10`. The published artifact and its
+  metadata are byte-for-byte the same compiler as before.
+
+  It stays at 2.1.0 deliberately. Kotlin metadata is forward-compatible, so
+  publishing from 2.4 would not widen support — it would lock out every
+  consumer still on 2.1-2.3.
+
+- **Kover 0.8.3 → 0.9.9.** 0.8.3 cannot configure a build compiled by Kotlin
+  2.4: `koverGenerateArtifactJvm` fails to resolve `compileKotlinTask` for the
+  `examples` compilation. 0.9.9 works on both legs with the existing DSL
+  unchanged. Surfaced by the new `newest` leg, which is what it is for.
+
+- **`tasks.test` now declares `gradle.properties`, `build.gradle.kts` and the CI
+  workflow as inputs.** Without this the new policy test was unenforceable in
+  practice: the test task's declared inputs are sources and classpath, so with
+  `org.gradle.caching=true` a change to the workflow alone left `:test`
+  `FROM-CACHE` and Gradle served the previous PASS — the exact drift the test
+  exists to catch would have sailed through green. Confirmed by observation
+  before the fix, and by the mutation going red after it.
+
+### Fixed
+
+- **Two tests failed to compile under Kotlin 2.4.** `OidcCoverageGapsTest` and
+  `OidcExchangeTest` each asserted `ex !is OAuthProtocolError` on a value
+  already typed `NetworkError` by `assertThrows`. The two types are unrelated
+  (`OAuthProtocolError` extends `AuthError`), so the check was a tautology —
+  a warning under Kotlin 2.1, a hard error under 2.4. Replaced with
+  `assertEquals(NetworkError::class.java, ex.javaClass)`, which carries the same
+  intent and can actually fail. Found by the new `newest` CI leg.
+
 ## [1.0.0-alpha41] - 2026-08-24
 
 ### Added
