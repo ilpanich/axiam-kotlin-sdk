@@ -86,20 +86,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Honour `mode` after a failed KE2 (CONTRACT §23.4 rule 7)
 
-### Changed
-
-- Re-vendor openapi.json for the vault_pki CA custodian (axiam#368)
-- Re-vendor CONTRACT.md at 1.29 and openapi.json at alpha40
-
-## [Unreleased]
-
-### Added
-
 - `mode` in the `POST /api/v1/auth/opaque/login/start` response is now read: an optional string
   carrying the tenant's `opaque_mode` (`optional` or `required`), absent on a server older than
   the field.
 
 ### Changed
+
+- Re-vendor openapi.json for the vault_pki CA custodian (axiam#368)
+
+- Re-vendor CONTRACT.md at 1.29 and openapi.json at alpha40
 
 - **Re-vendor `openapi.json`** for AXIAM server PR #368, which adds a third CA
   key custodian, `vault_pki`, having HashiCorp Vault's PKI secrets engine
@@ -140,6 +135,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     trust anchor, and a root that signs leaves directly cannot.
 
 - Re-vendor CONTRACT.md at 1.29 and openapi.json at 1.0.0-alpha40.
+
 - **CONTRACT §23.4 rule 7 — a failed `KE2` no longer always ends the login.** `loginOpaque` still
   never sends `KE3` after the OPAQUE AKE check fails, but what it does next is now decided by
   `mode` and by nothing else: under `optional` it retries over `POST /api/v1/auth/login` with the
@@ -149,6 +145,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   value, or **no `mode` field at all**, it raises `AuthError` as before and never touches
   `/auth/login`. `mode` is not downgrade protection — a hostile server wanting the plaintext could
   answer `404` — and is not documented as such.
+
 - `404` handling is unchanged: a tenant with OPAQUE disabled is still the distinguishable
   `NetworkError`, not a credential failure.
 
@@ -184,19 +181,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Replace SRP-6a with OPAQUE (RFC 9807), CONTRACT §23
 
-### Changed
-
-- Link to the AXIAM platform documentation site
-- Re-vendor openapi.json at alpha32 (#37)
-
-### Fixed
-
-- Build the KSF before spending the exchange's state handle
-
-## [Unreleased]
-
-### Added
-
 - CONTRACT.md §24 — WebAuthn / passkeys relying-party layer
   (`io.axiam.sdk.webauthn`): the six wire operations, the two distinct
   authentication ceremonies, and §24.6a's JSON bridge. `WebauthnChallenge.requestJson`
@@ -209,17 +193,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   §24.6b's linked-API helper is deliberately absent: the JVM has no
   authenticator, and rule 2 forbids emulating one in software.
+
 - CONTRACT.md §25 — account lifecycle and MFA enrolment
   (`io.axiam.sdk.account`): voluntary and forced TOTP enrolment, email
   verification, and the password-reset triple including the `reset/context`
   call a tenant with §23 enabled requires before a new password can be built.
+
 - CONTRACT.md §26 — Pushed Authorization Requests, RFC 9126 (`oidcPar`,
   `OidcParParams`, `PushedAuthorizationRequest`). Required for a FAPI 2.0
   client, which cannot authorize any other way (§21.1).
+
 - `examples/webauthn-passkeys`, `examples/account-lifecycle` and
   `examples/par-login`, with `./gradlew run*Example` tasks for each.
 
+- OPAQUE (RFC 9807) login and enrolment (CONTRACT §23): `loginOpaque`,
+  `opaqueEnrollment` and `opaqueAvailable` on `AxiamClient`, plus the new
+  `io.axiam.sdk.opaque` package.
+
+- `examples/opaque-login`, run with `./gradlew runOpaqueLoginExample`.
+
+- `net.java.dev.jna:jna` as a **`compileOnly`** dependency, the same posture
+  this SDK already takes for Ktor and the RabbitMQ client. It binds
+  `libaxiam_opaque_ffi`; a consumer whose tenant does not use OPAQUE does not
+  receive it and does not need it. OPAQUE users add it themselves.
+
 ### Changed
+
+- Link to the AXIAM platform documentation site
+
+- Re-vendor openapi.json at alpha32 (#37)
 
 - Re-vendor `CONTRACT.md`. Repairs §14.1's link to the `device_login` heading,
   which dropped a hyphen the em dash leaves behind and so rendered as a link
@@ -239,37 +241,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   compiles and reads `false`. Callers that branch only on `mfaRequired` should
   still add the new branch — a tenant that turns on required MFA will start
   returning it, and ignoring it reports a successful login that has no session.
+
 - `OidcConfiguration` gained `pushed_authorization_request_endpoint`, defaulted
   to `null` and parsed from discovery.
+
 - Re-vendored `CONTRACT.md` and `openapi.json` at contract 1.28.
-
-### Added
-
-- OPAQUE (RFC 9807) login and enrolment (CONTRACT §23): `loginOpaque`,
-  `opaqueEnrollment` and `opaqueAvailable` on `AxiamClient`, plus the new
-  `io.axiam.sdk.opaque` package.
-- `examples/opaque-login`, run with `./gradlew runOpaqueLoginExample`.
-- `net.java.dev.jna:jna` as a **`compileOnly`** dependency, the same posture
-  this SDK already takes for Ktor and the RabbitMQ client. It binds
-  `libaxiam_opaque_ffi`; a consumer whose tenant does not use OPAQUE does not
-  receive it and does not need it. OPAQUE users add it themselves.
-
-### Changed
 
 - Re-vendor `openapi.json` at **1.0.0-alpha32**, matching the server. The
   content was already byte-identical in every path and schema; only
   `info.version` differed, which is what the cross-repo artifact-drift gate
   reports as `STALE`.
+
 - **BREAKING** — the OPAQUE protocol is NOT implemented in this SDK. CONTRACT
   §23.1 forbids it, so the client half is a JNA binding to
   `libaxiam_opaque_ffi` — the same implementation the AXIAM server links,
   published as a per-platform asset on the axiam release page rather than on
   Maven Central. Put it on `java.library.path` or set
   `-Daxiam.opaque.library=` / `AXIAM_OPAQUE_LIBRARY`.
+
 - **BREAKING** — `opaqueAvailable()` can genuinely return `false`, where
   `srpAvailable()` was hard-coded `true` on the JVM. Both JNA and the shared
   library are optional and independently absent-able. Code that ignored
   `srpAvailable()` must not ignore this one.
+
 - `opaqueEnrollment` performs network I/O, where `srpEnrollment` did not:
   OPAQUE's envelope is sealed under the server's oblivious PRF, so there is no
   offline computation that produces a valid record. It also drops the
@@ -277,6 +271,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   identifier the server chooses, and the key-stretching parameters are the
   server's. As a consequence, **renaming a user no longer invalidates their
   credential**.
+
 - Failure taxonomy for the OPAQUE path: a tenant with OPAQUE disabled, an absent
   library, and a key-stretching function this build cannot perform are all
   `NetworkError` (a caller can fall back, or an operator can act); everything
@@ -288,11 +283,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `io.axiam.sdk.srp` package, `srp-test-vectors.json` and `examples/srp-login`
   are all gone. AXIAM's server-side SRP endpoints are removed in the same
   release, so keeping the client would leave methods that only ever return 404.
+
 - **BREAKING** — `org.bouncycastle:bcprov-jdk18on` is no longer a dependency. It
   was here for the SRP client's Argon2id and nothing else in `src/main` imported
   it. Applications relying on it transitively must declare it themselves.
 
 ### Fixed
+
+- Build the KSF before spending the exchange's state handle
 
 - OPAQUE: a refused key-stretching function no longer strands the exchange's
   native state handle. `finish()` spent the handle before building the KSF, so
