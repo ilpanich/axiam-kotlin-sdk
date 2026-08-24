@@ -60,12 +60,23 @@ class OpaqueLoginTest {
         val loginFinishBodies = mutableListOf<String>()
         val registerStartBodies = mutableListOf<String>()
 
+        /** Bodies seen at the plaintext `POST /api/v1/auth/login` (§23.4 rule 7). */
+        val passwordLoginBodies = mutableListOf<String>()
+
         var loginStartStatus = 200
         var loginFinishStatus = 200
         var registerStartStatus = 200
+        var passwordLoginStatus = 200
         var mfaRequired = false
         var omitKe2 = false
         var ksf = "argon2id"
+
+        /**
+         * The tenant's `opaque_mode` as `login/start` reports it, or `null` for
+         * a server older than the field — which §23.4 rule 7 reads as
+         * `required`.
+         */
+        var mode: String? = null
 
         override fun dispatch(request: RecordedRequest): MockResponse {
             val body = request.body.readUtf8()
@@ -82,6 +93,10 @@ class OpaqueLoginTest {
                     registerStartBodies += body
                     registerStart()
                 }
+                request.path.orEmpty().endsWith("/auth/login") -> {
+                    passwordLoginBodies += body
+                    passwordLogin()
+                }
                 else -> MockResponse().setResponseCode(404)
             }
         }
@@ -95,10 +110,18 @@ class OpaqueLoginTest {
         private fun loginStart(): MockResponse {
             if (loginStartStatus != 200) return MockResponse().setResponseCode(loginStartStatus)
             val ke2 = if (omitKe2) "" else """"ke2":"$WIRE_KE2","""
+            val modeField = mode?.let { """"mode":"$it",""" } ?: ""
             return TestSupport.json(
                 200,
-                """{"opaque_session":"handle-42",$ke2${ksfFields()}}""",
+                """{"opaque_session":"handle-42",$modeField$ke2${ksfFields()}}""",
             )
+        }
+
+        private fun passwordLogin(): MockResponse {
+            if (passwordLoginStatus != 200) {
+                return MockResponse().setResponseCode(passwordLoginStatus)
+            }
+            return TestSupport.loginOkResponse()
         }
 
         private fun loginFinish(): MockResponse {
@@ -283,6 +306,108 @@ class OpaqueLoginTest {
             withClient(fake) { it.loginOpaque(USER, PASSWORD.copyOf()) }
         }
         assertTrue(fake.loginFinishBodies.isEmpty())
+    }
+
+    // -----------------------------------------------------------------
+    // §23.4 rule 7 -- what `mode` decides after a failed KE2
+    // -----------------------------------------------------------------
+
+    @Test
+    @DisplayName("optional: a failed KE2 retries over /auth/login and returns its success")
+    fun optionalRetriesOverPasswordLogin() {
+        // Under `optional` an account with no registration record is the
+        // ordinary case, not an error: every account has none the moment an
+        // operator enables OPAQUE, and acquires one only when its password is
+        // next set. Treating the failed exchange as final would lock out every
+        // user of a tenant mid-migration.
+        lib.fail("login_finish")
+        val fake = FakeOpaqueServer().apply { mode = "optional" }
+
+        val result = withClient(fake) { it.loginOpaque(USER, PASSWORD.copyOf()) }
+
+        assertFalse(result.mfaRequired)
+        assertNotNull(result.user)
+        // KE3 is still never sent -- the fallback is a different endpoint, not
+        // a second opinion on the exchange that just failed.
+        assertTrue(fake.loginFinishBodies.isEmpty())
+        assertEquals(1, fake.passwordLoginBodies.size)
+        val retry = parse(fake.passwordLoginBodies[0])
+        assertEquals(USER, retry["username_or_email"]?.jsonPrimitive?.content)
+        assertEquals(String(PASSWORD), retry["password"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    @DisplayName("optional: a failed KE2 and a failed /auth/login is the authentication error")
+    fun optionalReportsThePasswordLoginFailure() {
+        lib.fail("login_finish")
+        val fake = FakeOpaqueServer().apply {
+            mode = "optional"
+            passwordLoginStatus = 401
+        }
+
+        assertThrows<AuthError> {
+            withClient(fake) { it.loginOpaque(USER, PASSWORD.copyOf()) }
+        }
+        assertTrue(fake.loginFinishBodies.isEmpty())
+        assertEquals(1, fake.passwordLoginBodies.size)
+    }
+
+    @Test
+    @DisplayName("required: a failed KE2 is final and never reaches /auth/login")
+    fun requiredNeverFallsBackToPasswordLogin() {
+        // `required` answers 403 opaque_required for every principal, so the
+        // retry would put a plaintext password on the wire for nothing.
+        lib.fail("login_finish")
+        val fake = FakeOpaqueServer().apply { mode = "required" }
+
+        assertThrows<AuthError> {
+            withClient(fake) { it.loginOpaque(USER, PASSWORD.copyOf()) }
+        }
+        assertTrue(fake.loginFinishBodies.isEmpty())
+        assertTrue(fake.passwordLoginBodies.isEmpty())
+    }
+
+    @Test
+    @DisplayName("no mode field: a server older than the field is read as required")
+    fun absentModeIsReadAsRequired() {
+        lib.fail("login_finish")
+        val fake = FakeOpaqueServer()
+        assertNull(fake.mode)
+
+        assertThrows<AuthError> {
+            withClient(fake) { it.loginOpaque(USER, PASSWORD.copyOf()) }
+        }
+        assertTrue(fake.loginFinishBodies.isEmpty())
+        assertTrue(fake.passwordLoginBodies.isEmpty())
+    }
+
+    @Test
+    @DisplayName("an unrecognised mode fails closed, exactly as required does")
+    fun unknownModeFailsClosed() {
+        lib.fail("login_finish")
+        val fake = FakeOpaqueServer().apply { mode = "mandatory-ish" }
+
+        assertThrows<AuthError> {
+            withClient(fake) { it.loginOpaque(USER, PASSWORD.copyOf()) }
+        }
+        assertTrue(fake.loginFinishBodies.isEmpty())
+        assertTrue(fake.passwordLoginBodies.isEmpty())
+    }
+
+    @Test
+    @DisplayName("optional does not turn a KSF this build cannot perform into a password retry")
+    fun optionalDoesNotFallBackForAConfigurationError() {
+        // The fallback is keyed to the credential check failing, not to any
+        // failure: an unknown KSF is a NetworkError no password endpoint fixes.
+        val fake = FakeOpaqueServer().apply {
+            mode = "optional"
+            ksf = "bcrypt"
+        }
+
+        assertThrows<NetworkError> {
+            withClient(fake) { it.loginOpaque(USER, PASSWORD.copyOf()) }
+        }
+        assertTrue(fake.passwordLoginBodies.isEmpty())
     }
 
     @Test

@@ -354,6 +354,30 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
      * record expensive to attack even by someone holding the OPRF seed. It runs
      * on [Dispatchers.Default] rather than the caller's thread.
      *
+     * **When `KE2` does not open** — a wrong password, an account that does not
+     * exist, an account with no registration record, or a hostile endpoint, all
+     * indistinguishable by design — nothing is sent to `login/finish`, and what
+     * happens next is decided by the `mode` field of the `login/start`
+     * response and by nothing else (§23.4 rule 7):
+     *
+     * - `optional`: this call retries over [login] with the same credentials
+     *   before reporting anything, and returns that call's outcome — its
+     *   [LoginResult] on success, its exception on failure. Under `optional` an
+     *   account with no record is the ordinary case rather than an error: every
+     *   account has none the moment an operator enables OPAQUE and acquires one
+     *   only when its password is next set, so treating the failed exchange as
+     *   final would lock out every user of a tenant mid-migration.
+     * - `required`, an unrecognised value, or **no `mode` field at all** (a
+     *   server older than the field): an [AuthError], the exchange is over, and
+     *   nothing is retried over [login]. `required` answers `403
+     *   opaque_required` for every principal, so the retry would put a
+     *   plaintext password on the wire for nothing.
+     *
+     * `mode` is **not** downgrade protection and must not be presented as such:
+     * a hostile server that wanted the plaintext could answer `404` and get the
+     * fallback whatever it put here. What closes that is server-side —
+     * `required` refusing `/auth/login` before examining any credential.
+     *
      * @param password the account password, as a [CharArray] so the caller can
      *   clear it; this SDK clears every copy it makes but cannot clear the
      *   caller's.
@@ -366,9 +390,8 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
      *   caller falling back to [login].
      * @throws AuthError for a wrong password, an account that does not exist,
      *   and a server that does not hold the record — indistinguishable by
-     *   design. **Nothing is sent to `login/finish` in that case** (§23.4
-     *   rule 7), and a caller must not retry over [login]: that hands the
-     *   plaintext to an endpoint that just failed to prove itself.
+     *   design — under `required` or a `mode`-less response; under `optional`,
+     *   only if the [login] retry also fails.
      */
     suspend fun loginOpaque(usernameOrEmail: String, password: CharArray): LoginResult {
         ensureOpen()
@@ -390,8 +413,19 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
             // The key-stretching function is deliberately CPU- and memory-bound;
             // keeping it off the caller's dispatcher is the difference between a
             // slow login and a stalled event loop.
-            val ke3 = withContext(Dispatchers.Default) {
-                exchange.finish(password, ke2, KsfParams.fromWire(started))
+            val ke3 = try {
+                withContext(Dispatchers.Default) {
+                    exchange.finish(password, ke2, KsfParams.fromWire(started))
+                }
+            } catch (failed: AuthError) {
+                // §23.4 rule 7. KE2 did not open: KE3 is never sent, and what
+                // happens next depends on `mode` and on nothing else. Only
+                // AuthError is caught -- a NetworkError here is a KSF this
+                // build cannot perform, which no password endpoint can fix.
+                if (opaqueModeIsOptional(started)) {
+                    return login(usernameOrEmail, String(password))
+                }
+                throw failed
             }
 
             val body = buildJsonObject {
@@ -474,6 +508,19 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
      * discovering the gap mid-exchange.
      */
     fun opaqueAvailable(): Boolean = Opaque.available()
+
+    /**
+     * Whether a `login/start` response says the tenant's `opaque_mode` is
+     * `optional` — the only question §23.4 rule 7 asks of the `mode` field.
+     *
+     * `mode` is optional on the wire and is read as a nullable string: a server
+     * older than the field sends none, and absence is treated exactly as
+     * `"required"`. Any value this SDK does not recognise is treated the same
+     * way, so a newer or a garbled mode fails closed rather than putting a
+     * plaintext password on the wire.
+     */
+    private fun opaqueModeIsOptional(started: JsonObject): Boolean =
+        started["mode"]?.jsonPrimitive?.contentOrNull == OPAQUE_MODE_OPTIONAL
 
     /**
      * Sends one of the two `/start` requests and returns the parsed response.
@@ -1639,6 +1686,13 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
         private const val OPAQUE_REGISTER_START_PATH = "/api/v1/auth/opaque/register/start"
         private const val OPAQUE_LOGIN_START_PATH = "/api/v1/auth/opaque/login/start"
         private const val OPAQUE_LOGIN_FINISH_PATH = "/api/v1/auth/opaque/login/finish"
+
+        /**
+         * The one `mode` value in a `login/start` response that changes what
+         * this SDK does after a failed `KE2` (§23.4 rule 7). Never `"disabled"`
+         * — that tenant answers `404`.
+         */
+        private const val OPAQUE_MODE_OPTIONAL = "optional"
 
         private const val LOGOUT_PATH = "/api/v1/auth/logout"
         private const val WEBAUTHN_REGISTER_START_PATH = "/api/v1/auth/webauthn/register/start"
