@@ -201,6 +201,237 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
             ),
         )
 
+    // ---- CONTRACT.md §27.2/§27.3: the namespace handles, on the client ----
+    //
+    // `client.serviceAccounts.rotateSecret(id)` -- the form §27.3's Kotlin row shows,
+    // a PROPERTY rather than a function. `management()` above reaches the same handles
+    // behind one accessor, which §27.2 rule 4 makes the ADDITIONAL one ("SHOULD
+    // additionally be reachable behind one accessor"); shipping only that had the two
+    // the wrong way round, with the optional form present and the one the naming map
+    // specifies absent.
+    //
+    // Each delegates to management(), so rule 4's "where an SDK offers both, the two
+    // MUST return equivalent handles" holds structurally rather than by two code paths
+    // agreeing to stay in step. A `get()` rather than a stored `val`: §27.2 rule 1 says
+    // acquiring a handle performs no I/O, and a stored property would build all 24 of
+    // them -- and a ManagementTransport apiece -- when a client is constructed.
+
+    /**
+     * The organizations operations.
+     *
+     * Acquiring the handle performs no I/O (§27.2 rule 1). The same handle as
+     * `management().organizations()` (§27.2 rule 4).
+     */
+    val organizations: io.axiam.sdk.management.OrganizationsApi
+        get() = management().organizations()
+
+    /**
+     * The tenants operations.
+     *
+     * Acquiring the handle performs no I/O (§27.2 rule 1). The same handle as
+     * `management().tenants()` (§27.2 rule 4).
+     */
+    val tenants: io.axiam.sdk.management.TenantsApi
+        get() = management().tenants()
+
+    /**
+     * The users operations.
+     *
+     * Acquiring the handle performs no I/O (§27.2 rule 1). The same handle as
+     * `management().users()` (§27.2 rule 4).
+     */
+    val users: io.axiam.sdk.management.UsersApi
+        get() = management().users()
+
+    /**
+     * The groups operations.
+     *
+     * Acquiring the handle performs no I/O (§27.2 rule 1). The same handle as
+     * `management().groups()` (§27.2 rule 4).
+     */
+    val groups: io.axiam.sdk.management.GroupsApi
+        get() = management().groups()
+
+    /**
+     * The roles operations.
+     *
+     * Acquiring the handle performs no I/O (§27.2 rule 1). The same handle as
+     * `management().roles()` (§27.2 rule 4).
+     */
+    val roles: io.axiam.sdk.management.RolesApi
+        get() = management().roles()
+
+    /**
+     * The permissions operations.
+     *
+     * Acquiring the handle performs no I/O (§27.2 rule 1). The same handle as
+     * `management().permissions()` (§27.2 rule 4).
+     */
+    val permissions: io.axiam.sdk.management.PermissionsApi
+        get() = management().permissions()
+
+    /**
+     * The resources operations.
+     *
+     * Acquiring the handle performs no I/O (§27.2 rule 1). The same handle as
+     * `management().resources()` (§27.2 rule 4).
+     */
+    val resources: io.axiam.sdk.management.ResourcesApi
+        get() = management().resources()
+
+    /**
+     * The scopes operations.
+     *
+     * Acquiring the handle performs no I/O (§27.2 rule 1). The same handle as
+     * `management().scopes()` (§27.2 rule 4).
+     */
+    val scopes: io.axiam.sdk.management.ScopesApi
+        get() = management().scopes()
+
+    /**
+     * The service_accounts operations.
+     *
+     * Acquiring the handle performs no I/O (§27.2 rule 1). The same handle as
+     * `management().serviceAccounts()` (§27.2 rule 4).
+     */
+    val serviceAccounts: io.axiam.sdk.management.ServiceAccountsApi
+        get() = management().serviceAccounts()
+
+    /**
+     * The certificates operations.
+     *
+     * Acquiring the handle performs no I/O (§27.2 rule 1). The same handle as
+     * `management().certificates()` (§27.2 rule 4).
+     */
+    val certificates: io.axiam.sdk.management.CertificatesApi
+        get() = management().certificates()
+
+    /**
+     * The ca_certificates operations.
+     *
+     * Acquiring the handle performs no I/O (§27.2 rule 1). The same handle as
+     * `management().caCertificates()` (§27.2 rule 4).
+     */
+    val caCertificates: io.axiam.sdk.management.CaCertificatesApi
+        get() = management().caCertificates()
+
+    /**
+     * The pgp_keys operations.
+     *
+     * Acquiring the handle performs no I/O (§27.2 rule 1). The same handle as
+     * `management().pgpKeys()` (§27.2 rule 4).
+     */
+    val pgpKeys: io.axiam.sdk.management.PgpKeysApi
+        get() = management().pgpKeys()
+
+    /**
+     * The webhooks operations.
+     *
+     * Acquiring the handle performs no I/O (§27.2 rule 1). The same handle as
+     * `management().webhooks()` (§27.2 rule 4).
+     */
+    val webhooks: io.axiam.sdk.management.WebhooksApi
+        get() = management().webhooks()
+
+    /**
+     * The oauth2_clients operations.
+     *
+     * Acquiring the handle performs no I/O (§27.2 rule 1). The same handle as
+     * `management().oauth2Clients()` (§27.2 rule 4).
+     */
+    val oauth2Clients: io.axiam.sdk.management.Oauth2ClientsApi
+        get() = management().oauth2Clients()
+
+    /**
+     * The federation operations.
+     *
+     * Acquiring the handle performs no I/O (§27.2 rule 1). The same handle as
+     * `management().federation()` (§27.2 rule 4).
+     */
+    val federation: io.axiam.sdk.management.FederationApi
+        get() = management().federation()
+
+    /**
+     * The notification_rules operations.
+     *
+     * Acquiring the handle performs no I/O (§27.2 rule 1). The same handle as
+     * `management().notificationRules()` (§27.2 rule 4).
+     */
+    val notificationRules: io.axiam.sdk.management.NotificationRulesApi
+        get() = management().notificationRules()
+
+    /**
+     * The email_config operations.
+     *
+     * Acquiring the handle performs no I/O (§27.2 rule 1). The same handle as
+     * `management().emailConfig()` (§27.2 rule 4).
+     */
+    val emailConfig: io.axiam.sdk.management.EmailConfigApi
+        get() = management().emailConfig()
+
+    /**
+     * The settings operations.
+     *
+     * Acquiring the handle performs no I/O (§27.2 rule 1). The same handle as
+     * `management().settings()` (§27.2 rule 4).
+     */
+    val settings: io.axiam.sdk.management.SettingsApi
+        get() = management().settings()
+
+    /**
+     * The scim_tokens operations.
+     *
+     * Acquiring the handle performs no I/O (§27.2 rule 1). The same handle as
+     * `management().scimTokens()` (§27.2 rule 4).
+     */
+    val scimTokens: io.axiam.sdk.management.ScimTokensApi
+        get() = management().scimTokens()
+
+    /**
+     * The reactors operations.
+     *
+     * Acquiring the handle performs no I/O (§27.2 rule 1). The same handle as
+     * `management().reactors()` (§27.2 rule 4).
+     */
+    val reactors: io.axiam.sdk.management.ReactorsApi
+        get() = management().reactors()
+
+    /**
+     * The webauthn_policy operations.
+     *
+     * Acquiring the handle performs no I/O (§27.2 rule 1). The same handle as
+     * `management().webauthnPolicy()` (§27.2 rule 4).
+     */
+    val webauthnPolicy: io.axiam.sdk.management.WebauthnPolicyApi
+        get() = management().webauthnPolicy()
+
+    /**
+     * The audit operations.
+     *
+     * Acquiring the handle performs no I/O (§27.2 rule 1). The same handle as
+     * `management().audit()` (§27.2 rule 4).
+     */
+    val audit: io.axiam.sdk.management.AuditApi
+        get() = management().audit()
+
+    /**
+     * The privacy operations.
+     *
+     * Acquiring the handle performs no I/O (§27.2 rule 1). The same handle as
+     * `management().privacy()` (§27.2 rule 4).
+     */
+    val privacy: io.axiam.sdk.management.PrivacyApi
+        get() = management().privacy()
+
+    /**
+     * The platform operations.
+     *
+     * Acquiring the handle performs no I/O (§27.2 rule 1). The same handle as
+     * `management().platform()` (§27.2 rule 4).
+     */
+    val platform: io.axiam.sdk.management.PlatformApi
+        get() = management().platform()
+
     /**
      * The organization UUID this client can address, if one has resolved.
      *
