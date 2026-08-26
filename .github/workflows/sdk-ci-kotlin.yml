@@ -98,6 +98,26 @@ jobs:
       - name: No TLS-bypass patterns in src/main
         run: bash scripts/tls-bypass-gate.sh
 
+  management-drift-check:
+    name: "§27 management surface drift-check"
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # CONTRACT.md §27: the management surface is GENERATED from the vendored
+      # management-registry.json and openapi.json, and the generated output is
+      # committed. Committing it is what makes the API reviewable in a diff and
+      # navigable in an IDE; this job is what stops the committed copy and the
+      # vendored contract drifting apart. It fails if a re-vendored registry was
+      # not regenerated against, or if a generated file was hand-edited.
+      - name: python3 scripts/gen_management.py --check
+        run: python3 scripts/gen_management.py --check
+
   private-key-scan:
     name: No committed private keys
     if: github.event_name == 'pull_request'

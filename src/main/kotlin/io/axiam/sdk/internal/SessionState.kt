@@ -158,6 +158,39 @@ class SessionState(
         }
     }
 
+    /**
+     * The organization UUID this session can address, or `null`.
+     *
+     * The client's configured `orgId` first, then the live access token's
+     * `org_id` claim. A configured value outranks the claim so that naming an
+     * organization on the builder is a decision rather than a hint, and an
+     * unparseable claim reads as no claim: a malformed UUID cannot go into a
+     * path, and pretending otherwise turns a local refusal into a server-side
+     * 404.
+     */
+    fun resolvedOrgId(): UUID? {
+        configuredOrgId?.let { return it }
+        val claims = cachedAccessToken()?.let { decodeUnverifiedClaims(it) } ?: return null
+        return resolveOrgId(claims)
+    }
+
+    /**
+     * The tenant UUID this session can address, or `null`.
+     *
+     * Read from the live access token's `tenant_id` claim. The client's
+     * configured tenant identifier is deliberately not consulted: it is a slug
+     * as often as a UUID (CONTRACT.md §5), and resolving a slug would take a
+     * wire call the caller did not ask for.
+     */
+    fun resolvedTenantId(): UUID? {
+        val raw = cachedAccessToken()?.let { decodeUnverifiedClaims(it) }?.tenantId ?: return null
+        return try {
+            UUID.fromString(raw)
+        } catch (_: IllegalArgumentException) {
+            null
+        }
+    }
+
     private fun resolveOrgId(fallback: Claims): UUID? {
         configuredOrgId?.let { return it }
         fallback.orgId?.let {
