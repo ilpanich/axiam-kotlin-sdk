@@ -1255,10 +1255,18 @@ Worked end to end in [`examples/par-login`](examples/par-login) (`./gradlew runP
 
 ## Management API (§27)
 
-`client.management()` is the administrative surface: 146 operations across 24 namespaces — users,
-groups, roles, permissions, resources, scopes, service accounts, certificates, CA certificates, PGP
-keys, webhooks, OAuth2 clients, federation, notification rules, e-mail config, settings, SCIM
-tokens, reactors, WebAuthn policy, audit, privacy, organizations, tenants and platform.
+The administrative surface: 146 operations across 24 namespaces — users, groups, roles,
+permissions, resources, scopes, service accounts, certificates, CA certificates, PGP keys, webhooks,
+OAuth2 clients, federation, notification rules, e-mail config, settings, SCIM tokens, reactors,
+WebAuthn policy, audit, privacy, organizations, tenants and platform.
+
+The namespace handles sit **directly on the client** as properties — `client.serviceAccounts
+.rotateSecret(id)`, the form §27.3's Kotlin row shows — and the same 24 handles are also reachable
+behind one accessor, `client.management()` (§27.2 rule 4), which reads better where a call site is
+already dense with §1 methods. The two forms are **equivalent**: the direct properties delegate to
+`management()`, so rule 4's "where an SDK offers both, the two MUST return equivalent handles" holds
+structurally rather than by two code paths agreeing, and the suite asserts it by comparing the
+method, path and query each actually puts on the wire.
 
 It is **generated** from the vendored `management-registry.json` and `openapi.json` by
 `scripts/gen_management.py`, and the generated output is committed. A CI job re-runs the generator
@@ -1271,14 +1279,17 @@ AxiamClient.builder(baseUrl, "acme").orgSlug("acme").build().use { client ->
 
     // A namespace handle is a view over this client's session, not a
     // connection. Acquiring one performs no I/O (§27.2).
-    val page = client.management().users().list(PageRequest.of(25))
+    val page = client.users.list(PageRequest.of(25))
+
+    // Or reach the same handles behind one accessor.
+    val same = client.management().users().list(PageRequest.of(25))
 
     // page.total is the size of the WHOLE set, not of this page (§27.4 rule 4).
     println("${page.items.size} of ${page.total}")
 
     // listAll walks to exhaustion, stopping on an empty page even if the
     // server's total disagrees.
-    val roles = client.management().roles().listAll()
+    val roles = client.roles.listAll()
 }
 ```
 
