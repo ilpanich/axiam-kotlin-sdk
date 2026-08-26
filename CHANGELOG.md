@@ -7,6 +7,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **CONTRACT.md §27 Management API** — `client.management()`, 146 operations across 24
+  namespaces (users, groups, roles, permissions, resources, scopes, service accounts,
+  certificates, CA certificates, PGP keys, webhooks, OAuth2 clients, federation, notification
+  rules, e-mail config, settings, SCIM tokens, reactors, WebAuthn policy, audit, privacy,
+  organizations, tenants, platform).
+
+  The models and namespace handles are **generated** by `scripts/gen_management.py` from the
+  vendored `management-registry.json` and `openapi.json`, and the generated output is committed.
+  A new CI job runs the generator with `--check` on every pull request, so the committed surface
+  and the vendored contract cannot drift apart. §27.8 requires the generated layer to sit on the
+  SDK's existing request path, and it does: all 146 operations funnel through one
+  `ManagementTransport`, inheriting §3 CSRF, the §4 cookie jar, the §5 tenant header, §6 TLS,
+  §16 retry and §19 telemetry by construction rather than by 146 opportunities to forget one.
+
+  **No builders.** §27.4 rule 5 ("an unset field is absent, not null") is satisfied by Kotlin's
+  own defaults plus `encodeDefaults = false` on the request writer, rather than by a generated
+  builder per sparse body. `Sensitive` is `@Contextual` and registered on exactly two `Json`
+  instances — the request writer exposes it, the response reader redacts it, and a caller's own
+  `Json` throws rather than quietly emitting either the secret or a placeholder the server would
+  reject.
+
+- **The §27.6 declarative layer** — `client.management().manifest()`, with `plan` (reads only),
+  `apply` (stops at the first failure, does not roll back), derived ordering, and
+  back-reference checking at `build()` that reports every problem at once.
+
+- **`AxiamClient.resolvedOrgId()` / `resolvedTenantId()`** — the organization and tenant UUIDs
+  §27.4 rule 3 interpolates into implicit paths. Public because §27 also has routes where
+  `{org_id}` / `{tenant_id}` name the entity being administered rather than the calling context
+  (`tenants`, and the signing CAs under `caCertificates`); those take the identifier as an
+  ordinary argument, and without these a caller had no way to pass the same one the implicit
+  routes use. Distinct from `tenantId()`, which is the identifier the client was built with and
+  is a slug as often as a UUID.
+
+- Three runnable examples, compile-checked by `check` like every other example:
+  `examples/management-basics`, `examples/management-manifest`, and
+  `examples/device-mtls-provisioning` — the last being a full operator/device split, minting a
+  Device certificate from the tenant's signing CA and then authenticating with it over §6.1
+  mutual TLS.
+
+### Changed
+
+- **`AuthzError` and `NetworkError` are now `open`.** §27.4 rule 7 classifies three statuses
+  *inside* the existing §2 taxonomy rather than beside it: `NotFoundError` (404) and
+  `ConflictError` (409) extend `AuthzError`; `ValidationError` (400/422) extends `NetworkError`.
+  Each keeps the parent §2 already gave its status. Both are indirect subclasses of the sealed
+  `AxiamException`, so they live in their own file, and every existing `catch` for the base types
+  keeps catching the new ones — which is the property the rule is asking for.
+
+- **`Retry.withRetry` takes an optional `retryable` predicate**, defaulting to the previous
+  behaviour. §27.4 rule 7 puts `ValidationError` under `NetworkError`, which would otherwise make
+  a rejected request body retry-eligible; the bytes are wrong, and sending them again earns the
+  same refusal three times as slowly.
+
+- **Kover now excludes `io.axiam.sdk.management.models.*` from the coverage ratio.** Not an
+  exemption from testing: every generated model is constructed, sent or decoded by
+  `ManagementSurfaceGeneratedTest`, which additionally asserts that every field `openapi.json`
+  declares survives the decode — a stronger claim than line coverage. What is excluded is the
+  per-property arithmetic Kotlin synthesises for a `data class` (`componentN`, `copy`, `equals`,
+  `hashCode`), which reaching would mean calling `copy()` on 145 generated types to no purpose.
+  Line coverage of everything else rose from 98.1% to 98.7%; the floor stays at 98 because this
+  DSL's `minBound` is integer-valued and 99 is above what the SDK achieves.
+
 ## [1.0.0-alpha44] - 2026-08-25
 
 ### Changed

@@ -25,11 +25,14 @@ Source: [ilpanich/axiam-kotlin-sdk](https://github.com/ilpanich/axiam-kotlin-sdk
 ## Contract conformance
 
 This SDK conforms to CONTRACT.md §1–§7, §9–§13 and §12.7, §14, §15, §17, §19, §20, §21, §22, §23,
-§24, §25, §26 (including §6.1 mTLS).
+§24, §25, §26, §27 (including §6.1 mTLS).
 
-§12.7, §14, §15, §20, §22, §23, §24, §25 and §26 are named rather than folded into the range because
-they landed after this SDK already stated its coverage: widening the range silently would turn a
-statement that was true when written into a different claim without anyone editing it.
+§12.7, §14, §15, §20, §22, §23, §24, §25, §26 and §27 are named rather than folded into the range
+because they landed after this SDK already stated its coverage: widening the range silently would
+turn a statement that was true when written into a different claim without anyone editing it.
+
+**§27 is the Management API** — all 146 operations across 24 namespaces, with the §27.6 declarative
+layer. See [Management API](#management-api-27) below.
 
 **§24.6b — the linked-API ceremony helper — is deliberately absent, and this is not a capability
 gap.** See [WebAuthn / passkeys](#webauthn--passkeys-ioaxiamsdkwebauthn-24) below: Android's
@@ -1249,6 +1252,108 @@ A **FAPI 2.0 client has no alternative**: `profile: "fapi2"` refuses a registrat
 set `require_par`, so such a client cannot authorize any other way (§21.1).
 
 Worked end to end in [`examples/par-login`](examples/par-login) (`./gradlew runParLoginExample`).
+
+## Management API (§27)
+
+`client.management()` is the administrative surface: 146 operations across 24 namespaces — users,
+groups, roles, permissions, resources, scopes, service accounts, certificates, CA certificates, PGP
+keys, webhooks, OAuth2 clients, federation, notification rules, e-mail config, settings, SCIM
+tokens, reactors, WebAuthn policy, audit, privacy, organizations, tenants and platform.
+
+It is **generated** from the vendored `management-registry.json` and `openapi.json` by
+`scripts/gen_management.py`, and the generated output is committed. A CI job re-runs the generator
+with `--check` on every pull request, so the committed surface and the vendored contract cannot
+drift apart.
+
+```kotlin
+AxiamClient.builder(baseUrl, "acme").orgSlug("acme").build().use { client ->
+    client.login(admin, password)
+
+    // A namespace handle is a view over this client's session, not a
+    // connection. Acquiring one performs no I/O (§27.2).
+    val page = client.management().users().list(PageRequest.of(25))
+
+    // page.total is the size of the WHOLE set, not of this page (§27.4 rule 4).
+    println("${page.items.size} of ${page.total}")
+
+    // listAll walks to exhaustion, stopping on an empty page even if the
+    // server's total disagrees.
+    val roles = client.management().roles().listAll()
+}
+```
+
+Six things worth knowing:
+
+- **The client's org and tenant are implicit.** A route with `{org_id}` or `{tenant_id}` in it takes
+  them from the client (§27.4 rule 3). The handles that carry such routes — and only those — expose
+  `.inOrg(id)` / `.forTenant(id)` to name a different one for a single call; each returns a new
+  handle and leaves the original alone. Where `{tenant_id}` names the tenant being *administered*
+  rather than the calling context — `tenants`, and the signing CAs under `caCertificates` — it is an
+  ordinary argument instead, and `client.resolvedTenantId()` is what you pass it.
+- **A sparse update sends only what you name.** Bodies whose properties are all optional default
+  every one of them to `null`, and the request writer is configured with `encodeDefaults = false`,
+  so a property you never named is absent from the JSON rather than sent as `null` — which the
+  server reads as "clear this" (§27.4 rule 5). There is no builder because Kotlin does not need one.
+  Replacement bodies have no defaults: their constructor takes every property, so forgetting one is
+  a compile error.
+- **Three statuses are classified, and each keeps the parent §2 gave it.** `NotFoundError` (404) and
+  `ConflictError` (409) are `AuthzError`s; `ValidationError` (400/422) is a `NetworkError`. Existing
+  `catch` blocks keep working; code that wants the distinction can ask for it (§27.4 rule 7).
+  `ValidationError.fields` carries the server's per-field detail when it sent any.
+
+  404 sorts under `AuthzError` because on a multi-tenant surface "does not exist" and "is not yours"
+  are *deliberately* the same answer — a server that distinguished them would let a probing caller
+  enumerate another tenant's objects. 409 stays there because §2 already put it there.
+- **Only GETs are retried.** A create that times out is reported, never repeated — one retried
+  `POST` is two roles (§27.4 rule 8).
+- **One-time secrets are `Sensitive`.** A generated private key, a fresh client secret, a SCIM
+  provisioning token: returned by exactly one call and never again, redacted from `toString()`, and
+  reachable only through the explicit `expose()` (§27.5). Write it down before doing anything else
+  that could fail. A `Sensitive` is `@Contextual`, so serializing a §27 model with your own `Json`
+  throws rather than quietly emitting either the secret or a placeholder the server would reject.
+- **A management call with no session never reaches the network.** It fails locally with an
+  `AuthError` naming the missing session (§27.4 rule 1).
+
+Worked end to end in [`examples/management-basics`](examples/management-basics).
+
+### Declarative manifests (§27.6)
+
+`client.management().manifest()` takes a description of the tenant you want and reconciles toward
+it.
+
+```kotlin
+val manifest = ManagementManifest.builder()
+    .resource("docs", "documents", "collection")
+    .scope("docs", "draft", "draft", "Unpublished work")
+    .permission("read", "document:read", "Read a document")
+    .role("editor", "Editor", "Edits documents")
+    .grant("editor", "read", null, "draft")
+    .group("staff", "Staff", "Everyone", "editor")
+    .build()
+
+val plan = client.management().manifest().plan(manifest)   // reads only
+if (!plan.isConverged) {
+    val report = client.management().manifest().apply(manifest)
+}
+```
+
+- **`plan` writes nothing.** Every request it makes is a read, so it is safe to run against
+  production to find out what an `apply` would do.
+- **Ordering is derived, not declared.** Resources before their scopes, permissions before the
+  grants that name them, roles before the assignments; the builder checks back-references as they
+  are made, so a grant naming a role that no `role(...)` call has declared is refused at `build()` —
+  before any request, and reporting every problem at once rather than the first.
+- **Omission is never deletion.** A manifest states what should exist. A role it does not mention is
+  a role it has no opinion about (§27.6 rule 4).
+- **`apply` stops at the first failure and does not roll back** (§27.6 rule 7). Everything before
+  the failure stands; everything after it is reported as `NOT_ATTEMPTED`. An automatic rollback
+  would be a second unreviewed batch of writes issued at exactly the moment the tenant is in an
+  unknown state.
+- **Applying twice is applying once.** A converged tenant plans nothing and takes no writes.
+
+Worked end to end in [`examples/management-manifest`](examples/management-manifest), and combined
+with §6.1 mTLS for a full device provisioning lifecycle in
+[`examples/device-mtls-provisioning`](examples/device-mtls-provisioning).
 
 ## Building from source
 

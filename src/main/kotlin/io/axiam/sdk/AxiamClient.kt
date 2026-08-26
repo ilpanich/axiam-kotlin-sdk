@@ -180,6 +180,57 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
     /** This client's configured tenant identifier (§5). */
     fun tenantId(): String = tenantId
 
+    /**
+     * The CONTRACT.md §27 management API, acting as this client's session.
+     *
+     * A view over the client, not a connection: building one performs no I/O
+     * (§27.2 rule 1), so there is nothing to cache and nothing to close.
+     * Everything it issues goes through this client's own request path, so §3
+     * CSRF, the §4 cookie jar, the §5 tenant header, §6 TLS, §16 retry and §19
+     * telemetry all apply unchanged.
+     */
+    fun management(): io.axiam.sdk.management.ManagementApi =
+        io.axiam.sdk.management.ManagementApi(
+            io.axiam.sdk.internal.ManagementTransport(
+                http = httpClient,
+                baseUrl = baseUrl,
+                sessionState = session,
+                telemetry = telemetry,
+                retryEnabled = retryEnabled,
+                ensureOpen = ::ensureOpen,
+            ),
+        )
+
+    /**
+     * The organization UUID this client can address, if one has resolved.
+     *
+     * The value §27.4 rule 3 interpolates into every `{org_id}` path: the
+     * `orgId(...)` the client was built with, else the `org_id` claim of the
+     * live access token. `null` until one of those exists — notably, before
+     * [login] on a client built with an organization *slug*, since resolving a
+     * slug would cost a wire call the caller did not ask for.
+     *
+     * Public because §27 has routes where `{org_id}` names the organization
+     * being administered rather than the calling context, and those take it as
+     * an ordinary argument. Without this, a caller would have no way to pass
+     * the same organization the implicit routes are using.
+     */
+    fun resolvedOrgId(): java.util.UUID? = session.resolvedOrgId()
+
+    /**
+     * The tenant UUID this client can address, if one has resolved.
+     *
+     * Read from the live access token's `tenant_id` claim, so it is `null`
+     * until [login] (or an OAuth2 flow) has established a session. Distinct
+     * from [tenantId], which is the identifier the client was built with and is
+     * a slug as often as a UUID.
+     *
+     * Public for the same reason as [resolvedOrgId]: on `tenants` and on the
+     * signing CAs under `caCertificates`, `{tenant_id}` names the tenant being
+     * administered and is an argument rather than an implicit.
+     */
+    fun resolvedTenantId(): java.util.UUID? = session.resolvedTenantId()
+
     /** This client's trailing-slash-stripped base URL. */
     fun baseUrl(): String = baseUrl
 

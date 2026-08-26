@@ -87,6 +87,7 @@ internal object Retry {
         enabled: Boolean,
         telemetry: TelemetryDispatcher,
         random: () -> Double = { Random.Default.nextDouble() },
+        retryable: (NetworkError) -> Boolean = { true },
         op: suspend (attempt: Int) -> T,
     ): T {
         val attempts = if (enabled) MAX_ATTEMPTS else 1
@@ -101,6 +102,11 @@ internal object Retry {
                 throw e
             } catch (e: NetworkError) {
                 last = e
+                // §27.4 rule 7 puts ValidationError under NetworkError, which
+                // would otherwise make a rejected request body retry-eligible.
+                // The bytes are wrong; sending them again produces the same
+                // refusal. Callers that need that distinction pass [retryable].
+                if (!retryable(e)) throw e
                 if (attempt == attempts) throw e
                 val wait = delayFor(attempt, e.retryAfter ?: Duration.ZERO, random())
                 // §16.5 — without this a retried-then-succeeded call is

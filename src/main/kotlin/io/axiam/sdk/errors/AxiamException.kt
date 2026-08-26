@@ -58,10 +58,15 @@ open class AuthError(message: String, val reason: String? = null) : AxiamExcepti
  * [action] and [resourceId] are populated when the server's 403/409 body
  * reports them ("Error Construction Rules"); both may be `null` otherwise.
  *
+ * `open` so CONTRACT.md §27.4 rule 7 can classify a 404 as
+ * [io.axiam.sdk.errors.NotFoundError] *inside* this type rather than beside
+ * it. `is AuthzError` therefore still matches every §27 not-found, which is
+ * exactly the property the rule asks for.
+ *
  * @property action     the denied action, or `null` if the server did not report it
  * @property resourceId the denied resource id, or `null` if the server did not report it
  */
-class AuthzError(
+open class AuthzError(
     message: String,
     val action: String? = null,
     val resourceId: String? = null,
@@ -77,9 +82,15 @@ class AuthzError(
  * `Set-Cookie`/`Authorization` header or token value can reach the exception
  * chain.
  *
+ * `open` so CONTRACT.md §27.4 rule 7 can classify a 409 as
+ * [io.axiam.sdk.errors.ConflictError] and a 400/422 as
+ * [io.axiam.sdk.errors.ValidationError] *inside* this type. Both are indirect
+ * subclasses of the sealed [AxiamException], so they may live in their own
+ * files, and `is NetworkError` still matches them.
+ *
  * @property summary an already-redacted transport-error summary, or `null`
  */
-class NetworkError private constructor(
+open class NetworkError private constructor(
     message: String,
     val summary: String?,
     cause: Throwable?,
