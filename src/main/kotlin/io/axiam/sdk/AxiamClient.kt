@@ -57,6 +57,7 @@ import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -502,7 +503,11 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
         }
         postJson(LOGIN_PATH, body).use { response ->
             when (response.code) {
-                200 -> return LoginResult(mfaRequired = false, user = buildUser())
+                200 -> return LoginResult(
+                    mfaRequired = false,
+                    user = buildUser(),
+                    organizationLevel = organizationLevelOf(response),
+                )
                 202 -> {
                     val wire = readJson(response)
                     val challenge = wire["challenge_token"]?.jsonPrimitive?.content ?: ""
@@ -566,7 +571,11 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
             if (response.code != 200) {
                 throw ErrorMapper.fromHttpStatus(response.code, "MFA verification failed", response)
             }
-            return LoginResult(mfaRequired = false, user = buildUser())
+            return LoginResult(
+                mfaRequired = false,
+                user = buildUser(),
+                organizationLevel = organizationLevelOf(response),
+            )
         }
     }
 
@@ -726,7 +735,11 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
                     val token = readJson(response)["challenge_token"]?.jsonPrimitive?.content ?: ""
                     return LoginResult(mfaRequired = true, challengeToken = Sensitive.of(token))
                 }
-                return LoginResult(mfaRequired = false, user = buildUser())
+                return LoginResult(
+                    mfaRequired = false,
+                    user = buildUser(),
+                    organizationLevel = organizationLevelOf(response),
+                )
             }
         }
     }
@@ -1564,7 +1577,11 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
             if (http.code != 200) {
                 throw ErrorMapper.fromHttpStatus(http.code, "mfaSetupConfirm failed", http)
             }
-            return LoginResult(mfaRequired = false, user = buildUser())
+            return LoginResult(
+                mfaRequired = false,
+                user = buildUser(),
+                organizationLevel = organizationLevelOf(http),
+            )
         }
     }
 
@@ -1584,7 +1601,20 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
         postExpectingNoContent(VERIFY_EMAIL_PATH, body, "verifyEmail")
     }
 
-    /** `POST /api/v1/auth/resend-verification` (CONTRACT.md §25.1). */
+    /**
+     * `POST /api/v1/auth/resend-verification` (CONTRACT.md §25.1) — the
+     * **unauthenticated** resend, for a caller with no session.
+     *
+     * **Returns normally whatever the outcome.** The address may not exist, may
+     * already be verified, or may be over the daily limit, and this answers
+     * identically in all of them, because it takes an address from an anonymous
+     * caller and anything else is an oracle for which addresses have accounts
+     * (§25.7).
+     *
+     * A caller that *is* signed in wants [resendOwnVerification], which says
+     * which of those happened. Do not reach for this one because it is the name
+     * you already knew.
+     */
     suspend fun resendVerification(email: String, tenantId: UUID) {
         ensureOpen()
         val body = buildJsonObject {
@@ -1592,6 +1622,42 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
             put("tenant_id", tenantId.toString())
         }
         postExpectingNoContent(RESEND_VERIFICATION_PATH, body, "resendVerification")
+    }
+
+    /**
+     * `POST /api/v1/users/me/resend-verification` (CONTRACT.md §25.1, §25.7) —
+     * resends the **signed-in caller's own** verification mail, and says what
+     * happened.
+     *
+     * Takes no address. The server reads it off the caller's own record, and
+     * this signature deliberately offers no way to name a different one: a
+     * parameter here would let an authenticated session mail an arbitrary
+     * address.
+     *
+     * Unlike [resendVerification] this reports the outcome, because the caller
+     * is signed in to the account it is asking about and none of the outcomes
+     * tells it anything it did not already know:
+     *
+     * - returns — a token was minted and the mail **enqueued**. Delivery is
+     *   asynchronous and can still fail at the provider; a queue that accepts
+     *   everything in front of one that rejects it looks exactly like this
+     *   succeeding.
+     * - [io.axiam.sdk.errors.AuthzError] (from `409`) — already verified, or the
+     *   account is in a state that must not be sent a live token.
+     * - [io.axiam.sdk.errors.NetworkError] (from `429`) — the daily resend limit.
+     *
+     * §25.7 rule 2 forbids falling back to the unauthenticated endpoint on
+     * either of those, and this SDK does not: the fallback would turn both
+     * failures back into a normal return and restore the bug this operation
+     * exists to fix, with an extra round-trip.
+     */
+    suspend fun resendOwnVerification() {
+        ensureOpen()
+        postExpectingNoContent(
+            RESEND_OWN_VERIFICATION_PATH,
+            buildJsonObject { },
+            "resendOwnVerification",
+        )
     }
 
     /**
@@ -1766,6 +1832,19 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
             throw NetworkError("request failed: ${e.message}", e)
         }
     }
+
+    /**
+     * Reads the §5.2 `user.organization_level` flag off a completed login
+     * response.
+     *
+     * Absent means `false`, which is what a server older than contract 1.31
+     * answers and the safe direction in both cases: the client then offers no
+     * cross-tenant action rather than one that would `403`. Derived server-side
+     * and response-only — this SDK never sends it.
+     */
+    private fun organizationLevelOf(response: Response): Boolean =
+        readJson(response)["user"]?.jsonObject?.get("organization_level")
+            ?.jsonPrimitive?.booleanOrNull ?: false
 
     private fun buildUser(): AxiamUser {
         val access = session.cachedAccessToken()
@@ -1992,6 +2071,7 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
         private const val MFA_SETUP_CONFIRM_PATH = "/api/v1/auth/mfa/setup/confirm"
         private const val VERIFY_EMAIL_PATH = "/api/v1/auth/verify-email"
         private const val RESEND_VERIFICATION_PATH = "/api/v1/auth/resend-verification"
+        private const val RESEND_OWN_VERIFICATION_PATH = "/api/v1/users/me/resend-verification"
         private const val RESET_PATH = "/api/v1/auth/reset"
         private const val RESET_CONTEXT_PATH = "/api/v1/auth/reset/context"
         private const val RESET_CONFIRM_PATH = "/api/v1/auth/reset/confirm"

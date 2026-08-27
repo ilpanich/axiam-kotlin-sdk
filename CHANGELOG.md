@@ -9,6 +9,97 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **CONTRACT 1.31 — the AXIAM server PR #383 surface.** `CONTRACT.md`,
+  `openapi.json` and `management-registry.json` re-vendored, and the six things
+  they describe implemented.
+
+  - **`search` on all twenty paginated management operations** (§27.4 rule 4).
+    A third property on `PageRequest`, not a third argument on twenty generated
+    `list` functions, reached through a new `PageRequest.matching(limit, term)`
+    factory beside `of(limit)`:
+
+    ```kotlin
+    val page = client.users.list(PageRequest.matching(50, "ada"))
+    val all  = client.users.listAll(PageRequest.matching(200, "ada"))
+    ```
+
+    Putting it on the page request is what makes `Page.nextPage` — and so
+    `listAll` — carry the term across the whole walk. A walk that filtered its
+    first request and not the rest returns the matches followed by the
+    unfiltered tail, which from the caller's side looks like a server bug.
+
+    The server applies it **before** `offset`/`limit`, so `Page.total` counts
+    matches rather than rows. A blank or whitespace-only term is treated as
+    unset and sends no `search` parameter, so a box that fires on every
+    keystroke does not ask a different question once it is cleared. The server's
+    length cap is deliberately **not** copied here: a client-side truncation the
+    server would not have made is a silently different query.
+
+    `PageRequest` is a data class with defaults, so the new property is
+    source-compatible with every existing call site.
+
+  - **`AxiamClient.resendOwnVerification()`** (§25.1, §25.7) —
+    `POST /api/v1/users/me/resend-verification`, for a caller signed in to the
+    account it is asking about. It takes no address, and reports what happened:
+    returns for enqueued, `AuthzError` for already-verified-or-ineligible,
+    `NetworkError` for the daily limit.
+
+    `resendVerification` still exists and still returns normally whatever
+    happens, because it takes an address from an anonymous caller and a truthful
+    answer there is an enumeration oracle. Use the new one whenever there is a
+    session — a profile page wired to the old one reports success while doing
+    nothing, which is the defect the pair exists to separate. This SDK does not
+    fall back from one to the other in either direction (§25.7 rule 2).
+
+  - **`LoginResult.organizationLevel`** (§5.2) — whether the account holds
+    grants that apply in every tenant of its organization. Check it before
+    offering a tenant switch: an ordinary tenant principal changing
+    `X-Tenant-ID` gets a `403`. `false` against a server older than contract
+    1.31, which is the safe reading of absent. It defaults, so every call site
+    written before this release still compiles.
+
+  - **`Tenant.kind` and `TenantKind`** (§27.11) — ordinary tenant or the
+    organization's own scope. `null` on a row written before that scope existed.
+    Read-only: it is not on `CreateTenantRequest` or `UpdateTenantRequest`.
+
+  - **`MtlsTrustAnchorResponse.trustedAnchors`** (§27.11) — how many CAs the
+    live listener now trusts, when it was reloaded. `null` is **not** zero: it
+    means there was no listener to ask, which is the case
+    `restartRequired == true` already reports.
+
+  - **`Certificate.boundServiceAccountId`** (§27.11) — the service account a
+    certificate authenticates, resolved for a whole page in one query by
+    `certificates().list()` and `null` on `certificates().get()`. The SDK does
+    not issue a second request to fill it in there.
+
+### Changed
+
+- **Generated management enums are open, decoded through a hand-rolled
+  `KSerializer`** (§27.11 rule 1). kotlinx.serialization's generated enum
+  serializer *throws* on a value outside the constants, which fails the **whole**
+  response — taking down every record on the page over one field of one of them,
+  including the records the caller was after. An unrecognised value now decodes
+  to `UNKNOWN`, and a `when` over these constants needs an `UNKNOWN` branch.
+
+  Each constant carries its wire spelling as a `wire` property, and
+  `UNKNOWN.wire` is the empty string, which no server value is. Fifteen of these
+  enums appear in request bodies, and that is what makes carrying an
+  unrecognised value back into an update a `400` from the server rather than a
+  silent rewrite into a spelling it never used.
+
+### Fixed
+
+- **`scripts/gen_management.py` no longer drops a projected list element.** The
+  server answers `GET /api/v1/certificates` with `Certificate` plus one resolved
+  graph edge, expressed as an `allOf` of the `$ref` and an anonymous object.
+  Read as a whole, that composition has no name, so the registry carried a page
+  with no element type and the added field reached no data class. The generator
+  now takes the base name through the `allOf` and folds the projection's added
+  fields onto the base type as optional properties. (The registry-side half of
+  this is AXIAM PR #386.)
+
+### Added
+
 - **The §27 namespace handles now sit directly on the client**, as properties —
   `client.roles`, `client.serviceAccounts.rotateSecret(id)` — which is the form §27.3's
   Kotlin row specifies (property, `camelCase`, `suspend`). `client.management()` still

@@ -3,8 +3,13 @@
 // `python3 scripts/gen_management.py`; CI verifies the committed output is current.
 package io.axiam.sdk.management.models
 
-import kotlinx.serialization.SerialName
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
 
 /**
  * What to do with an AAGUID that has no MDS entry (i.e. FIDO Alliance has no metadata for it — not
@@ -12,12 +17,42 @@ import kotlinx.serialization.Serializable
  *
  * Each constant carries the spelling the server uses on the wire, so the Kotlin name can follow
  * Kotlin's conventions without changing what is sent.
+ *
+ * An **open** enum. A value this SDK's copy of the spec does not list decodes to
+ * [UnknownAaguidAction.UNKNOWN] rather than failing the response it arrived in (CONTRACT §27.11
+ * rule 1). Its own wire spelling is the empty string, which no server value is: carrying an
+ * unrecognised value back into an update is refused by the server rather than silently written as
+ * a spelling it never used. A `when` over these constants needs an `UNKNOWN` branch.
  */
-@Serializable
-enum class UnknownAaguidAction {
-    @SerialName("allow")
-    ALLOW,
+@Serializable(with = UnknownAaguidAction.Companion.Serializer::class)
+enum class UnknownAaguidAction(val wire: String) {
+    ALLOW("allow"),
 
-    @SerialName("deny")
-    DENY,
+    DENY("deny"),
+
+    /** A value this SDK's copy of the spec does not list; see the type's doc. */
+    UNKNOWN("");
+
+    companion object {
+        /**
+         * Decodes an unrecognised value to [UNKNOWN] instead of throwing.
+         *
+         * kotlinx.serialization's generated enum serializer raises on a value
+         * outside the constants, which fails the WHOLE response — not just the
+         * field. That is the failure §27.11 rule 1 exists to prevent.
+         */
+        internal object Serializer : KSerializer<UnknownAaguidAction> {
+            override val descriptor: SerialDescriptor =
+                PrimitiveSerialDescriptor("io.axiam.sdk.management.models.UnknownAaguidAction", PrimitiveKind.STRING)
+
+            override fun serialize(encoder: Encoder, value: UnknownAaguidAction) {
+                encoder.encodeString(value.wire)
+            }
+
+            override fun deserialize(decoder: Decoder): UnknownAaguidAction {
+                val raw = decoder.decodeString()
+                return entries.firstOrNull { it != UNKNOWN && it.wire == raw } ?: UNKNOWN
+            }
+        }
+    }
 }

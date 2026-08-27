@@ -18,6 +18,9 @@ import kotlinx.serialization.json.JsonElement
  *
  * @property createdAt the server's created_at field
  * @property id the server's id field
+ * @property kind Whether this is an ordinary tenant or the organization's own scope.
+ *     `#&#91;serde(default)&#93;` so every row written before organization scope existed reads
+ *     back as &#91;`TenantKind::Standard`&#93;, which is what it is.
  * @property metadata Arbitrary key-value metadata.
  * @property name Human-readable name.
  * @property organizationId The organization this tenant belongs to.
@@ -29,6 +32,7 @@ import kotlinx.serialization.json.JsonElement
 data class Tenant(
     @SerialName("created_at") val createdAt: @Serializable(with = InstantSerializer::class) Instant,
     @SerialName("id") val id: @Serializable(with = UuidSerializer::class) UUID,
+    @SerialName("kind") val kind: TenantKind? = null,
     @SerialName("metadata") val metadata: JsonElement,
     @SerialName("name") val name: String,
     @SerialName("organization_id") val organizationId: @Serializable(with = UuidSerializer::class) UUID,

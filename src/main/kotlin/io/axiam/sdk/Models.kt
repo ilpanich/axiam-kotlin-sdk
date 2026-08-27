@@ -40,6 +40,19 @@ data class AxiamUser(
  *                          [AxiamClient.mfaSetupConfirm]; present only when
  *                          [mfaSetupRequired]. There is no session yet — this
  *                          token IS the credential for those two calls.
+ * @property organizationLevel `true` when the account that just signed in is an
+ *                          **organization-level** principal (§5.2) — one whose
+ *                          record lives in its organization's reserved tenant,
+ *                          so its global grants apply in every tenant of that
+ *                          organization, and which can act on a different one by
+ *                          sending a different `X-Tenant-ID` on the next
+ *                          request. An ordinary tenant principal is a principal
+ *                          of exactly one tenant and gets a `403` for the same
+ *                          header change, so check this *before* offering a
+ *                          tenant switch rather than discovering the answer from
+ *                          a failed request. `false` against a server older than
+ *                          contract 1.31, and `false` on the two pending
+ *                          outcomes, where no principal has been established yet.
  */
 data class LoginResult(
     val mfaRequired: Boolean,
@@ -47,6 +60,7 @@ data class LoginResult(
     val user: AxiamUser? = null,
     val mfaSetupRequired: Boolean = false,
     val setupToken: Sensitive<String>? = null,
+    val organizationLevel: Boolean = false,
 )
 
 /**

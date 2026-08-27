@@ -205,13 +205,17 @@ class CaCertificatesApi internal constructor(
     }
 
     /**
-     * Offer this CA — or stop offering it — as a trust anchor for mutual TLS. When enabled, the
-     * next server start exports this CA's **public** certificate into the client-CA bundle and
-     * turns on client-certificate verification in `optional` mode, unless the operator has
-     * configured `AXIAM__SERVER__TLS__CLIENT_AUTH` / `CLIENT_CA_PATH` themselves, which is never
-     * overridden. The signing key is not copied and stays with its custodian. `restart_required`
-     * is always true, and is the point of the response: there is no supported way to add a root to
-     * a rustls listener that is already serving.
+     * Offer this CA — or stop offering it — as a trust anchor for mutual TLS. When enabled, this
+     * CA's **public** certificate is exported into the client-CA bundle and client-certificate
+     * verification is turned on in `optional` mode, unless the operator has configured
+     * `AXIAM__SERVER__TLS__CLIENT_AUTH` / `CLIENT_CA_PATH` themselves, which is never overridden.
+     * The signing key is not copied and stays with its custodian. The change applies to the
+     * **running listener**. rustls consults its client certificate verifier per handshake rather
+     * than only at construction, so a verifier that delegates to a swappable anchor set can be
+     * updated in place; see `axiam_server::tls::ReloadableClientCertVerifier`. Connections already
+     * established keep the verifier they handshook with, which is correct — a certificate accepted
+     * a moment ago does not become invalid mid-connection. `restart_required` is therefore `false`
+     * on a TLS deployment, and `true` only when there is no listener to reload into.
      *
      * Issues `PUT /api/v1/organizations/{org_id}/ca-certificates/{id}/mtls-trust-anchor`.
      *

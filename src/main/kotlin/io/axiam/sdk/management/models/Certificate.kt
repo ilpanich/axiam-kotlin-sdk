@@ -15,6 +15,10 @@ import kotlinx.serialization.json.JsonElement
  * A tenant-level certificate for users, services, or IoT devices. Certificates are signed by the
  * organization's CA. The private key is returned once on generation and never stored by AXIAM.
  *
+ * @property boundServiceAccountId resolved by the list projection only. The server resolves
+ *     this for a whole page in one query, so it is populated by the list operation and is null on
+ *     get (CONTRACT §27.11 rule 4). Null there means "this read does not carry it", not "there is
+ *     nothing bound" — the SDK does not issue a second request to fill it in
  * @property certType the server's cert_type field
  * @property createdAt the server's created_at field
  * @property fingerprint SHA-256 fingerprint of the certificate.
@@ -31,6 +35,7 @@ import kotlinx.serialization.json.JsonElement
  */
 @Serializable
 data class Certificate(
+    @SerialName("bound_service_account_id") val boundServiceAccountId: @Serializable(with = UuidSerializer::class) UUID? = null,
     @SerialName("cert_type") val certType: CertificateType,
     @SerialName("created_at") val createdAt: @Serializable(with = InstantSerializer::class) Instant,
     @SerialName("fingerprint") val fingerprint: String,

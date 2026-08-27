@@ -8,6 +8,7 @@ import io.axiam.sdk.errors.ValidationError
 import io.axiam.sdk.management.PageRequest
 import io.axiam.sdk.management.models.CreateRoleRequest
 import io.axiam.sdk.management.models.CreateUserRequest
+import io.axiam.sdk.management.models.TenantKind
 import io.axiam.sdk.management.models.UpdateUserRequest
 import kotlinx.coroutines.runBlocking
 import java.util.UUID
@@ -53,6 +54,66 @@ object ManagementBasicsExample {
             // server's total disagrees, so a miscounting server costs one wasted
             // request rather than an unbounded loop.
             println("roles  : ${client.management().roles().listAll().size}")
+
+            // ----------------------------------------------------------
+            // §27.4 rule 4 — search rides on the page request
+            // ----------------------------------------------------------
+
+            // The term goes where offset and limit already live, rather than
+            // becoming a third argument on each of the twenty list methods.
+            // That is what makes listAll carry it across the whole walk: a walk
+            // that filtered page one and not page two would hand back the
+            // matches followed by the unfiltered tail.
+            //
+            // The SERVER filters, before offset/limit, so total counts MATCHES.
+            // Filtering the list here in Kotlin would give you neither that nor
+            // a page count that belongs to the set it labels.
+            val matches = client.management().users().list(PageRequest.matching(25, "ada"))
+            println("matches: ${matches.total} users match \"ada\"")
+
+            // Blank is the same request as unset: no search key at all. A box
+            // that fires on every keystroke sends one of these the moment it is
+            // cleared, and "rows containing the empty string" is a different
+            // question from "all rows".
+            val cleared = client.management().users().list(PageRequest.matching(25, "   "))
+            println("cleared: ${cleared.total} (everything again)")
+
+            // The server caps the term's length. This SDK does not copy that
+            // cap: a truncation the server would not have made is a silently
+            // different query, with nothing to say so.
+
+            // ----------------------------------------------------------
+            // §27.11 — open enums, and nulls that are not zero
+            // ----------------------------------------------------------
+
+            // kotlinx.serialization's own enum serializer THROWS on a value
+            // outside the constants, which fails the whole response — taking
+            // down every tenant on the page over one field of one of them,
+            // including the ones you were after. The generated serializer
+            // decodes it to UNKNOWN instead (§27.11 rule 1), so a `when` over
+            // these constants needs an UNKNOWN branch.
+            for (tenant in client.management().tenants().list(PageRequest.of(5)).items) {
+                when (tenant.kind) {
+                    // A row written before organization scope existed. Read it
+                    // as standard — that is what it is.
+                    null -> println("tenant : ${tenant.slug} (no kind recorded)")
+                    TenantKind.UNKNOWN -> println(
+                        "tenant : ${tenant.slug} (a kind this SDK does not know — " +
+                            "leave it out of any update)",
+                    )
+                    else -> println("tenant : ${tenant.slug} ${tenant.kind}")
+                }
+            }
+
+            // Certificate.boundServiceAccountId is resolved by list() and is
+            // null on get(). Null there means "this read does not carry it",
+            // not "there is nothing bound" — the SDK spends no second request
+            // filling it in behind you. MtlsTrustAnchorResponse.trustedAnchors
+            // reads the same way: null means NOTHING WAS RELOADED, not that the
+            // listener trusts zero CAs.
+            client.management().certificates().list(PageRequest.of(5)).items
+                .filter { it.boundServiceAccountId != null }
+                .forEach { println("cert   : ${it.id} authenticates ${it.boundServiceAccountId}") }
 
             // ----------------------------------------------------------
             // §27.4 rule 5 — sparse update vs replacement

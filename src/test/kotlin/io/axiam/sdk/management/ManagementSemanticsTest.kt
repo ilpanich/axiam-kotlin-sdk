@@ -18,6 +18,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -139,9 +140,14 @@ class ManagementSemanticsTest : ManagementTestBase() {
             ): okhttp3.mockwebserver.MockResponse {
                 val full = request.path ?: ""
                 val offset = full.substringAfter("offset=", "0").substringBefore('&')
+                val term = if ("search=" in full) {
+                    full.substringAfter("search=").substringBefore('&')
+                } else {
+                    ""
+                }
                 route.requests += Recorded(
                     request.method ?: "", full.substringBefore('?'),
-                    mapOf("offset" to offset), "", emptyMap(),
+                    mapOf("offset" to offset, "search" to term), "", emptyMap(),
                 )
                 val items = when (offset) {
                     "0" -> listOf(userBody(1), userBody(2))
@@ -153,6 +159,196 @@ class ManagementSemanticsTest : ManagementTestBase() {
                     .setBody("""{"items":[${items.joinToString(",")}],"total":5,"offset":$offset,"limit":2}""")
             }
         }
+    }
+
+    // -----------------------------------------------------------------
+    // §27.4 rule 4 — search
+    // -----------------------------------------------------------------
+
+    /**
+     * §27.4 rule 4: a term on the page request reaches the query string.
+     *
+     * Asserted on the recorded query rather than on the arguments: a term the
+     * SDK accepts, stores and never sends is invisible from the call site, and
+     * it is the failure this test exists for.
+     */
+    @Test
+    fun `a search term reaches the query string`() = runTest {
+        val route = mount("GET", "/api/v1/users", 200, pageOf(null))
+        client.management().users().list(PageRequest.matching(50, "ada"))
+        assertEquals("ada", route.requests.single().query["search"])
+    }
+
+    /**
+     * §27.4 rule 4: no term, and a blank one, send no `search` key.
+     *
+     * Asserted on the query key set. A UI that fires on every keystroke sends
+     * `?search=` the moment the box is cleared, and "rows containing the empty
+     * string" is a different question — different enough that the server
+     * normalizes it away too.
+     */
+    @Test
+    fun `an absent or blank term sends no search key`() = runTest {
+        for (term in listOf(null, "", "   ")) {
+            val route = mount("GET", "/api/v1/users", 200, pageOf(null))
+            client.management().users().list(PageRequest.matching(50, term))
+            assertFalse(
+                route.requests.single().query.containsKey("search"),
+                "term ${term?.let { "\"$it\"" } ?: "null"} sent a search key",
+            )
+        }
+    }
+
+    /**
+     * §27.4 rule 4: the walk carries the term on every request, not only the first.
+     *
+     * A listAll that filtered page one and not page two would concatenate the
+     * matches with the unfiltered remainder — which reads as a server bug from
+     * the caller's side, and which a test counting requests rather than
+     * inspecting them would pass.
+     */
+    @Test
+    fun `listAll carries the search term across the whole walk`() = runTest {
+        mountPaged()
+        client.management().users().listAll(PageRequest.matching(2, "ad"))
+        assertEquals(
+            listOf("ad", "ad", "ad"),
+            pagedRoute!!.requests.map { it.query["search"] },
+            "the tail of the walk went out unfiltered",
+        )
+    }
+
+    /**
+     * §27.4 rule 4: the term is trimmed, and a long one is not truncated.
+     *
+     * The server's length cap is the server's. A client-side truncation the
+     * server would not have made is a silently different query — the caller
+     * asked one question and the wire carried another, with nothing to say so.
+     */
+    @Test
+    fun `a search term is trimmed but never truncated`() = runTest {
+        val trimmed = mount("GET", "/api/v1/users", 200, pageOf(null))
+        client.management().users().list(PageRequest.matching(50, "  ada  "))
+        assertEquals("ada", trimmed.requests.single().query["search"])
+
+        val long = "x".repeat(400)
+        val whole = mount("GET", "/api/v1/users", 200, pageOf(null))
+        client.management().users().list(PageRequest.matching(50, long))
+        assertEquals(long, whole.requests.single().query["search"])
+    }
+
+    // -----------------------------------------------------------------
+    // §27.11 — model additions
+    // -----------------------------------------------------------------
+
+    private fun tenantBody(slug: String, kind: String?): String {
+        val kindField = kind?.let { """"kind":"$it",""" } ?: ""
+        return """{"id":"$EXAMPLE_ID","organization_id":"$ORG_ID","name":"$slug",""" +
+            """"slug":"$slug",$kindField"status":"Active","metadata":{},""" +
+            """"created_at":"2026-08-27T00:00:00Z","updated_at":"2026-08-27T00:00:00Z"}"""
+    }
+
+    /**
+     * §27.11 rule 1: an unrecognised enum value decodes, rather than failing the page.
+     *
+     * kotlinx.serialization's generated enum serializer raises on a value
+     * outside the constants, which fails the WHOLE response — taking down every
+     * tenant on the page over one field of one of them, including the ones the
+     * caller was after. The hand-rolled serializer decodes it to UNKNOWN.
+     */
+    @Test
+    fun `an unknown tenant kind decodes instead of failing the page`() = runTest {
+        mount(
+            "GET", "/api/v1/organizations/$ORG_ID/tenants", 200,
+            """{"items":[${tenantBody("prod", "standard")},""" +
+                """${tenantBody("future", "some-kind-from-a-newer-server")}],""" +
+                """"total":2,"offset":0,"limit":50}""",
+        )
+        val page = client.management().tenants().list(PageRequest.of(50))
+        assertEquals(io.axiam.sdk.management.models.TenantKind.STANDARD, page.items[0].kind)
+        assertEquals(io.axiam.sdk.management.models.TenantKind.UNKNOWN, page.items[1].kind)
+    }
+
+    /**
+     * §27.11 rule 1: UNKNOWN does not round-trip as a real value.
+     *
+     * Fifteen of these enums appear in request bodies, so what happens when an
+     * unrecognised value is carried back into an update matters. Its wire
+     * spelling is the empty string, which no server value is — so the server
+     * refuses it rather than accepting a spelling it never used.
+     */
+    @Test
+    fun `an unknown enum value has no real wire spelling`() {
+        assertEquals("", io.axiam.sdk.management.models.TenantKind.UNKNOWN.wire)
+        for (known in io.axiam.sdk.management.models.TenantKind.entries) {
+            if (known != io.axiam.sdk.management.models.TenantKind.UNKNOWN) {
+                assertTrue(
+                    known.wire.isNotEmpty(),
+                    "$known must have a spelling the server actually sends",
+                )
+            }
+        }
+    }
+
+    /** §27.11: a tenant written before organization scope existed has no kind. */
+    @Test
+    fun `a tenant without a kind decodes as absent`() = runTest {
+        mount(
+            "GET", "/api/v1/organizations/$ORG_ID/tenants/$EXAMPLE_ID", 200,
+            tenantBody("prod", null),
+        )
+        assertNull(client.management().tenants().get(EXAMPLE_ID).kind)
+    }
+
+    /**
+     * §27.11 rule 3: trustedAnchors is null, and null is not zero.
+     *
+     * "The listener trusts no CAs" and "there was no listener to ask" are
+     * different operational states, and only one of them is a problem.
+     */
+    @Test
+    fun `trusted anchors is absent rather than zero when nothing reloaded`() = runTest {
+        mount(
+            "PUT",
+            "/api/v1/organizations/$ORG_ID/ca-certificates/$EXAMPLE_ID/mtls-trust-anchor",
+            200,
+            """{"ca_certificate_id":"$EXAMPLE_ID","mtls_trust_anchor":true,""" +
+                """"restart_required":true,"message":"stored; applies at next start"}""",
+        )
+        val out = client.management().caCertificates()
+            .setMtlsTrustAnchor(EXAMPLE_ID, SetMtlsTrustAnchor(enabled = true))
+        assertTrue(out.restartRequired)
+        assertNull(out.trustedAnchors, "null means no listener to ask, not zero CAs trusted")
+    }
+
+    /**
+     * §27.11 rule 4: the projection is on the list and absent from the get.
+     *
+     * The get assertion is the load-bearing one: an SDK that filled the field in
+     * there would be issuing a second request nobody asked for.
+     */
+    @Test
+    fun `bound service account id is on the list projection only`() = runTest {
+        val base = """"id":"$EXAMPLE_ID","tenant_id":"$TENANT_ID","issuer_ca_id":"$ORG_ID",""" +
+            """"subject":"CN=device-1","public_cert_pem":"-----BEGIN CERTIFICATE-----",""" +
+            """"fingerprint":"ab:cd","cert_type":"Device","key_algorithm":"Ed25519",""" +
+            """"not_before":"2026-08-27T00:00:00Z","not_after":"2027-08-27T00:00:00Z",""" +
+            """"status":"Active","metadata":{},"created_at":"2026-08-27T00:00:00Z""""
+
+        mount(
+            "GET", "/api/v1/certificates", 200,
+            """{"items":[{$base,"bound_service_account_id":"$TENANT_ID"}],""" +
+                """"total":1,"offset":0,"limit":50}""",
+        )
+        mount("GET", "/api/v1/certificates/$EXAMPLE_ID", 200, "{$base}")
+
+        val page = client.management().certificates().list(PageRequest.of(50))
+        assertEquals(TENANT_ID, page.items[0].boundServiceAccountId)
+
+        assertNull(
+            client.management().certificates().get(EXAMPLE_ID).boundServiceAccountId,
+            "get must not synthesize the projection with a second request",
+        )
     }
 
     /** §27.4 rule 4: a bare-array read is a list, not a page. */
