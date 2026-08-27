@@ -3,6 +3,7 @@ package io.axiam.sdk
 import io.axiam.sdk.account.PasswordResetConfirmation
 import io.axiam.sdk.account.PasswordResetRequest
 import io.axiam.sdk.errors.AuthError
+import io.axiam.sdk.errors.AuthzError
 import io.axiam.sdk.errors.NetworkError
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -278,6 +279,131 @@ class AccountLifecycleTest {
             }
         }
         Unit
+    }
+
+    // -----------------------------------------------------------------------
+    // §25.7 — the two resends are two operations
+    // -----------------------------------------------------------------------
+
+    /**
+     * The authenticated resend carries no address, and hits its own path.
+     *
+     * The body assertion is the one that matters: a signature with no address
+     * parameter proves nothing about what the SDK serializes, and an address on
+     * this endpoint would let an authenticated session mail an arbitrary one.
+     */
+    @Test
+    fun `resendOwnVerification sends no address`() = runBlocking {
+        server.enqueue(TestSupport.json(200, """{"sent":true}"""))
+        TestSupport.clientFor(server).use { client ->
+            client.resendOwnVerification()
+        }
+        val request = server.takeRequest()
+        assertEquals("/api/v1/users/me/resend-verification", request.path)
+        val sent = Json.parseToJsonElement(request.body.readUtf8()).jsonObject
+        assertTrue(sent.isEmpty(), "caller-supplied data went out: $sent")
+    }
+
+    /**
+     * The two resends are distinct operations against distinct paths.
+     *
+     * An SDK that aliased one to the other would reintroduce the exact defect
+     * §25.7 exists to describe, and every other test here would still pass — so
+     * this asserts on the path each one actually reached.
+     */
+    @Test
+    fun `the two resends reach different endpoints`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(200))
+        server.enqueue(TestSupport.json(200, """{"sent":true}"""))
+        TestSupport.clientFor(server).use { client ->
+            client.resendVerification("alice@example.com", TestSupport.TENANT_UUID)
+            client.resendOwnVerification()
+        }
+        assertEquals("/api/v1/auth/resend-verification", server.takeRequest().path)
+        assertEquals("/api/v1/users/me/resend-verification", server.takeRequest().path)
+    }
+
+    /**
+     * A 409 surfaces, and is not retried through the public endpoint.
+     *
+     * The bug this operation exists to fix was a success return on a request
+     * that achieved nothing, so "throws" is the assertion — and the request
+     * count is what rules out the §25.7 rule 2 fallback, which would turn both
+     * failures back into a normal return with an extra round-trip.
+     */
+    @Test
+    fun `resendOwnVerification surfaces a 409 without falling back`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(409))
+        TestSupport.clientFor(server).use { client ->
+            assertThrows(AuthzError::class.java) {
+                runBlocking { client.resendOwnVerification() }
+            }
+        }
+        assertEquals(
+            1, server.requestCount,
+            "a second request means a fallback to the enumeration-safe endpoint",
+        )
+        assertEquals("/api/v1/users/me/resend-verification", server.takeRequest().path)
+    }
+
+    /** A 429 surfaces too, as the §2 mapping of a rate limit. */
+    @Test
+    fun `resendOwnVerification surfaces the daily limit`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(429))
+        TestSupport.clientFor(server).use { client ->
+            assertThrows(NetworkError::class.java) {
+                runBlocking { client.resendOwnVerification() }
+            }
+        }
+        assertEquals(
+            1, server.requestCount,
+            "a second request means a fallback to the enumeration-safe endpoint",
+        )
+        assertEquals("/api/v1/users/me/resend-verification", server.takeRequest().path)
+    }
+
+    // -----------------------------------------------------------------------
+    // §5.2 — organization-level principals
+    // -----------------------------------------------------------------------
+
+    /**
+     * `organizationLevel` is carried through from the login response.
+     *
+     * It is what an application checks *before* offering a tenant switch: such
+     * a principal changes the tenant it acts on with a header on the next
+     * request, and an ordinary one cannot, so offering the switch to both turns
+     * a distinction the server made into a 403 the user discovers.
+     *
+     * The absent case is the one that matters: a server older than contract
+     * 1.31 omits the field, and `false` is the safe reading — the client then
+     * offers no cross-tenant action rather than one that would fail.
+     */
+    @Test
+    fun `login reports an organization-level principal`() = runBlocking {
+        val cases = listOf(
+            """{"id":"u1","organization_level":true}""" to true,
+            """{"id":"u1","organization_level":false}""" to false,
+            """{"id":"u1"}""" to false,
+        )
+        for ((userJson, expected) in cases) {
+            val local = MockWebServer()
+            local.start()
+            try {
+                local.enqueue(
+                    TestSupport.loginOkResponse()
+                        .setBody("""{"user":$userJson,"session_id":"s1","expires_in":900}"""),
+                )
+                TestSupport.clientFor(local).use { client ->
+                    val result = client.login("alice@example.com", "correct horse")
+                    assertEquals(
+                        expected, result.organizationLevel,
+                        "organizationLevel for user $userJson",
+                    )
+                }
+            } finally {
+                local.shutdown()
+            }
+        }
     }
 
     // -----------------------------------------------------------------------

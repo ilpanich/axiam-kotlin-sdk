@@ -12,26 +12,26 @@ import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 
 /**
- * What attestation conveyance a registration ceremony requests, and whether the policy is enforced
- * at all. `None` is the default and reproduces today's behavior byte-for-byte: `evaluate` allows
- * every registration unconditionally, with no MDS lookup (D8 step 1).
+ * What a tenant *is*, as distinct from what state it is in. Reserved rather than inferred: an
+ * organization has exactly one tenant of kind &#91;`Self::Organization`&#93;, enforced by a unique
+ * index rather than by convention. Deriving it from a magic slug or from "the oldest tenant" would
+ * make the organization scope something an operator could rename or delete by accident, and it is
+ * the scope the super-admin lives in.
  *
  * Each constant carries the spelling the server uses on the wire, so the Kotlin name can follow
  * Kotlin's conventions without changing what is sent.
  *
  * An **open** enum. A value this SDK's copy of the spec does not list decodes to
- * [AttestationMode.UNKNOWN] rather than failing the response it arrived in (CONTRACT §27.11 rule
- * 1). Its own wire spelling is the empty string, which no server value is: carrying an
- * unrecognised value back into an update is refused by the server rather than silently written as
- * a spelling it never used. A `when` over these constants needs an `UNKNOWN` branch.
+ * [TenantKind.UNKNOWN] rather than failing the response it arrived in (CONTRACT §27.11 rule 1).
+ * Its own wire spelling is the empty string, which no server value is: carrying an unrecognised
+ * value back into an update is refused by the server rather than silently written as a spelling it
+ * never used. A `when` over these constants needs an `UNKNOWN` branch.
  */
-@Serializable(with = AttestationMode.Companion.Serializer::class)
-enum class AttestationMode(val wire: String) {
-    NONE("none"),
+@Serializable(with = TenantKind.Companion.Serializer::class)
+enum class TenantKind(val wire: String) {
+    STANDARD("standard"),
 
-    INDIRECT("indirect"),
-
-    DIRECT_REQUIRED("direct_required"),
+    ORGANIZATION("organization"),
 
     /** A value this SDK's copy of the spec does not list; see the type's doc. */
     UNKNOWN("");
@@ -44,15 +44,15 @@ enum class AttestationMode(val wire: String) {
          * outside the constants, which fails the WHOLE response — not just the
          * field. That is the failure §27.11 rule 1 exists to prevent.
          */
-        internal object Serializer : KSerializer<AttestationMode> {
+        internal object Serializer : KSerializer<TenantKind> {
             override val descriptor: SerialDescriptor =
-                PrimitiveSerialDescriptor("io.axiam.sdk.management.models.AttestationMode", PrimitiveKind.STRING)
+                PrimitiveSerialDescriptor("io.axiam.sdk.management.models.TenantKind", PrimitiveKind.STRING)
 
-            override fun serialize(encoder: Encoder, value: AttestationMode) {
+            override fun serialize(encoder: Encoder, value: TenantKind) {
                 encoder.encodeString(value.wire)
             }
 
-            override fun deserialize(decoder: Decoder): AttestationMode {
+            override fun deserialize(decoder: Decoder): TenantKind {
                 val raw = decoder.decodeString()
                 return entries.firstOrNull { it != UNKNOWN && it.wire == raw } ?: UNKNOWN
             }

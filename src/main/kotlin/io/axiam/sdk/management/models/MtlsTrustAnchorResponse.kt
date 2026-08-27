@@ -14,8 +14,12 @@ import kotlinx.serialization.Serializable
  * @property caCertificateId The CA this is about.
  * @property message A sentence an operator can act on, rather than a bare boolean.
  * @property mtlsTrustAnchor The flag as now stored.
- * @property restartRequired Always `true`: rustls builds its client trust store once, when the
- *     listener is constructed, so this takes effect at the next start.
+ * @property restartRequired Whether the change still needs a restart to take effect. `false`
+ *     when the live listener accepted the new anchor set — the ordinary case on a TLS deployment.
+ *     `true` only when there was no listener to reload into (plaintext, or `client_auth = off`),
+ *     where the flag is stored and applies at the next start.
+ * @property trustedAnchors How many CAs the listener now trusts for client authentication,
+ *     when it was reloaded. `None` when nothing was reloaded.
  */
 @Serializable
 data class MtlsTrustAnchorResponse(
@@ -23,4 +27,5 @@ data class MtlsTrustAnchorResponse(
     @SerialName("message") val message: String,
     @SerialName("mtls_trust_anchor") val mtlsTrustAnchor: Boolean,
     @SerialName("restart_required") val restartRequired: Boolean,
+    @SerialName("trusted_anchors") val trustedAnchors: Int? = null,
 )

@@ -420,6 +420,13 @@ def model_imports(rendered: str) -> list[str]:
         ("kotlinx.serialization.Serializable", "@Serializable"),
         ("kotlinx.serialization.json.JsonClassDiscriminator", "@JsonClassDiscriminator"),
         ("kotlinx.serialization.json.JsonElement", "JsonElement"),
+        # The open-enum serializer of §27.11 rule 1 (see emit_enum).
+        ("kotlinx.serialization.KSerializer", "KSerializer"),
+        ("kotlinx.serialization.descriptors.PrimitiveKind", "PrimitiveKind"),
+        ("kotlinx.serialization.descriptors.PrimitiveSerialDescriptor", "PrimitiveSerialDescriptor"),
+        ("kotlinx.serialization.descriptors.SerialDescriptor", "SerialDescriptor"),
+        ("kotlinx.serialization.encoding.Decoder", "Decoder"),
+        ("kotlinx.serialization.encoding.Encoder", "Encoder"),
         ("java.time.Instant", "Instant"),
         ("java.util.UUID", "UUID"),
     ]
@@ -464,9 +471,49 @@ def replacement_schemas() -> set[str]:
     return out
 
 
+def projection_map() -> dict[str, list[dict[str, Any]]]:
+    """Schema name -> the fields a list projection adds on top of it.
+
+    ``certificates.list`` answers ``Certificate`` plus ``bound_service_account_id``,
+    a graph edge the server resolves for the whole page in one query. CONTRACT
+    §27.11 rule 4 lets an SDK carry that as an optional property on the base
+    type, which is what this does: the field is ``null`` on ``get``, and the SDK
+    never synthesizes it there with a second request.
+    """
+    out: dict[str, list[dict[str, Any]]] = {}
+    for nsdef in REGISTRY["namespaces"].values():
+        for op in nsdef["operations"].values():
+            adds = op["response"].get("projected_fields")
+            if not adds or not op["response"].get("schema"):
+                continue
+            base = op["response"]["schema"].lstrip("[]")
+            out.setdefault(base, []).extend(adds)
+    return out
+
+
+PROJECTIONS: dict[str, list[dict[str, Any]]] = {}
+"""Filled in from :func:`projection_map` at start-up; see §27.11 rule 4."""
+
+
 def field_list(schema_name: str, secrets: set[str]) -> tuple[list[dict[str, Any]], set[str], str | None]:
     """The fields of a schema, in a stable order, with Kotlin names and types."""
     props, required, description = flatten(schema_name)
+    props = dict(props)
+    for add in PROJECTIONS.get(schema_name, []):
+        if add["name"] in props:
+            continue
+        required.discard(add["name"])
+        props[add["name"]] = {
+            "type": add.get("type"),
+            "format": add.get("format"),
+            "description": (
+                "resolved by the list projection only. The server resolves this for a "
+                "whole page in one query, so it is populated by the list operation and "
+                "is null on get (CONTRACT §27.11 rule 4). Null there means \"this read "
+                "does not carry it\", not \"there is nothing bound\" — the SDK does not "
+                "issue a second request to fill it in"
+            ),
+        }
     fields = []
     for wire in sorted(props):
         fields.append({
@@ -481,21 +528,60 @@ def field_list(schema_name: str, secrets: set[str]) -> tuple[list[dict[str, Any]
 
 
 def emit_enum(name: str, schema: Any) -> str:
-    """A Kotlin enum for a string-enum schema, with its wire spelling attached."""
+    """A Kotlin enum for a string-enum schema, with its wire spelling attached.
+
+    Serialized through a hand-rolled ``KSerializer`` rather than
+    ``@SerialName``, because kotlinx.serialization's generated enum serializer
+    *throws* on a value it does not know -- and CONTRACT §27.11 rule 1 requires
+    an unrecognised value to decode rather than failing the response it arrived
+    in. A throwing one turns the next value the server adds into a parse error
+    on the whole ``list``, taking down every record on the page over one field
+    of one of them.
+    """
     type_name = pascal(name)
     text = schema.get("description") or f"The {type_name} values the server uses."
     body = kdoc(escape(text) + "\n\nEach constant carries the spelling the server uses on the "
                 "wire, so the Kotlin name can follow Kotlin's conventions without "
-                "changing what is sent.")
-    body.append("@Serializable")
-    body.append(f"enum class {type_name} {{")
-    values = schema["enum"]
-    for i, value in enumerate(values):
-        tail = "," if i < len(values) - 1 else ","
-        body.append(f'    @SerialName("{value}")')
-        body.append(f"    {enum_constant(value)}{tail}")
-        if i < len(values) - 1:
-            body.append("")
+                "changing what is sent.\n\n"
+                "An **open** enum. A value this SDK's copy of the spec does not list decodes "
+                f"to [{type_name}.UNKNOWN] rather than failing the response it arrived in "
+                "(CONTRACT §27.11 rule 1). Its own wire spelling is the empty string, which no "
+                "server value is: carrying an unrecognised value back into an update is refused "
+                "by the server rather than silently written as a spelling it never used. A "
+                "`when` over these constants needs an `UNKNOWN` branch.")
+    body.append(f"@Serializable(with = {type_name}.Companion.Serializer::class)")
+    body.append(f"enum class {type_name}(val wire: String) {{")
+    values = [v for v in schema["enum"] if isinstance(v, str)]
+    for value in values:
+        body.append(f'    {enum_constant(value)}("{value}"),')
+        body.append("")
+    body.append("    /** A value this SDK's copy of the spec does not list; see the type's doc. */")
+    body.append('    UNKNOWN("");')
+    body.append("")
+    body.append("    companion object {")
+    body.append("        /**")
+    body.append("         * Decodes an unrecognised value to [UNKNOWN] instead of throwing.")
+    body.append("         *")
+    body.append("         * kotlinx.serialization's generated enum serializer raises on a value")
+    body.append("         * outside the constants, which fails the WHOLE response — not just the")
+    body.append("         * field. That is the failure §27.11 rule 1 exists to prevent.")
+    body.append("         */")
+    body.append(f"        internal object Serializer : KSerializer<{type_name}> {{")
+    body.append("            override val descriptor: SerialDescriptor =")
+    body.append(f'                PrimitiveSerialDescriptor("{MODELS_PACKAGE}.{type_name}", '
+                "PrimitiveKind.STRING)")
+    body.append("")
+    body.append(f"            override fun serialize(encoder: Encoder, value: {type_name}) {{")
+    body.append("                encoder.encodeString(value.wire)")
+    body.append("            }")
+    body.append("")
+    body.append(f"            override fun deserialize(decoder: Decoder): {type_name} {{")
+    body.append("                val raw = decoder.decodeString()")
+    body.append("                return entries.firstOrNull { it != UNKNOWN && it.wire == raw } "
+                "?: UNKNOWN")
+    body.append("            }")
+    body.append("        }")
+    body.append("    }")
     body.append("}")
     return header("\n".join(body), MODELS_PACKAGE)
 
@@ -638,8 +724,19 @@ def split_query(op: dict[str, Any]) -> tuple[list[str], list[str]]:
     function.
     """
     names = [q["name"] for q in op["query_params"]]
-    paging = [n for n in names if n in ("offset", "limit")]
-    other = [n for n in names if n not in ("offset", "limit")]
+    # ``search`` joins them on a paginated operation (CONTRACT §27.4 rule 4):
+    # the term is part of which page this is, and putting it on the page request
+    # rather than on each of the twenty generated ``list`` functions is what
+    # makes ``collectPages`` carry it across the whole walk instead of filtering
+    # only the first request.
+    #
+    # The ``paginated`` guard matters. A *non*-paginated operation that grew a
+    # ``search`` parameter would have no [PageRequest] to carry it, so it keeps
+    # its own argument -- none exists in the registry today, and this is what
+    # keeps that from silently dropping the parameter if one ever does.
+    owned = ("offset", "limit", "search") if op["paginated"] else ("offset", "limit")
+    paging = [n for n in names if n in owned]
+    other = [n for n in names if n not in owned]
     return paging, other
 
 
@@ -1441,6 +1538,7 @@ def prune(files: dict[Path, str]) -> list[Path]:
 
 def main() -> int:
     """Write the generated surface, or verify the committed copy is current."""
+    PROJECTIONS.update(projection_map())
     check = "--check" in sys.argv
     files = build()
     stale = prune(files)

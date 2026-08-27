@@ -65,8 +65,19 @@ internal object ManagementSupport {
         return query + mapOf(
             "offset" to request.offset.toString(),
             "limit" to request.limit?.toString(),
+            "search" to normalizeSearch(request.search),
         )
     }
+
+    /**
+     * The trimmed term, or `null` when there is nothing to filter on.
+     *
+     * Mirrors the server's own normalisation minus the length cap, which is the
+     * server's to apply. A `null` value here is dropped before the request is
+     * built, so an unfiltered read and a read whose search box was cleared are
+     * the same request on the wire (§27.4 rule 4).
+     */
+    fun normalizeSearch(term: String?): String? = term?.trim()?.takeIf { it.isNotEmpty() }
 
     /**
      * Encodes a request body exactly as it goes on the socket.
@@ -158,7 +169,10 @@ internal object ManagementSupport {
         while (true) {
             val page = fetch(request)
             out += page.items
-            val next = page.nextPage() ?: return out
+            // The term is carried, not dropped (§27.4 rule 4): a walk that
+            // filtered only its first request would concatenate the matches
+            // with the unfiltered remainder.
+            val next = page.nextPage(request.search) ?: return out
             request = next
         }
     }
