@@ -150,6 +150,130 @@ jobs:
       - name: dokkaJavadocJar
         run: ./gradlew dokkaJavadocJar --no-daemon
 
+  # H-1 (second half). Sigstore bundles did NOT ship with the rest of the H-1
+  # pass because the plugin configures on the *release* path, so a
+  # misconfiguration is invisible until the next tag and then breaks it — and no
+  # throwaway-version validation run was available. This job is the answer to
+  # that, and a better one than a one-off run: on every pull request it performs
+  # a REAL keyless signing of the real publication, proving the whole chain
+  # (Actions OIDC -> Fulcio certificate -> Rekor entry -> `.sigstore.json`
+  # attached to the publication) before a tag ever depends on it.
+  #
+  # Nothing leaves the runner: `publishToMavenLocal` writes to the runner's own
+  # ~/.m2 and never touches the OSSRH Staging API, and this job holds no
+  # CENTRAL_TOKEN_* secret to reach it with.
+  #
+  # Same-repository pull requests only. A fork's `pull_request` token cannot mint
+  # an OIDC token whatever `permissions:` says, so on a fork this job would fail
+  # for a reason that has nothing to do with the contributor's change.
+  sigstore-sign-gate:
+    name: Sigstore bundle gate (H-1)
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Fulcio issues the signing certificate against this job's OIDC identity.
+      # Without this permission ACTIONS_ID_TOKEN_REQUEST_URL is absent,
+      # sigstore-java finds no ambient provider, and — because CI=true disables
+      # its browser fallback — fails fast rather than hanging on a prompt no one
+      # can answer.
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - name: Set up JDK 17
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3  # v4.9.1
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a  # v4.4.3
+
+      # PGP alongside Sigstore, because the INTERACTION is the part worth
+      # testing: Gradle's `signing` plugin reacts to artifacts being added to a
+      # publication, so left alone it would sign the Sigstore bundles too and
+      # publish `.sigstore.json.asc` files Central has no use for. The sigstore
+      # plugin removes them; the assertion below is what notices if that ever
+      # stops being true.
+      #
+      # The key is ephemeral, throwaway and CI-only (never committed, one-day
+      # expiry, empty passphrase) — the real GPG_PRIVATE_KEY is never exposed to
+      # a PR-triggered job. RSA rather than the ed25519 the Maven-side gate
+      # uses: this one goes through Gradle's in-memory PGP reader rather than
+      # the gpg binary.
+      - name: Generate an ephemeral GPG signing key
+        run: |
+          set -euo pipefail
+          gpg --batch --pinentry-mode loopback --passphrase "" \
+              --quick-generate-key "AXIAM CI (ephemeral, do not trust)" rsa3072 sign 1d
+          keyid="$(gpg --list-secret-keys --with-colons | awk -F: '/^sec/ {print $5; exit}')"
+          {
+            echo "GPG_PRIVATE_KEY<<AXIAM_EPHEMERAL_KEY_EOF"
+            gpg --batch --pinentry-mode loopback --passphrase "" \
+                --armor --export-secret-keys "${keyid}"
+            echo "AXIAM_EPHEMERAL_KEY_EOF"
+          } >> "${GITHUB_ENV}"
+
+      - name: publishToMavenLocal with Sigstore signing (real signing, nothing uploaded)
+        env:
+          GPG_PASSPHRASE: ''
+        run: ./gradlew publishToMavenLocal --no-daemon -Psigstore.enabled=true
+
+      # A green signing task is not the claim; the claim is that the deployment
+      # will carry a bundle for every file it uploads. Assert it over what was
+      # actually installed, so a publishable artifact added later (a new
+      # classifier, a second publication) is covered without editing this list.
+      - name: Assert a .sigstore.json exists for every publishable file
+        run: |
+          set -euo pipefail
+          version="$(grep -E '^version=' gradle.properties | cut -d= -f2)"
+          dir="${HOME}/.m2/repository/io/github/ilpanich/axiam-sdk-kotlin/${version}"
+          if [ ! -d "${dir}" ]; then
+            echo "::error::nothing was published to ${dir}"
+            exit 1
+          fi
+          echo "Published files:"
+          ls -1 "${dir}"
+
+          missing=0
+          for f in "${dir}"/*; do
+            name="$(basename "${f}")"
+            case "${name}" in
+              *.asc|*.sigstore.json|*.md5|*.sha1|*.sha256|*.sha512|maven-metadata-local.xml)
+                continue ;;
+            esac
+            if [ ! -f "${dir}/${name}.sigstore.json" ]; then
+              echo "::error::missing Sigstore bundle for ${name}"
+              missing=1
+            elif ! python3 -c "import json,sys; json.load(open(sys.argv[1]))" "${dir}/${name}.sigstore.json"; then
+              echo "::error::${name}.sigstore.json is not valid JSON"
+              missing=1
+            fi
+            if [ ! -f "${dir}/${name}.asc" ]; then
+              echo "::error::missing PGP signature for ${name}"
+              missing=1
+            fi
+          done
+
+          # A signature of a signature: Central wants one signature per
+          # artifact, and the sigstore plugin strips these by default. If one
+          # appears, that default has stopped applying. Globbed rather than
+          # piped into `grep -q`: under `pipefail` an early-exiting grep
+          # SIGPIPEs its producer, and the pipeline then reports 141 whether or
+          # not anything matched.
+          shopt -s nullglob
+          stray=("${dir}"/*.sigstore.json.asc)
+          shopt -u nullglob
+          if [ "${#stray[@]}" -gt 0 ]; then
+            echo "::error::a .sigstore.json.asc was published — the sigstore plugin's .asc removal stopped working"
+            printf '%s\n' "${stray[@]}"
+            missing=1
+          fi
+
+          [ "${missing}" -eq 0 ] || exit 1
+          echo "OK: every publishable file has both a .asc and a .sigstore.json."
+
   # Publishing to Maven Central is IRREVERSIBLE and refuses to re-use a version.
   # Git tags are not branch-scoped, so a release tag cut on a feature branch must
   # be proven to be on main before the publish job runs.
@@ -212,13 +336,13 @@ jobs:
           java-version: '17'
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a  # v4.4.3
-      - name: Publish (GPG-signed) to the OSSRH Staging API
+      - name: Publish (GPG- and Sigstore-signed) to the OSSRH Staging API
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
           CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
           CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
-        run: ./gradlew publish --no-daemon
+        run: ./gradlew publish --no-daemon -Psigstore.enabled=true
 
       # T-148 / H-1: build provenance over the jars, BEFORE the step below
       # forwards the staging repository to the Portal. The ordering matters here
