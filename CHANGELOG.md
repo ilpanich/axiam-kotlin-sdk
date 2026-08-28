@@ -7,19 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
+## [1.0.0-beta04] - 2026-08-28
 
-- **`Builder.orgSlug` now rejects a blank slug** (CONTRACT.md §5.1, §5.2.1
-  rule 2). `builder(baseUrl, tenantId)` already refused a blank tenant via
-  `isNullOrBlank()`; `orgSlug` accepted `""` and put it on the wire.
+### Added
 
-  An SDK MUST NOT send an empty-string slug. Nothing can carry one, so the
-  server resolves nothing — and on `/auth/opaque/login/start` it fails on the
-  workspace *before* the tenant's OPAQUE mode is read, so the `404` of §23.4
-  rule 10 never arrives, this SDK has no fallback to take, and sign-in fails
-  even against a tenant with OPAQUE **disabled**.
+- Sigstore signature bundles on the Maven Central release path (H-1)
 
 ### Changed
+
+- Pin actions by digest, attest the published jars, document the Maven Central posture
 
 - **CONTRACT 1.32 — signing in an organization-level principal (§5.2.1).**
   `CONTRACT.md`, `openapi.json` and `management-registry.json` re-vendored from
@@ -37,6 +33,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Prefer that over omitting the tenant: §5 rule 2 still requires one on the
   `X-Tenant-ID` header of every request after the login.
+
+### Fixed
+
+- Reject a blank orgSlug instead of sending it as ""
+
+- **`Builder.orgSlug` now rejects a blank slug** (CONTRACT.md §5.1, §5.2.1
+  rule 2). `builder(baseUrl, tenantId)` already refused a blank tenant via
+  `isNullOrBlank()`; `orgSlug` accepted `""` and put it on the wire.
+
+  An SDK MUST NOT send an empty-string slug. Nothing can carry one, so the
+  server resolves nothing — and on `/auth/opaque/login/start` it fails on the
+  workspace *before* the tenant's OPAQUE mode is read, so the `404` of §23.4
+  rule 10 never arrives, this SDK has no fallback to take, and sign-in fails
+  even against a tenant with OPAQUE **disabled**.
 
 ## [1.0.0-beta02] - 2026-08-28
 
