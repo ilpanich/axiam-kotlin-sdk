@@ -22,6 +22,36 @@ class BuilderAndSensitiveTest {
         }
     }
 
+    // CONTRACT.md §5.2.1 rule 2: an SDK MUST NOT send an empty-string slug.
+    //
+    // Nothing can carry a blank slug, so the server resolves nothing — and on
+    // /auth/opaque/login/start it fails on the workspace *before* the tenant's
+    // OPAQUE mode is read, so the 404 of §23.4 rule 10 never arrives, this SDK
+    // has no fallback to take, and sign-in fails even against a tenant with
+    // OPAQUE disabled. `tenantId` was already covered above; `orgSlug` was not.
+    @Test
+    fun `a blank orgSlug is a construction error`() {
+        assertThrows(AuthError::class.java) {
+            AxiamClient.builder("https://axiam.example.com", "acme").orgSlug("")
+        }
+        assertThrows(AuthError::class.java) {
+            AxiamClient.builder("https://axiam.example.com", "acme").orgSlug("   ")
+        }
+    }
+
+    // §5.2.1: an organization-level principal signs in by naming the
+    // organization's reserved tenant, whose slug is fixed in every deployment.
+    // No new surface — the ordinary factory reaches it like any other tenant.
+    @Test
+    fun `the reserved organization tenant is named like any other`() {
+        AxiamClient.builder("https://axiam.example.com", "organization")
+            .orgSlug("globex")
+            .build()
+            .use { client ->
+                assertEquals("organization", client.tenantId())
+            }
+    }
+
     @Test
     fun `missing base url is a construction error`() {
         assertThrows(AuthError::class.java) {
