@@ -47,7 +47,7 @@ jobs:
             java: '25'
             kotlin: '2.4.10'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
 
       # Both JDKs on every leg, with 17 LAST so it becomes JAVA_HOME and is
       # therefore the JVM Gradle itself runs on.
@@ -61,7 +61,7 @@ jobs:
       # (see build.gradle.kts) forks the test JVM on exactly that version while
       # Gradle stays on a JDK it supports.
       - name: Set up JDKs (Gradle runs on 17; tests fork on ${{ matrix.java }})
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3  # v4.9.1
         with:
           distribution: 'temurin'
           java-version: |
@@ -69,7 +69,7 @@ jobs:
             17
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a  # v4.4.3
 
       - name: Build, test, and coverage report
         run: >
@@ -91,7 +91,7 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
       # §6: strict TLS is always on; the only escape hatch is customCa(pem).
       # No trust-all TrustManager / permissive HostnameVerifier / insecure
       # identifier may appear in src/main.
@@ -103,9 +103,9 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
         with:
           python-version: '3.12'
 
@@ -123,7 +123,7 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
       - name: Fail on any committed PEM private key header
         run: |
           if git grep -nE "BEGIN (RSA |EC )?PRIVATE KEY" -- . ; then
@@ -137,14 +137,14 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3  # v4.9.1
         with:
           distribution: 'temurin'
           java-version: '17'
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a  # v4.4.3
       # javadoc.io serves the Dokka javadoc jar; a broken docs build is a real
       # user-facing gap, so build it in CI.
       - name: dokkaJavadocJar
@@ -158,7 +158,7 @@ jobs:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
         with:
           fetch-depth: 0
       - name: Assert the tagged commit is an ancestor of origin/main
@@ -192,15 +192,26 @@ jobs:
     environment: maven-central
     permissions:
       contents: read
+      # See the Java SDK's publish job for the full rationale: Maven Central has
+      # no trusted-publishing equivalent, so this job holds a stored Portal
+      # token, and build provenance is the thing an integrator can check that
+      # the token cannot forge.
+      #
+      # OWNER ACTION, not expressible here: `CENTRAL_TOKEN_*`, `GPG_PRIVATE_KEY`
+      # and `GPG_PASSPHRASE` must be ENVIRONMENT secrets of `maven-central`
+      # (not repository secrets), with required reviewers and a `v*` deployment
+      # tag rule on the environment.
+      id-token: write
+      attestations: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3  # v4.9.1
         with:
           distribution: 'temurin'
           java-version: '17'
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a  # v4.4.3
       - name: Publish (GPG-signed) to the OSSRH Staging API
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
@@ -208,6 +219,18 @@ jobs:
           CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
           CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
         run: ./gradlew publish --no-daemon
+
+      # T-148 / H-1: build provenance over the jars, BEFORE the step below
+      # forwards the staging repository to the Portal. The ordering matters here
+      # in a way it cannot in the Maven job: `./gradlew publish` only stages, so
+      # attesting between the two steps means nothing reaches Maven Central
+      # unattested.
+      #
+      #   gh attestation verify axiam-sdk-<version>.jar --repo ilpanich/axiam-kotlin-sdk
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
+        with:
+          subject-path: build/libs/*.jar
 
       # `./gradlew publish` only does the OSSRH-protocol PUTs, which land the
       # artifacts in an *open* staging repository on the OSSRH Staging API. The

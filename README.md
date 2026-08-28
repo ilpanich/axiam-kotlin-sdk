@@ -31,7 +31,7 @@ This SDK conforms to CONTRACT.md §1–§7, §9–§13 and §12.7, §14, §15, �
 because they landed after this SDK already stated its coverage: widening the range silently would
 turn a statement that was true when written into a different claim without anyone editing it.
 
-**§27 is the Management API** — all 146 operations across 24 namespaces, with the §27.6 declarative
+**§27 is the Management API** — all 147 operations across 24 namespaces, with the §27.6 declarative
 layer. See [Management API](#management-api-27) below.
 
 **§24.6b — the linked-API ceremony helper — is deliberately absent, and this is not a capability
@@ -1330,7 +1330,7 @@ Worked end to end in [`examples/par-login`](examples/par-login) (`./gradlew runP
 
 ## Management API (§27)
 
-The administrative surface: 146 operations across 24 namespaces — users, groups, roles,
+The administrative surface: 147 operations across 24 namespaces — users, groups, roles,
 permissions, resources, scopes, service accounts, certificates, CA certificates, PGP keys, webhooks,
 OAuth2 clients, federation, notification rules, e-mail config, settings, SCIM tokens, reactors,
 WebAuthn policy, audit, privacy, organizations, tenants and platform.

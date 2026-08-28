@@ -150,4 +150,32 @@ class TenantsApi internal constructor(
             path = path,
         )
     }
+
+    /**
+     * Streams the tenant's complete audit trail as newline-delimited JSON, one
+     * &#91;`axiam_core::models::audit::AuditLogEntry`&#93; per line, newest first, and records the
+     * export in that tenant's audit log — which is what &#91;`delete`&#93; then requires (T-118).
+     * The last line is not an entry but a manifest object carrying `record_count`, the SHA-256
+     * `digest` over the entry lines that precede it, and `receipt_id` — the id of the audit entry
+     * this export wrote. An archive can therefore be tied back to the receipt that authorised the
+     * deletion, and re-hashing the file proves it is the export the receipt describes. `POST`
+     * rather than `GET`: it is not safe and not idempotent — every call appends a receipt.
+     *
+     * Issues `POST /api/v1/organizations/{org_id}/tenants/{tenant_id}/audit-export`.
+     *
+     * Not retried: §27.4 rule 8 makes every write on this surface single-shot, including the ones
+     * that look idempotent.
+     *
+     * @param tenantId the tenant id to address
+     */
+    suspend fun exportAudit(tenantId: UUID) {
+        val orgId = ManagementSupport.resolveOrg(transport, scope, "tenants.export_audit")
+        val path = "/api/v1/organizations/${orgId}/tenants/${tenantId}/audit-export"
+        transport.send(
+            operation = "tenants.export_audit",
+            method = "POST",
+            pathTemplate = "/api/v1/organizations/{org_id}/tenants/{tenant_id}/audit-export",
+            path = path,
+        )
+    }
 }
