@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate the CONTRACT §27 management surface for the Kotlin SDK.
 
-Reads ``management-registry.json`` (the 146 operations across 24 namespaces,
+Reads ``management-registry.json`` (the 147 operations across 24 namespaces,
 maintained in ``ilpanich/axiam`` and vendored here) plus ``openapi.json`` for the
 schemas those operations carry, and writes:
 
@@ -12,7 +12,7 @@ schemas those operations carry, and writes:
 - ``src/main/kotlin/io/axiam/sdk/management/ManagementApi.kt`` — the accessors;
 - ``src/test/kotlin/io/axiam/sdk/management/ManagementSurfaceGeneratedTest.kt``
 - ``src/test/kotlin/io/axiam/sdk/management/ManagementSparseBodiesGeneratedTest.kt``
-  — one conformance case per operation, plus the §27.9 assertion that all 146
+  — one conformance case per operation, plus the §27.9 assertion that all 147
   are reached.
 
 Run with ``--check`` to verify the committed output is current; that is what CI
@@ -991,13 +991,13 @@ def emit_namespace(namespace: str, nsdef: dict[str, Any]) -> str:
 def emit_api() -> str:
     """The root handle: one accessor per namespace."""
     lines = kdoc(
-        "The CONTRACT.md §27 management API: 146 operations across 24 namespaces.\n\n"
+        "The CONTRACT.md §27 management API: 147 operations across 24 namespaces.\n\n"
         "Obtained from `client.management()`. Each accessor returns a namespace handle, "
         "which is a view over the same session — acquiring one performs no I/O "
         "(§27.2 rule 1).\n\n"
         "The namespaces are grouped behind this one accessor rather than added to "
         "`AxiamClient` directly: §27.2's own argument for handles is that a flat surface "
-        "of 146 functions buries the twenty a given caller needs, and hanging 24 more "
+        "of 147 functions buries the twenty a given caller needs, and hanging 24 more "
         "functions off the client would do to `AxiamClient` exactly what the handles "
         "exist to prevent.")
     lines.append("class ManagementApi internal constructor(")
@@ -1299,7 +1299,7 @@ def emit_test() -> str:
             lines.append("")
 
     lines.extend(kdoc(
-        "§27.9: a partial regeneration must fail here, not ship 140 of 146.\n\nAsserting "
+        "§27.9: a partial regeneration must fail here, not ship 140 of 147.\n\nAsserting "
         "the whole set rather than the count catches a regeneration that dropped one "
         "operation and gained another.", "    "))
     lines.append("    @Test")

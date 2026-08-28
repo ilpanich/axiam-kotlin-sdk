@@ -6,13 +6,13 @@ package io.axiam.sdk.management
 import io.axiam.sdk.internal.ManagementTransport
 
 /**
- * The CONTRACT.md §27 management API: 146 operations across 24 namespaces.
+ * The CONTRACT.md §27 management API: 147 operations across 24 namespaces.
  *
  * Obtained from `client.management()`. Each accessor returns a namespace handle, which is a view
  * over the same session — acquiring one performs no I/O (§27.2 rule 1).
  *
  * The namespaces are grouped behind this one accessor rather than added to `AxiamClient` directly:
- * §27.2's own argument for handles is that a flat surface of 146 functions buries the twenty a
+ * §27.2's own argument for handles is that a flat surface of 147 functions buries the twenty a
  * given caller needs, and hanging 24 more functions off the client would do to `AxiamClient`
  * exactly what the handles exist to prevent.
  */

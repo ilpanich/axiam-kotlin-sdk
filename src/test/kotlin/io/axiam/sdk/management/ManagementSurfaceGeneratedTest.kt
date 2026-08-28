@@ -205,6 +205,14 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
         client.management().tenants().delete(tenantId = EXAMPLE_ID)
     }
 
+    /** Exercises tenants.export_audit. */
+    @Test
+    fun `tenants export_audit`() = runTest {
+        val body = ""
+        mount("POST", "/api/v1/organizations/$ORG_ID/tenants/$EXAMPLE_ID/audit-export", 200, body)
+        client.management().tenants().exportAudit(tenantId = EXAMPLE_ID)
+    }
+
     /** Exercises users.list. */
     @Test
     fun `users list`() = runTest {
@@ -1600,7 +1608,7 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
     }
 
     /**
-     * §27.9: a partial regeneration must fail here, not ship 140 of 146.
+     * §27.9: a partial regeneration must fail here, not ship 140 of 147.
      *
      * Asserting the whole set rather than the count catches a regeneration that dropped one
      * operation and gained another.
@@ -1733,6 +1741,7 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
             "settings.set_tenant_override",
             "tenants.create",
             "tenants.delete",
+            "tenants.export_audit",
             "tenants.get",
             "tenants.list",
             "tenants.update",
@@ -1755,7 +1764,7 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
             "webhooks.list",
             "webhooks.update",
         )
-        assertEquals(146, exercised.size,
+        assertEquals(147, exercised.size,
             "the generated surface must reach every operation the registry declares")
         assertEquals(expectedSurface(), exercised,
             "the generated surface and the registry must name the same operations")
