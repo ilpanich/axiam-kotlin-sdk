@@ -55,20 +55,81 @@ instead.
 
 ## Verifying a published artifact
 
-Every jar this workflow publishes carries a GitHub build-provenance
-attestation — a statement the Portal token cannot forge, because it is signed
-with the workflow's OIDC identity rather than with the credential that
-performed the upload:
+Two independent statements of origin ship with every release, and neither can
+be produced by the Portal token that performed the upload. Both are signed with
+the release workflow's OIDC identity.
+
+**1. The GitHub build-provenance attestation**, held by GitHub:
 
 ```sh
-gh attestation verify axiam-sdk-<version>.jar --repo ilpanich/axiam-kotlin-sdk
+gh attestation verify axiam-sdk-kotlin-<version>.jar --repo ilpanich/axiam-kotlin-sdk
 ```
 
-## Still open
+**2. The Sigstore bundle**, served by Maven Central itself. Every published
+file — the jar, the sources jar, the Dokka javadoc jar, the POM, the Gradle
+module metadata — has a `.sigstore.json` next to its `.asc`:
 
-Sigstore signature bundles (`.sigstore.json`) alongside the PGP signatures are
-the closest thing Central offers to trusted publishing, and are **not yet
-configured here**. They need a build-file change on the release path
-(Gradle (`./gradlew publish`)), which is exactly the kind of change that should
-not ship without a validation run against a throwaway version. Tracked as the
-remaining half of H-1 in the server repository's beta03 hardening plan.
+```sh
+base=https://repo1.maven.org/maven2/io/github/ilpanich/axiam-sdk-kotlin/<version>
+curl -sO "$base/axiam-sdk-kotlin-<version>.jar"
+curl -sO "$base/axiam-sdk-kotlin-<version>.jar.sigstore.json"
+
+cosign verify-blob \
+  --bundle axiam-sdk-kotlin-<version>.jar.sigstore.json \
+  --certificate-identity-regexp '^https://github\.com/ilpanich/axiam-kotlin-sdk/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  axiam-sdk-kotlin-<version>.jar
+```
+
+The two differ in where they live, which is the point of having both: the
+attestation is a GitHub API call away and disappears if you only ever talk to
+Maven Central; the bundle travels with the artifact in the repository a
+consumer already fetches from.
+
+### What the Sigstore bundle costs, and what it needs
+
+Nothing, and nothing. Fulcio (the certificate authority) and Rekor (the
+transparency log) are the Sigstore **public good instance**, free to use and
+requiring no account, no registration and no stored key: the signing
+certificate is issued against the workflow's GitHub OIDC claim and expires ten
+minutes later. There is no third credential to rotate — the rotation table
+above stays at two rows.
+
+The only thing it needs from the repository is `id-token: write` on the jobs
+that sign, which the publish job already had for the attestation.
+
+### How it is wired
+
+- `build.gradle.kts` declares `dev.sigstore.sign` with `apply false`, and
+  applies it only when `-Psigstore.enabled=true` is passed. A keyless signature
+  means nothing without a workflow identity behind it, and without one
+  sigstore-java falls back to a browser flow — so a laptop
+  `./gradlew publishToMavenLocal` must not attempt one.
+- The publish job passes `-Psigstore.enabled=true` to `./gradlew publish`. The
+  bundles are added to the `maven` publication as derived artifacts, so they
+  are PUT to the OSSRH Staging API alongside everything else and forwarded to
+  the Portal by the existing close-and-forward step.
+- The plugin removes the `.sigstore.json.asc` files Gradle's `signing` plugin
+  would otherwise produce. Central wants a signature per artifact, not a
+  signature of a signature.
+
+### The gate that replaced the throwaway-version run
+
+This change lands on the release path, where a mistake is invisible until the
+next tag and then breaks it. The `sigstore-sign-gate` PR job is what makes that
+acceptable: on every same-repository pull request it performs a **real** keyless
+signing of the real publication — Actions OIDC, a Fulcio certificate, a Rekor
+entry, a `.sigstore.json` per file — with an ephemeral GPG key alongside it, so
+the interaction between the two signers is exercised too. It then asserts that
+every published file has both a `.asc` and a `.sigstore.json`, and that no
+`.sigstore.json.asc` was produced.
+
+Nothing leaves the runner: it publishes to the runner's own `~/.m2`, and the
+job holds no `CENTRAL_TOKEN_*` secret to reach the staging API with.
+
+It is skipped on pull requests from forks, whose token cannot mint an OIDC
+token whatever the job's `permissions:` say.
+
+If the Portal ever starts *rejecting* rather than warning on an invalid
+Sigstore signature — Sonatype has said it intends to — this gate is what
+catches it a pull request early rather than at a tag.

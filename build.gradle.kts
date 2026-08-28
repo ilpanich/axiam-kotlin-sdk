@@ -8,6 +8,13 @@ plugins {
     id("org.jetbrains.kotlinx.kover") version "0.9.9"
     `maven-publish`
     signing
+    // H-1 (second half): Sigstore keyless signing of the published artifacts.
+    // `apply false` because applying it unconditionally would attach a signing
+    // task to the publication on every developer machine, and a keyless
+    // signature is only meaningful when the identity behind it is the release
+    // workflow's OIDC claim. See the conditional apply below the `signing`
+    // block for where it is switched on.
+    id("dev.sigstore.sign") version "2.2.0" apply false
 }
 
 group = providers.gradleProperty("group").get()
@@ -437,4 +444,43 @@ signing {
         useInMemoryPgpKeys(signingKey, signingPassphrase ?: "")
         sign(publishing.publications["maven"])
     }
+}
+
+// ---- Sigstore signature bundles (H-1, second half) ------------------------
+// Attaches a `<file>.sigstore.json` Sigstore bundle to every artifact in the
+// `maven` publication — the jar, the sources jar, the Dokka javadoc jar, the
+// POM and the Gradle module metadata. The Central Publisher Portal has
+// validated these since 2025-01-28, and the OSSRH Staging API this project
+// deploys through accepts them as ordinary per-file uploads.
+//
+// Why it is worth having next to the PGP signature: the bundle's certificate
+// is issued by Fulcio against this *workflow's* OIDC identity — repository,
+// workflow file, ref — and the signing event is recorded in Rekor. A stolen
+// Portal token can upload a jar; it cannot make Fulcio say the jar was built by
+// ilpanich/axiam-kotlin-sdk's release workflow. It is keyless, so unlike the
+// Portal token and the GPG key there is nothing here to store, rotate or leak,
+// and it costs nothing: Fulcio and Rekor are the Sigstore public good instance.
+//
+// Off unless asked for. Signing needs an ambient OIDC provider; sigstore-java
+// finds one from GitHub Actions' ACTIONS_ID_TOKEN_REQUEST_* variables (which
+// need `id-token: write` on the job) and otherwise falls back to a browser
+// flow, which it refuses outright when CI=true. A default-on plugin would
+// therefore turn `./gradlew publishToMavenLocal` on a laptop into a browser
+// prompt. Switched on with `-Psigstore.enabled=true` in exactly two places:
+// the `sigstore-sign-gate` PR job and the tag-triggered publish job.
+//
+// The plugin removes the `.sigstore.json.asc` files that Gradle's `signing`
+// plugin would otherwise produce (its
+// `dev.sigstore.sign.remove.sigstore.json.asc` default) — Central wants a
+// signature per artifact, not a signature of a signature. The PR gate asserts
+// that this still holds.
+//
+// Applied here, after `publishing`/`signing`, purely for readability: the
+// plugin reacts to publications and their artifacts through live collections,
+// so the apply position does not change what gets signed.
+val sigstoreEnabled: Boolean =
+    providers.gradleProperty("sigstore.enabled").map(String::toBoolean).getOrElse(false)
+
+if (sigstoreEnabled) {
+    apply(plugin = "dev.sigstore.sign")
 }
