@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-beta02] - 2026-08-28
+
 ### Added
+
+- Contract 1.31 — list search, the truthful resend, organization scope
 
 - **CONTRACT 1.31 — the AXIAM server PR #383 surface.** `CONTRACT.md`,
   `openapi.json` and `management-registry.json` re-vendored, and the six things
@@ -72,34 +76,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `certificates().list()` and `null` on `certificates().get()`. The SDK does
     not issue a second request to fill it in there.
 
-### Changed
-
-- **Generated management enums are open, decoded through a hand-rolled
-  `KSerializer`** (§27.11 rule 1). kotlinx.serialization's generated enum
-  serializer *throws* on a value outside the constants, which fails the **whole**
-  response — taking down every record on the page over one field of one of them,
-  including the records the caller was after. An unrecognised value now decodes
-  to `UNKNOWN`, and a `when` over these constants needs an `UNKNOWN` branch.
-
-  Each constant carries its wire spelling as a `wire` property, and
-  `UNKNOWN.wire` is the empty string, which no server value is. Fifteen of these
-  enums appear in request bodies, and that is what makes carrying an
-  unrecognised value back into an update a `400` from the server rather than a
-  silent rewrite into a spelling it never used.
-
-### Fixed
-
-- **`scripts/gen_management.py` no longer drops a projected list element.** The
-  server answers `GET /api/v1/certificates` with `Certificate` plus one resolved
-  graph edge, expressed as an `allOf` of the `$ref` and an anonymous object.
-  Read as a whole, that composition has no name, so the registry carried a page
-  with no element type and the added field reached no data class. The generator
-  now takes the base name through the `allOf` and folds the projection's added
-  fields onto the base type as optional properties. (The registry-side half of
-  this is AXIAM PR #386.)
-
-### Added
-
 - **The §27 namespace handles now sit directly on the client**, as properties —
   `client.roles`, `client.serviceAccounts.rotateSecret(id)` — which is the form §27.3's
   Kotlin row specifies (property, `camelCase`, `suspend`). `client.management()` still
@@ -118,9 +94,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   form actually puts on the wire — a forwarding property that built its own handle with a
   default scope would return the right type and address the wrong organization, which is the
   failure the rule exists to prevent.
-
-
-### Added
 
 - **CONTRACT.md §27 Management API** — `client.management()`, 146 operations across 24
   namespaces (users, groups, roles, permissions, resources, scopes, service accounts,
@@ -163,6 +136,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Re-vendor openapi.json and management-registry.json from axiam main (#51)
+
+- Re-vendor the contract artifacts: spec digest + §27.10 posture (#49)
+
+- Put the §27 namespace handles directly on the client, per §27.2/§27.3
+
+- Implement CONTRACT.md §27 Management API
+
+- Re-vendor CONTRACT.md, openapi.json and the §27 registry
+
+- **Generated management enums are open, decoded through a hand-rolled
+  `KSerializer`** (§27.11 rule 1). kotlinx.serialization's generated enum
+  serializer *throws* on a value outside the constants, which fails the **whole**
+  response — taking down every record on the page over one field of one of them,
+  including the records the caller was after. An unrecognised value now decodes
+  to `UNKNOWN`, and a `when` over these constants needs an `UNKNOWN` branch.
+
+  Each constant carries its wire spelling as a `wire` property, and
+  `UNKNOWN.wire` is the empty string, which no server value is. Fifteen of these
+  enums appear in request bodies, and that is what makes carrying an
+  unrecognised value back into an update a `400` from the server rather than a
+  silent rewrite into a spelling it never used.
+
 - **`AuthzError` and `NetworkError` are now `open`.** §27.4 rule 7 classifies three statuses
   *inside* the existing §2 taxonomy rather than beside it: `NotFoundError` (404) and
   `ConflictError` (409) extend `AuthzError`; `ValidationError` (400/422) extends `NetworkError`.
@@ -183,6 +179,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `hashCode`), which reaching would mean calling `copy()` on 145 generated types to no purpose.
   Line coverage of everything else rose from 98.1% to 98.7%; the floor stays at 98 because this
   DSL's `minBound` is integer-valued and 99 is above what the SDK achieves.
+
+### Fixed
+
+- **`scripts/gen_management.py` no longer drops a projected list element.** The
+  server answers `GET /api/v1/certificates` with `Certificate` plus one resolved
+  graph edge, expressed as an `allOf` of the `$ref` and an anonymous object.
+  Read as a whole, that composition has no name, so the registry carried a page
+  with no element type and the added field reached no data class. The generator
+  now takes the base name through the `allOf` and folds the projection's added
+  fields onto the base type as optional properties. (The registry-side half of
+  this is AXIAM PR #386.)
 
 ## [1.0.0-alpha44] - 2026-08-25
 
