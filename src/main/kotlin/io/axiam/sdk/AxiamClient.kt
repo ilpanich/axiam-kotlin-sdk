@@ -1921,7 +1921,20 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
         fun expectedAudience(audience: String) = apply { expectedAudience = audience }
 
         /** Organization slug (mutually exclusive with [orgId]; last call wins). */
-        fun orgSlug(slug: String) = apply { orgSlug = slug; orgId = null }
+        fun orgSlug(slug: String) = apply {
+            // §5.2.1 rule 2: an SDK MUST NOT send an empty-string slug. Nothing
+            // can carry one, so it resolves nothing and the server answers a
+            // generic refusal that says nothing about which half was wrong.
+            // `tenantId` is already checked in `builder(baseUrl, tenantId)`;
+            // this closes the other slug.
+            if (slug.isBlank()) {
+                throw AuthError(
+                    "orgSlug must not be blank — omit it entirely, or name the organization (§5.1, §5.2.1)",
+                )
+            }
+            orgSlug = slug
+            orgId = null
+        }
 
         /** Organization UUID (mutually exclusive with [orgSlug]; last call wins). */
         fun orgId(id: UUID) = apply { orgId = id; orgSlug = null }

@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`Builder.orgSlug` now rejects a blank slug** (CONTRACT.md §5.1, §5.2.1
+  rule 2). `builder(baseUrl, tenantId)` already refused a blank tenant via
+  `isNullOrBlank()`; `orgSlug` accepted `""` and put it on the wire.
+
+  An SDK MUST NOT send an empty-string slug. Nothing can carry one, so the
+  server resolves nothing — and on `/auth/opaque/login/start` it fails on the
+  workspace *before* the tenant's OPAQUE mode is read, so the `404` of §23.4
+  rule 10 never arrives, this SDK has no fallback to take, and sign-in fails
+  even against a tenant with OPAQUE **disabled**.
+
+### Changed
+
+- **CONTRACT 1.32 — signing in an organization-level principal (§5.2.1).**
+  `CONTRACT.md`, `openapi.json` and `management-registry.json` re-vendored from
+  the AXIAM server, where the same bug class had made an organization-level
+  administrator unable to sign in at all (ilpanich/axiam#388).
+
+  Naming no tenant now resolves the organization's own reserved scope on
+  `/auth/login`, `/auth/opaque/login/start`, `/auth/opaque/register/start` and
+  `/auth/webauthn/authenticate/discoverable/start`. That reserved tenant's slug
+  is `organization`, so this SDK reaches it through the ordinary factory:
+
+  ```kotlin
+  AxiamClient.builder(baseUrl, "organization").orgSlug("globex").build()
+  ```
+
+  Prefer that over omitting the tenant: §5 rule 2 still requires one on the
+  `X-Tenant-ID` header of every request after the login.
+
 ## [1.0.0-beta02] - 2026-08-28
 
 ### Added

@@ -1261,6 +1261,29 @@ one tenant, and changing the header for one of those produces a `403` — so a U
 switch to everyone has turned a distinction the server made into a failure the user discovers.
 `false` against a server older than contract 1.31, which is the safe reading of absent.
 
+#### Signing one in (§5.2.1)
+
+The reserved tenant has a fixed slug, `organization`, the same in every deployment — so signing in
+as an organization-level principal needs no new surface, only the ordinary factory:
+
+```kotlin
+val client = AxiamClient.builder("https://iam.example.com", "organization")
+    .orgSlug("globex")
+    .build()
+val result = client.login("root@example.com", password)
+```
+
+Prefer that form. The server also reads a login body naming *no* tenant as "the organization's own
+scope", but §5 rule 2 still requires a tenant on the `X-Tenant-ID` header of every request after the
+login, so the client needs one either way.
+
+What §5.2.1 forbids is the third possibility: an empty-string slug. Nothing can carry one, so
+`tenant_slug: ""` resolves nothing — and on `/auth/opaque/login/start` it fails on the workspace
+*before* the tenant's OPAQUE mode is read, so the `404` that means "OPAQUE is not offered here"
+never arrives and this SDK has no fallback to take. Sign-in then fails even against a tenant with
+OPAQUE disabled. `builder(baseUrl, tenantId)` already rejected a blank tenant; `orgSlug` now
+rejects one too.
+
 Worked end to end in [`examples/account-lifecycle`](examples/account-lifecycle)
 (`./gradlew runAccountLifecycleExample`).
 
