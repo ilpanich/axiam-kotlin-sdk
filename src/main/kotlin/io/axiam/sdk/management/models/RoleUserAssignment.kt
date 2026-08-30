@@ -12,10 +12,14 @@ import kotlinx.serialization.Serializable
  * A user together with the resource scope of their assignment of this role.
  *
  * @property resourceId `None` means the role was assigned globally (no resource scope).
+ * @property tenantScope The tenants this assignment reaches, or omitted for "wherever the role
+ *     does". Shown next to the assignment so an operator can tell a deliberately narrowed grant
+ *     from an organization-wide one.
  * @property user The assigned user.
  */
 @Serializable
 data class RoleUserAssignment(
     @SerialName("resource_id") val resourceId: @Serializable(with = UuidSerializer::class) UUID? = null,
+    @SerialName("tenant_scope") val tenantScope: List<@Serializable(with = UuidSerializer::class) UUID>? = null,
     @SerialName("user") val user: UserResponse,
 )

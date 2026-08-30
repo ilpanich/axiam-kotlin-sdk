@@ -1,5 +1,7 @@
 package io.axiam.sdk
 
+import java.util.UUID
+
 /**
  * Authenticated user identity, injected into the request context by the §10
  * guard and returned as part of a completed [LoginResult].
@@ -45,7 +47,7 @@ data class AxiamUser(
  *                          record lives in its organization's reserved tenant,
  *                          so its global grants apply in every tenant of that
  *                          organization, and which can act on a different one by
- *                          sending a different `X-Tenant-ID` on the next
+ *                          sending a different `X-Axiam-Tenant` on the next
  *                          request. An ordinary tenant principal is a principal
  *                          of exactly one tenant and gets a `403` for the same
  *                          header change, so check this *before* offering a
@@ -53,6 +55,14 @@ data class AxiamUser(
  *                          a failed request. `false` against a server older than
  *                          contract 1.31, and `false` on the two pending
  *                          outcomes, where no principal has been established yet.
+ *                          Since contract 1.35 that reach can be narrowed per
+ *                          assignment, so this flag alone no longer decides what
+ *                          to offer: consult [PrincipalScope.reachableTenantIds]
+ *                          as well (§5.2.3 rule 3).
+ * @property scope          where this principal lives and how far its roles
+ *                          reach (§5.2.2, §5.2.3). `null` on the two pending
+ *                          outcomes and against a server older than contract
+ *                          1.34, which reports none of it.
  */
 data class LoginResult(
     val mfaRequired: Boolean,
@@ -61,6 +71,64 @@ data class LoginResult(
     val mfaSetupRequired: Boolean = false,
     val setupToken: Sensitive<String>? = null,
     val organizationLevel: Boolean = false,
+    val scope: PrincipalScope? = null,
+)
+
+/**
+ * Where the signed-in principal lives, and how far its roles reach — CONTRACT.md
+ * §5.2.2 and §5.2.3.
+ *
+ * Grouped into one type rather than spread across [LoginResult]'s properties
+ * because they are read together and grow together: §5.2.2 added three of these
+ * and §5.2.3 a fourth, and a class that gains a property per contract revision is
+ * one whose shape churns every time.
+ *
+ * Every property is nullable, and absent has a specific meaning in each case
+ * rather than "unknown". A server older than contract 1.34 sends none of them, in
+ * which case the whole scope is `null`.
+ *
+ * @property actingTenantId     the tenant a request **acts on** — what the
+ *                              `X-Axiam-Tenant` header names. `null` when the
+ *                              server does not report it.
+ * @property principalTenantId  the tenant this principal's record **lives in**.
+ *                              The same value as [actingTenantId] for every
+ *                              ordinary principal; the two diverge only once an
+ *                              organization-level principal selects another
+ *                              tenant to act on. This is where the account's own
+ *                              credentials belong, and what a §23 registration
+ *                              record for *this* account must be sealed against —
+ *                              see [AxiamClient.opaqueEnrollmentForSelf]. The
+ *                              login reader fills this from [actingTenantId] when
+ *                              the server omits it, which is exactly right there:
+ *                              a server that cannot switch the acting tenant
+ *                              cannot make the two differ, so absent means
+ *                              *equal*, not unknown.
+ * @property principalTenantSlug slug of [principalTenantId] — `"organization"` for
+ *                              an organization-level principal; `null` when the
+ *                              server omits it.
+ * @property orgId              the caller's organization as a UUID (§5.2.2 rule
+ *                              3). Read this rather than resolving a slug through
+ *                              `GET /api/v1/organizations`, which is
+ *                              `super-admin`-only and returns only the caller's
+ *                              own organization.
+ * @property reachableTenantIds the tenants this caller's roles reach, when they
+ *                              are narrowed (§5.2.3). `null` means
+ *                              **unrestricted**, which is both the common case and
+ *                              the only thing a server older than contract 1.35
+ *                              can mean. A present list is a deliberately narrowed
+ *                              organization-level account: confine any tenant
+ *                              switch to it, because naming anything outside is
+ *                              refused at the header. An empty list arrives as
+ *                              `null` for the same reason — it would read as
+ *                              "reaches nothing", the opposite of what an omitted
+ *                              field means here.
+ */
+data class PrincipalScope(
+    val actingTenantId: UUID? = null,
+    val principalTenantId: UUID? = null,
+    val principalTenantSlug: String? = null,
+    val orgId: UUID? = null,
+    val reachableTenantIds: List<UUID>? = null,
 )
 
 /**

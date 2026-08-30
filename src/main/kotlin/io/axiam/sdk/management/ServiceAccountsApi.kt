@@ -6,6 +6,8 @@ package io.axiam.sdk.management
 import io.axiam.sdk.internal.ManagementTransport
 import io.axiam.sdk.management.models.BindCertificate
 import io.axiam.sdk.management.models.CreateServiceAccountRequest
+import io.axiam.sdk.management.models.Group
+import io.axiam.sdk.management.models.RoleAssignment
 import io.axiam.sdk.management.models.RotateSecretResponse
 import io.axiam.sdk.management.models.ServiceAccountCreatedResponse
 import io.axiam.sdk.management.models.ServiceAccountResponse
@@ -175,5 +177,39 @@ class ServiceAccountsApi internal constructor(
             pathTemplate = "/api/v1/service-accounts/{sa_id}/bind-certificate",
             path = path, body = payload,
         )
+    }
+
+    /**
+     * Issues `GET /api/v1/service-accounts/{service_account_id}/roles`.
+     *
+     * @param serviceAccountId the service account id to address
+     * @return the server response
+     */
+    suspend fun listRoles(serviceAccountId: UUID): List<RoleAssignment> {
+        val path = "/api/v1/service-accounts/${serviceAccountId}/roles"
+        val node = transport.send(
+            operation = "service_accounts.list_roles",
+            method = "GET",
+            pathTemplate = "/api/v1/service-accounts/{service_account_id}/roles",
+            path = path,
+        )
+        return ManagementSupport.decodeList("service_accounts.list_roles", RoleAssignment.serializer(), node)
+    }
+
+    /**
+     * Issues `GET /api/v1/service-accounts/{service_account_id}/groups`.
+     *
+     * @param serviceAccountId the service account id to address
+     * @return the server response
+     */
+    suspend fun listGroups(serviceAccountId: UUID): List<Group> {
+        val path = "/api/v1/service-accounts/${serviceAccountId}/groups"
+        val node = transport.send(
+            operation = "service_accounts.list_groups",
+            method = "GET",
+            pathTemplate = "/api/v1/service-accounts/{service_account_id}/groups",
+            path = path,
+        )
+        return ManagementSupport.decodeList("service_accounts.list_groups", Group.serializer(), node)
     }
 }

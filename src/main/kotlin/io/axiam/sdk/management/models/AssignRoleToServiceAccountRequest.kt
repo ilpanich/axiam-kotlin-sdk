@@ -9,20 +9,20 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
- * The AssignRoleToUserRequest schema from the server's OpenAPI document.
+ * The AssignRoleToServiceAccountRequest schema from the server's OpenAPI document.
  *
  * @property resourceId the server's resource_id field
+ * @property serviceAccountId the server's service_account_id field
  * @property tenantScope The tenants this assignment reaches. Only meaningful for an assignment
  *     made in an organization's scope, whose global roles otherwise reach every tenant of the
  *     organization; naming tenants here confines the assignment to those and to nothing else, the
  *     organization's own scope included. Omitted — the default — reaches wherever the role does.
  *     Refused with 400 outside an organization scope, when empty, and when it names a tenant of
  *     another organization or the organization's own scope tenant.
- * @property userId the server's user_id field
  */
 @Serializable
-data class AssignRoleToUserRequest(
+data class AssignRoleToServiceAccountRequest(
     @SerialName("resource_id") val resourceId: @Serializable(with = UuidSerializer::class) UUID? = null,
+    @SerialName("service_account_id") val serviceAccountId: @Serializable(with = UuidSerializer::class) UUID,
     @SerialName("tenant_scope") val tenantScope: List<@Serializable(with = UuidSerializer::class) UUID>? = null,
-    @SerialName("user_id") val userId: @Serializable(with = UuidSerializer::class) UUID,
 )

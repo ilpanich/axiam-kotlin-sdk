@@ -5,9 +5,11 @@ package io.axiam.sdk.management
 
 import io.axiam.sdk.internal.ManagementTransport
 import io.axiam.sdk.management.models.AddMemberRequest
+import io.axiam.sdk.management.models.AddServiceAccountMemberRequest
 import io.axiam.sdk.management.models.CreateGroupRequest
 import io.axiam.sdk.management.models.Group
 import io.axiam.sdk.management.models.RoleAssignment
+import io.axiam.sdk.management.models.ServiceAccountResponse
 import io.axiam.sdk.management.models.UpdateGroup
 import io.axiam.sdk.management.models.UserResponse
 import java.util.UUID
@@ -229,5 +231,79 @@ class GroupsApi internal constructor(
             path = path,
         )
         return ManagementSupport.decodeList("groups.list_roles", RoleAssignment.serializer(), node)
+    }
+
+    /**
+     * Issues `GET /api/v1/groups/{group_id}/service-accounts`.
+     *
+     * Paginated: `total` on the returned page is the size of the WHOLE set, not of this page
+     * (§27.4 rule 4). Use `list_service_accountsAll(...)` to walk every page.
+     *
+     * @param groupId the group id to address
+     * @param page where to start and how many to ask for, or null for the server's default
+     * @return the page of results
+     */
+    suspend fun listServiceAccounts(groupId: UUID, page: PageRequest?): Page<ServiceAccountResponse> {
+        val path = "/api/v1/groups/${groupId}/service-accounts"
+        val query = ManagementSupport.pageQuery(emptyMap(), page)
+        val node = transport.send(
+            operation = "groups.list_service_accounts",
+            method = "GET",
+            pathTemplate = "/api/v1/groups/{group_id}/service-accounts",
+            path = path, query = query,
+        )
+        return ManagementSupport.decodePage("groups.list_service_accounts", ServiceAccountResponse.serializer(), node)
+    }
+
+    /**
+     * Walks `listServiceAccounts` to exhaustion and returns every item (§27.4 rule 4).
+     *
+     * Stops on an empty page even when the server's `total` disagrees, so a misreporting server
+     * costs one wasted request rather than an unbounded loop.
+     *
+     * @param groupId the group id to address
+     * @param start the first window to request, or null for the server's default
+     * @return every item, in the server's order
+     */
+    suspend fun listServiceAccountsAll(groupId: UUID, start: PageRequest? = null): List<ServiceAccountResponse> =
+        ManagementSupport.collectPages(start) { listServiceAccounts(groupId, it) }
+
+    /**
+     * Issues `POST /api/v1/groups/{group_id}/service-accounts`.
+     *
+     * Not retried: §27.4 rule 8 makes every write on this surface single-shot, including the ones
+     * that look idempotent.
+     *
+     * @param groupId the group id to address
+     * @param body the request body
+     */
+    suspend fun addServiceAccount(groupId: UUID, body: AddServiceAccountMemberRequest) {
+        val path = "/api/v1/groups/${groupId}/service-accounts"
+        val payload = ManagementSupport.encodeBody("groups.add_service_account", AddServiceAccountMemberRequest.serializer(), body)
+        transport.send(
+            operation = "groups.add_service_account",
+            method = "POST",
+            pathTemplate = "/api/v1/groups/{group_id}/service-accounts",
+            path = path, body = payload,
+        )
+    }
+
+    /**
+     * Issues `DELETE /api/v1/groups/{group_id}/service-accounts/{service_account_id}`.
+     *
+     * Not retried: §27.4 rule 8 makes every write on this surface single-shot, including the ones
+     * that look idempotent.
+     *
+     * @param groupId the group id to address
+     * @param serviceAccountId the service account id to address
+     */
+    suspend fun removeServiceAccount(groupId: UUID, serviceAccountId: UUID) {
+        val path = "/api/v1/groups/${groupId}/service-accounts/${serviceAccountId}"
+        transport.send(
+            operation = "groups.remove_service_account",
+            method = "DELETE",
+            pathTemplate = "/api/v1/groups/{group_id}/service-accounts/{service_account_id}",
+            path = path,
+        )
     }
 }

@@ -9,17 +9,18 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
- * A group together with the resource scope of its assignment of this role.
+ * A service account together with the resource scope of its assignment.
  *
- * @property group The assigned group.
  * @property resourceId `None` means the role was assigned globally (no resource scope).
+ * @property serviceAccount The assigned service account. Carries no secret — the client secret
+ *     is returned once, at creation, and never again.
  * @property tenantScope The tenants this assignment reaches, or omitted for "wherever the role
  *     does". Shown next to the assignment so an operator can tell a deliberately narrowed grant
  *     from an organization-wide one.
  */
 @Serializable
-data class RoleGroupAssignment(
-    @SerialName("group") val group: Group,
+data class RoleServiceAccountAssignment(
     @SerialName("resource_id") val resourceId: @Serializable(with = UuidSerializer::class) UUID? = null,
+    @SerialName("service_account") val serviceAccount: ServiceAccountResponse,
     @SerialName("tenant_scope") val tenantScope: List<@Serializable(with = UuidSerializer::class) UUID>? = null,
 )

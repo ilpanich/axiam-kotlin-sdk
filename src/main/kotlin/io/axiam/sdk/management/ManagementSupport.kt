@@ -4,8 +4,10 @@ import io.axiam.sdk.errors.NetworkError
 import io.axiam.sdk.internal.ManagementTransport
 import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.SerializationStrategy
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -80,19 +82,49 @@ internal object ManagementSupport {
     fun normalizeSearch(term: String?): String? = term?.trim()?.takeIf { it.isNotEmpty() }
 
     /**
+     * The one field an EMPTY list must not reach the wire as.
+     *
+     * CONTRACT.md §5.2.3 rule 1: `tenant_scope: []` is refused with `400`, and an
+     * empty list is exactly what building the field from a filtered collection
+     * produces for "no tenants named" — so both spellings of absent have to travel
+     * the same way, by not appearing. `encodeDefaults = false` covers the `null`
+     * default and nothing else: a list explicitly set to empty is not its default.
+     *
+     * Deliberately an allowlist of ONE, not a blanket "drop empty arrays". Elsewhere
+     * `[]` is meaningful — a replacement body clearing a list — and dropping it
+     * would make "remove every entry" inexpressible. `ManagementSemanticsTest` pins
+     * that with a webhook whose event list is being cleared.
+     */
+    private val OMIT_WHEN_EMPTY = setOf("tenant_scope")
+
+    /**
      * Encodes a request body exactly as it goes on the socket.
      *
      * Routed through [ManagementTransport.WIRE] — the single writer that
      * serializes a `Sensitive` in the clear (§27.5) and omits unset properties
      * (§27.4 rule 5). A body encoded with any other `Json` throws rather than
      * quietly emitting a placeholder the server would reject.
+     *
+     * The one thing the serializer configuration cannot express is [OMIT_WHEN_EMPTY],
+     * which is applied here — the single choke point every generated write goes
+     * through, so no namespace handle can be written that skips it.
      */
     fun <T> encodeBody(operation: String, serializer: SerializationStrategy<T>, body: T): String =
         try {
-            ManagementTransport.WIRE.encodeToString(serializer, body)
+            dropEmptyAllowlisted(
+                ManagementTransport.WIRE.encodeToJsonElement(serializer, body),
+            ).toString()
         } catch (e: Exception) {
             throw NetworkError("$operation: could not encode the request body: ${e.message}", e)
         }
+
+    /** Removes any [OMIT_WHEN_EMPTY] property that encoded to an empty array. */
+    private fun dropEmptyAllowlisted(encoded: JsonElement): JsonElement {
+        val obj = encoded as? JsonObject ?: return encoded
+        val empty = OMIT_WHEN_EMPTY.filter { (obj[it] as? JsonArray)?.isEmpty() == true }
+        if (empty.isEmpty()) return encoded
+        return JsonObject(obj.filterKeys { it !in empty })
+    }
 
     /** Converts a response node into a model, or throws a [NetworkError]. */
     fun <T> decode(operation: String, deserializer: DeserializationStrategy<T>, node: JsonElement?): T {
