@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-beta05] - 2026-08-30
+
 ### Added
+
+- Contract 1.35 (carrying 1.34) — principal tenant, tenant_scope, service-account RBAC
 
 - **Contract 1.35, which carries contract 1.34 with it.** Nothing had been fanned
   out since 1.33, so this re-vendors `CONTRACT.md`, `openapi.json` and
@@ -50,6 +54,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   application gating a tenant switcher on that flag alone offers tenants the
   server refuses at the header.
 
+### Changed
+
+- `loginScopeOf` replaces `organizationLevelOf`, reading the §5.2 flag and the
+  §5.2.2/§5.2.3 scope in a single pass. `readJson` consumes the OkHttp response
+  body, so a second `...Of(response)` pass would have found an empty stream and
+  answered `false` for every login — a bug two separate readers would have shipped
+  with.
+
 ### Fixed
 
 - **A registration record for your own password was sealed against the wrong
@@ -81,14 +93,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the rule. The allowlist is one field wide on purpose — elsewhere `[]` is
   meaningful, a replacement body clearing a list, and `Contract135Test` pins that
   `UpdateWebhookRequest(events = emptyList())` still sends `"events":[]`.
-
-### Changed
-
-- `loginScopeOf` replaces `organizationLevelOf`, reading the §5.2 flag and the
-  §5.2.2/§5.2.3 scope in a single pass. `readJson` consumes the OkHttp response
-  body, so a second `...Of(response)` pass would have found an empty stream and
-  answered `false` for every login — a bug two separate readers would have shipped
-  with.
 
 ### Note on `X-Tenant-ID` vs `X-Axiam-Tenant`
 
