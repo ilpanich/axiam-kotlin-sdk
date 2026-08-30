@@ -5,12 +5,14 @@ package io.axiam.sdk.management
 
 import io.axiam.sdk.internal.ManagementTransport
 import io.axiam.sdk.management.models.AssignRoleToGroupRequest
+import io.axiam.sdk.management.models.AssignRoleToServiceAccountRequest
 import io.axiam.sdk.management.models.AssignRoleToUserRequest
 import io.axiam.sdk.management.models.CreateRoleRequest
 import io.axiam.sdk.management.models.GrantPermissionRequest
 import io.axiam.sdk.management.models.ResolvedPermissionGrant
 import io.axiam.sdk.management.models.Role
 import io.axiam.sdk.management.models.RoleGroupAssignment
+import io.axiam.sdk.management.models.RoleServiceAccountAssignment
 import io.axiam.sdk.management.models.RoleUserAssignment
 import io.axiam.sdk.management.models.UpdateRole
 import java.util.UUID
@@ -318,6 +320,64 @@ class RolesApi internal constructor(
             method = "DELETE",
             pathTemplate = "/api/v1/roles/{role_id}/permissions/{permission_id}",
             path = path,
+        )
+    }
+
+    /**
+     * Issues `GET /api/v1/roles/{role_id}/service-accounts`.
+     *
+     * @param roleId the role id to address
+     * @return the server response
+     */
+    suspend fun listServiceAccounts(roleId: UUID): List<RoleServiceAccountAssignment> {
+        val path = "/api/v1/roles/${roleId}/service-accounts"
+        val node = transport.send(
+            operation = "roles.list_service_accounts",
+            method = "GET",
+            pathTemplate = "/api/v1/roles/{role_id}/service-accounts",
+            path = path,
+        )
+        return ManagementSupport.decodeList("roles.list_service_accounts", RoleServiceAccountAssignment.serializer(), node)
+    }
+
+    /**
+     * Issues `POST /api/v1/roles/{role_id}/service-accounts`.
+     *
+     * Not retried: §27.4 rule 8 makes every write on this surface single-shot, including the ones
+     * that look idempotent.
+     *
+     * @param roleId the role id to address
+     * @param body the request body
+     */
+    suspend fun assignToServiceAccount(roleId: UUID, body: AssignRoleToServiceAccountRequest) {
+        val path = "/api/v1/roles/${roleId}/service-accounts"
+        val payload = ManagementSupport.encodeBody("roles.assign_to_service_account", AssignRoleToServiceAccountRequest.serializer(), body)
+        transport.send(
+            operation = "roles.assign_to_service_account",
+            method = "POST",
+            pathTemplate = "/api/v1/roles/{role_id}/service-accounts",
+            path = path, body = payload,
+        )
+    }
+
+    /**
+     * Issues `DELETE /api/v1/roles/{role_id}/service-accounts/{service_account_id}`.
+     *
+     * Not retried: §27.4 rule 8 makes every write on this surface single-shot, including the ones
+     * that look idempotent.
+     *
+     * @param roleId the role id to address
+     * @param serviceAccountId the service account id to address
+     * @param resourceId the optional resource id filter, or null to omit it
+     */
+    suspend fun unassignFromServiceAccount(roleId: UUID, serviceAccountId: UUID, resourceId: String?) {
+        val path = "/api/v1/roles/${roleId}/service-accounts/${serviceAccountId}"
+        val query = mapOf("resource_id" to resourceId)
+        transport.send(
+            operation = "roles.unassign_from_service_account",
+            method = "DELETE",
+            pathTemplate = "/api/v1/roles/{role_id}/service-accounts/{service_account_id}",
+            path = path, query = query,
         )
     }
 }

@@ -135,6 +135,21 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
     /** §18 shutdown flag, read on every operation. */
     private val closed = java.util.concurrent.atomic.AtomicBoolean(false)
 
+    /**
+     * CONTRACT.md §5.2.2 — the tenant the signed-in principal's record *lives* in,
+     * as reported by the login response.
+     *
+     * Distinct from [tenantId], which is the tenant being acted on: the two
+     * diverge for an organization-level principal that has selected another one.
+     * Read by [opaqueEnrollmentForSelf], which must seal a §23 record against the
+     * account's own tenant rather than whichever one this client is currently
+     * pointed at. `null` until a login completes. `@Volatile` because a client is
+     * shared across coroutines and a stale read here would seal against the wrong
+     * tenant — the whole failure this field exists to prevent.
+     */
+    @Volatile
+    private var principalTenantId: UUID? = null
+
     init {
         val cookieManager = CookieManager(null, CookiePolicy.ACCEPT_ALL)
         session = SessionState(cookieManager, baseUrl, tenantId, b.orgSlug, b.orgId)
@@ -503,11 +518,15 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
         }
         postJson(LOGIN_PATH, body).use { response ->
             when (response.code) {
-                200 -> return LoginResult(
-                    mfaRequired = false,
-                    user = buildUser(),
-                    organizationLevel = organizationLevelOf(response),
-                )
+                200 -> {
+                    val (organizationLevel, scope) = loginScopeOf(response)
+                    return LoginResult(
+                        mfaRequired = false,
+                        user = buildUser(),
+                        organizationLevel = organizationLevel,
+                        scope = scope,
+                    )
+                }
                 202 -> {
                     val wire = readJson(response)
                     val challenge = wire["challenge_token"]?.jsonPrimitive?.content ?: ""
@@ -571,10 +590,12 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
             if (response.code != 200) {
                 throw ErrorMapper.fromHttpStatus(response.code, "MFA verification failed", response)
             }
+            val (organizationLevel, scope) = loginScopeOf(response)
             return LoginResult(
                 mfaRequired = false,
                 user = buildUser(),
-                organizationLevel = organizationLevelOf(response),
+                organizationLevel = organizationLevel,
+                scope = scope,
             )
         }
     }
@@ -735,10 +756,12 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
                     val token = readJson(response)["challenge_token"]?.jsonPrimitive?.content ?: ""
                     return LoginResult(mfaRequired = true, challengeToken = Sensitive.of(token))
                 }
+                val (organizationLevel, scope) = loginScopeOf(response)
                 return LoginResult(
                     mfaRequired = false,
                     user = buildUser(),
-                    organizationLevel = organizationLevelOf(response),
+                    organizationLevel = organizationLevel,
+                    scope = scope,
                 )
             }
         }
@@ -768,13 +791,49 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
      *   `libaxiam_opaque_ffi` is not installed, or if the server names a
      *   key-stretching function this SDK cannot ask for.
      */
-    suspend fun opaqueEnrollment(password: CharArray): OpaqueEnrollment {
+    suspend fun opaqueEnrollment(password: CharArray): OpaqueEnrollment =
+        enroll(password, principalTenant = null)
+
+    /**
+     * Builds a registration record for the **caller's own** new password, sealed
+     * against the tenant the caller's account lives in.
+     *
+     * CONTRACT.md §5.2.2 rule 2. `POST /auth/password/change` and the record that
+     * accompanies it are about the account, not about whatever tenant the client
+     * is currently pointed at, and a record sealed against the acting tenant is
+     * refused with *"the OPAQUE session was issued for a different tenant"*.
+     *
+     * The distinction only bites for an organization-level principal that has
+     * selected another tenant to act on; for everyone else the two tenants are the
+     * same value and this behaves identically to [opaqueEnrollment]. It is still
+     * the method to call for a self-service password change, because which
+     * principal is signed in is not something the call site usually knows.
+     *
+     * @throws NetworkError when no login has completed on this client yet — the
+     *   principal tenant is reported by the login response, so there is nothing to
+     *   seal against before then — and on the same terms as [opaqueEnrollment]
+     *   otherwise.
+     */
+    suspend fun opaqueEnrollmentForSelf(password: CharArray): OpaqueEnrollment {
+        val principal = principalTenantId
+            ?: throw NetworkError(
+                "OPAQUE: no principal tenant is known yet — sign in before building " +
+                    "a registration record for your own password",
+            )
+        return enroll(password, principalTenant = principal)
+    }
+
+    /**
+     * The shared body of the two enrolment methods; they differ only in the tenant
+     * the record is sealed against.
+     */
+    private suspend fun enroll(password: CharArray, principalTenant: UUID?): OpaqueEnrollment {
         ensureOpen()
 
         Opaque.startRegistration(password).use { exchange ->
             val started = opaqueStart(
                 OPAQUE_REGISTER_START_PATH,
-                opaqueWorkspaceBody { put("registration_request", exchange.request) },
+                opaqueWorkspaceBody(principalTenant) { put("registration_request", exchange.request) },
                 "register/start",
             )
             val record = withContext(Dispatchers.Default) {
@@ -851,9 +910,20 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
      * to a credential identifier the server chooses, which is why a later
      * rename cannot invalidate a credential.
      */
-    private fun opaqueWorkspaceBody(extra: JsonObjectBuilder.() -> Unit): JsonObject =
+    private fun opaqueWorkspaceBody(
+        principalTenant: UUID? = null,
+        extra: JsonObjectBuilder.() -> Unit,
+    ): JsonObject =
         buildJsonObject {
-            put("tenant_slug", tenantId)
+            if (principalTenant == null) {
+                put("tenant_slug", tenantId)
+            } else {
+                // §5.2.2 rule 2: name the principal tenant by id, and do NOT also
+                // send the slug. A slug naming the acting tenant would out-vote
+                // the id server-side, which is the exact confusion this override
+                // exists to avoid.
+                put("tenant_id", principalTenant.toString())
+            }
             session.configuredOrgId()?.let { put("org_id", it.toString()) }
                 ?: session.configuredOrgSlug()?.let { put("org_slug", it) }
             extra()
@@ -1577,10 +1647,12 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
             if (http.code != 200) {
                 throw ErrorMapper.fromHttpStatus(http.code, "mfaSetupConfirm failed", http)
             }
+            val (organizationLevel, scope) = loginScopeOf(http)
             return LoginResult(
                 mfaRequired = false,
                 user = buildUser(),
-                organizationLevel = organizationLevelOf(http),
+                organizationLevel = organizationLevel,
+                scope = scope,
             )
         }
     }
@@ -1834,17 +1906,67 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
     }
 
     /**
-     * Reads the §5.2 `user.organization_level` flag off a completed login
-     * response.
+     * The §5.2 flag and the §5.2.2/§5.2.3 scope, read off a completed login
+     * response in one pass.
      *
-     * Absent means `false`, which is what a server older than contract 1.31
-     * answers and the safe direction in both cases: the client then offers no
-     * cross-tenant action rather than one that would `403`. Derived server-side
-     * and response-only — this SDK never sends it.
+     * One method rather than two because [readJson] consumes the response body:
+     * a second `...Of(response)` pass would find an empty stream and answer
+     * `false` for every login.
+     *
+     * @property organizationLevel absent means `false`, which is what a server
+     *   older than contract 1.31 answers and the safe direction in both cases:
+     *   the client then offers no cross-tenant action rather than one that would
+     *   `403`. Derived server-side and response-only — this SDK never sends it.
+     * @property scope `null` when the server reports none of §5.2.2/§5.2.3, which
+     *   is what a server older than contract 1.34 does.
      */
-    private fun organizationLevelOf(response: Response): Boolean =
-        readJson(response)["user"]?.jsonObject?.get("organization_level")
-            ?.jsonPrimitive?.booleanOrNull ?: false
+    private data class LoginScope(
+        val organizationLevel: Boolean,
+        val scope: PrincipalScope?,
+    )
+
+    /**
+     * Reads [LoginScope] off a completed login response and caches the principal
+     * tenant for [opaqueEnrollmentForSelf].
+     *
+     * §5.2.2 rule 1's fallback is applied here rather than left to the caller: an
+     * absent `principal_tenant_id` means **equal** to the acting tenant, not
+     * unknown, and that is the whole point of the field.
+     */
+    private fun loginScopeOf(response: Response): LoginScope {
+        val user = readJson(response)["user"]?.jsonObject
+            ?: return LoginScope(false, null)
+
+        val organizationLevel =
+            user["organization_level"]?.jsonPrimitive?.booleanOrNull ?: false
+
+        val acting = user.uuidOrNull("tenant_id")
+        val principal = user.uuidOrNull("principal_tenant_id") ?: acting
+        val principalSlug = user["principal_tenant_slug"]?.jsonPrimitive?.contentOrNull
+        val orgId = user.uuidOrNull("org_id")
+        // A present-but-empty list stays null: it would read as "reaches nothing",
+        // the opposite of what an omitted field means here (§5.2.3).
+        val reachable = (user["reachable_tenant_ids"] as? JsonArray)
+            ?.mapNotNull { runCatching { UUID.fromString(it.jsonPrimitive.content) }.getOrNull() }
+            ?.takeIf { it.isNotEmpty() }
+
+        if (acting == null && principal == null && principalSlug == null &&
+            orgId == null && reachable == null
+        ) {
+            return LoginScope(organizationLevel, null)
+        }
+
+        principalTenantId = principal
+        return LoginScope(
+            organizationLevel,
+            PrincipalScope(acting, principal, principalSlug, orgId, reachable),
+        )
+    }
+
+    /** A [UUID] from a JSON property, or `null` when absent or unparseable. */
+    private fun JsonObject.uuidOrNull(name: String): UUID? =
+        this[name]?.jsonPrimitive?.contentOrNull
+            ?.let { runCatching { UUID.fromString(it) }.getOrNull() }
 
     private fun buildUser(): AxiamUser {
         val access = session.cachedAccessToken()

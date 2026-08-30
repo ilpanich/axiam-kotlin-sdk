@@ -5,7 +5,9 @@ package io.axiam.sdk.management
 
 import io.axiam.sdk.Sensitive
 import io.axiam.sdk.management.models.AddMemberRequest
+import io.axiam.sdk.management.models.AddServiceAccountMemberRequest
 import io.axiam.sdk.management.models.AssignRoleToGroupRequest
+import io.axiam.sdk.management.models.AssignRoleToServiceAccountRequest
 import io.axiam.sdk.management.models.AssignRoleToUserRequest
 import io.axiam.sdk.management.models.AttestationMode
 import io.axiam.sdk.management.models.AuditLogEntry
@@ -76,6 +78,7 @@ import io.axiam.sdk.management.models.Resource
 import io.axiam.sdk.management.models.Role
 import io.axiam.sdk.management.models.RoleAssignment
 import io.axiam.sdk.management.models.RoleGroupAssignment
+import io.axiam.sdk.management.models.RoleServiceAccountAssignment
 import io.axiam.sdk.management.models.RoleUserAssignment
 import io.axiam.sdk.management.models.RotateSecretResponse
 import io.axiam.sdk.management.models.ScimTokenResponse
@@ -390,6 +393,34 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
         assertDecodedEveryField(result.first(), RoleAssignment.serializer(), item)
     }
 
+    /** Exercises groups.list_service_accounts. */
+    @Test
+    fun `groups list_service_accounts`() = runTest {
+        val body = "{\"items\": [{\"client_id\": \"example\", \"created_at\": \"2026-08-26T00:00:00Z\", \"id\": \"11111111-1111-4111-8111-111111111111\", \"name\": \"example\", \"status\": \"Active\", \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"updated_at\": \"2026-08-26T00:00:00Z\"}], \"total\": 1, \"offset\": 0, \"limit\": 200}"
+        mount("GET", "/api/v1/groups/$EXAMPLE_ID/service-accounts", 200, body)
+        val result = client.management().groups().listServiceAccounts(groupId = EXAMPLE_ID, page = PageRequest.of(50))
+        val item = (Json.parseToJsonElement(body) as JsonObject)["items"]!!.jsonArray.first().toString()
+        assertDecodedEveryField(result.items.first(), ServiceAccountResponse.serializer(), item)
+        client.management().groups().listServiceAccountsAll(groupId = EXAMPLE_ID, start = PageRequest.of(50))
+        client.management().groups().listServiceAccountsAll(groupId = EXAMPLE_ID)
+    }
+
+    /** Exercises groups.add_service_account. */
+    @Test
+    fun `groups add_service_account`() = runTest {
+        val body = ""
+        mount("POST", "/api/v1/groups/$EXAMPLE_ID/service-accounts", 204, body)
+        client.management().groups().addServiceAccount(groupId = EXAMPLE_ID, body = AddServiceAccountMemberRequest(serviceAccountId = EXAMPLE_ID))
+    }
+
+    /** Exercises groups.remove_service_account. */
+    @Test
+    fun `groups remove_service_account`() = runTest {
+        val body = ""
+        mount("DELETE", "/api/v1/groups/$EXAMPLE_ID/service-accounts/$EXAMPLE_ID", 204, body)
+        client.management().groups().removeServiceAccount(groupId = EXAMPLE_ID, serviceAccountId = EXAMPLE_ID)
+    }
+
     /** Exercises roles.list. */
     @Test
     fun `roles list`() = runTest {
@@ -513,6 +544,32 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
         val body = ""
         mount("DELETE", "/api/v1/roles/$EXAMPLE_ID/permissions/$EXAMPLE_ID", 204, body)
         client.management().roles().revokePermission(roleId = EXAMPLE_ID, permissionId = EXAMPLE_ID)
+    }
+
+    /** Exercises roles.list_service_accounts. */
+    @Test
+    fun `roles list_service_accounts`() = runTest {
+        val body = "[{\"service_account\": {\"client_id\": \"example\", \"created_at\": \"2026-08-26T00:00:00Z\", \"id\": \"11111111-1111-4111-8111-111111111111\", \"name\": \"example\", \"status\": \"Active\", \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"updated_at\": \"2026-08-26T00:00:00Z\"}}]"
+        mount("GET", "/api/v1/roles/$EXAMPLE_ID/service-accounts", 200, body)
+        val result = client.management().roles().listServiceAccounts(roleId = EXAMPLE_ID)
+        val item = Json.parseToJsonElement(body).jsonArray.first().toString()
+        assertDecodedEveryField(result.first(), RoleServiceAccountAssignment.serializer(), item)
+    }
+
+    /** Exercises roles.assign_to_service_account. */
+    @Test
+    fun `roles assign_to_service_account`() = runTest {
+        val body = ""
+        mount("POST", "/api/v1/roles/$EXAMPLE_ID/service-accounts", 204, body)
+        client.management().roles().assignToServiceAccount(roleId = EXAMPLE_ID, body = AssignRoleToServiceAccountRequest(serviceAccountId = EXAMPLE_ID))
+    }
+
+    /** Exercises roles.unassign_from_service_account. */
+    @Test
+    fun `roles unassign_from_service_account`() = runTest {
+        val body = ""
+        mount("DELETE", "/api/v1/roles/$EXAMPLE_ID/service-accounts/$EXAMPLE_ID", 204, body)
+        client.management().roles().unassignFromServiceAccount(roleId = EXAMPLE_ID, serviceAccountId = EXAMPLE_ID, resourceId = null)
     }
 
     /** Exercises permissions.list. */
@@ -736,6 +793,26 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
         val body = ""
         mount("POST", "/api/v1/service-accounts/$EXAMPLE_ID/bind-certificate", 200, body)
         client.management().serviceAccounts().bindCertificate(saId = EXAMPLE_ID, body = BindCertificate(certificateId = EXAMPLE_ID))
+    }
+
+    /** Exercises service_accounts.list_roles. */
+    @Test
+    fun `service_accounts list_roles`() = runTest {
+        val body = "[{\"role\": {\"created_at\": \"2026-08-26T00:00:00Z\", \"description\": \"example\", \"id\": \"11111111-1111-4111-8111-111111111111\", \"is_global\": true, \"name\": \"example\", \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"updated_at\": \"2026-08-26T00:00:00Z\"}}]"
+        mount("GET", "/api/v1/service-accounts/$EXAMPLE_ID/roles", 200, body)
+        val result = client.management().serviceAccounts().listRoles(serviceAccountId = EXAMPLE_ID)
+        val item = Json.parseToJsonElement(body).jsonArray.first().toString()
+        assertDecodedEveryField(result.first(), RoleAssignment.serializer(), item)
+    }
+
+    /** Exercises service_accounts.list_groups. */
+    @Test
+    fun `service_accounts list_groups`() = runTest {
+        val body = "[{\"created_at\": \"2026-08-26T00:00:00Z\", \"description\": \"example\", \"id\": \"11111111-1111-4111-8111-111111111111\", \"metadata\": null, \"name\": \"example\", \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"updated_at\": \"2026-08-26T00:00:00Z\"}]"
+        mount("GET", "/api/v1/service-accounts/$EXAMPLE_ID/groups", 200, body)
+        val result = client.management().serviceAccounts().listGroups(serviceAccountId = EXAMPLE_ID)
+        val item = Json.parseToJsonElement(body).jsonArray.first().toString()
+        assertDecodedEveryField(result.first(), Group.serializer(), item)
     }
 
     /** Exercises certificates.list. */
@@ -1650,13 +1727,16 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
             "federation.oidc_callback",
             "federation.update_config",
             "groups.add_member",
+            "groups.add_service_account",
             "groups.create",
             "groups.delete",
             "groups.get",
             "groups.list",
             "groups.list_members",
             "groups.list_roles",
+            "groups.list_service_accounts",
             "groups.remove_member",
+            "groups.remove_service_account",
             "groups.update",
             "notification_rules.create",
             "notification_rules.delete",
@@ -1704,6 +1784,7 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
             "resources.list_children",
             "resources.update",
             "roles.assign_to_group",
+            "roles.assign_to_service_account",
             "roles.assign_to_user",
             "roles.create",
             "roles.delete",
@@ -1712,9 +1793,11 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
             "roles.list",
             "roles.list_groups",
             "roles.list_permissions",
+            "roles.list_service_accounts",
             "roles.list_users",
             "roles.revoke_permission",
             "roles.unassign_from_group",
+            "roles.unassign_from_service_account",
             "roles.unassign_from_user",
             "roles.update",
             "scim_tokens.create",
@@ -1730,6 +1813,8 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
             "service_accounts.delete",
             "service_accounts.get",
             "service_accounts.list",
+            "service_accounts.list_groups",
+            "service_accounts.list_roles",
             "service_accounts.rotate_secret",
             "service_accounts.update",
             "settings.delete_tenant_override",
@@ -1764,7 +1849,7 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
             "webhooks.list",
             "webhooks.update",
         )
-        assertEquals(147, exercised.size,
+        assertEquals(155, exercised.size,
             "the generated surface must reach every operation the registry declares")
         assertEquals(expectedSurface(), exercised,
             "the generated surface and the registry must name the same operations")
