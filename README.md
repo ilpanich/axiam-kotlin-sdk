@@ -24,8 +24,10 @@ Source: [ilpanich/axiam-kotlin-sdk](https://github.com/ilpanich/axiam-kotlin-sdk
 
 ## Contract conformance
 
-This SDK conforms to CONTRACT.md §1–§7, §9–§13 and §12.7, §14, §15, §17, §19, §20, §21, §22, §23,
-§24, §25, §26, §27 (including §6.1 mTLS).
+This SDK conforms to **contract 1.38**: CONTRACT.md §1–§7, §9–§13 and §12.7, §14, §15, §17, §19,
+§20, §21, §22, §23, §24, §25, §26, §27 (including §6.1 mTLS). §12 is implemented in full at its
+1.38 shape: all **thirteen** operations, including the four public "Sign in with X" entry points,
+as `suspend` functions on the same `AxiamClient`.
 
 §12.7, §14, §15, §20, §22, §23, §24, §25, §26 and §27 are named rather than folded into the range
 because they landed after this SDK already stated its coverage: widening the range silently would
@@ -283,10 +285,11 @@ guard, and the SDK's own guards never stop there.
 
 ## OIDC / SSO relying-party helpers (§12)
 
-Nine canonical operations (CONTRACT.md §12) let this SDK offer "Login with AXIAM"
+Thirteen canonical operations (CONTRACT.md §12) let this SDK offer "Login with AXIAM"
 (authorization-code + PKCE), service-account machine-to-machine login, token
-introspection/revocation, and the upstream-IdP federation pair — all as `suspend`
-functions directly on `AxiamClient` (no separate client type, no `*Async` twins):
+introspection/revocation, the upstream-IdP federation pair, and — as of **contract 1.38** — the
+public "Sign in with X" buttons — all as `suspend` functions directly on `AxiamClient` (no
+separate client type, no `*Async` twins):
 
 | Operation | Wire call | Notes |
 | --- | --- | --- |
@@ -299,6 +302,65 @@ functions directly on `AxiamClient` (no separate client type, no `*Async` twins)
 | `revoke(params)` | `POST /oauth2/revoke` | Idempotent: any `200` (including for an unknown token) is success |
 | `ssoStart(params)` | `POST /api/v1/auth/federation/oidc/start` | Upstream-IdP SSO step 1 — no JWT required |
 | `ssoComplete(params)` | `POST /api/v1/auth/federation/oidc/callback` | Step 2 — session arrives as `Set-Cookie` via the §4 cookie jar |
+| `ssoProviders(params?)` | `GET /api/v1/auth/federation/providers` | Which "Sign in with X" buttons to render. Identifiers go in the **query string**, not a body. An **empty list is a success** — see below |
+| `ssoStartOauth2(params)` | `POST /api/v1/auth/federation/oauth2/start` | Step 1 through a **plain-OAuth2** upstream (GitHub, Facebook, `generic_oauth2`). PKCE is mandatory here and is generated and held **server-side** |
+| `ssoCompleteOauth2(params)` | `POST /api/v1/auth/federation/oauth2/callback` | Step 2 of the OAuth2 variant; same `Set-Cookie` session as `ssoComplete` |
+| `ssoCompleteHandoff(params)` | `POST /api/v1/auth/federation/handoff` | Redeems the single-use `axiam_handoff` code the SAML and Apple flows deliver. Valid 60 s, redeemable **once**; a `401` is terminal and is **never retried** |
+
+### The four public login-provider operations, and their rules (contract 1.38)
+
+**An empty provider list is a success** (§12.1 note 9). An unknown organization, a known one with
+nothing configured, and a request naming no workspace at all *all* answer `200` with an empty
+array. `ssoProviders` returns every one of them as an ordinary result and never throws: the
+endpoint is deliberately shaped so it cannot be used to enumerate organization or tenant slugs, and
+telling the three apart client-side would rebuild that oracle. For the same reason `ssoProviders`
+is the one federation operation that does **not** throw client-side when no workspace resolves — it
+sends the request. You learn you named the workspace wrongly at the start operations, where every
+failure is a uniform `401`.
+
+**`protocol` selects which start operation to call** (§12.1 note 10) — never `providerKind`, which
+is branding:
+
+| `provider.protocol` | call |
+| --- | --- |
+| `PROTOCOL_OIDC_CONNECT` | `ssoStart` |
+| `PROTOCOL_OAUTH2` | `ssoStartOauth2` |
+| `PROTOCOL_SAML` | the SAML login endpoint — not a §12 vocabulary operation |
+
+The server refuses a mismatch with `400` rather than accepting it silently, so a client that assumes
+OIDC fails on every GitHub button. An `OAuth2` provider also issues **no ID token**: the server
+authenticates by calling a configured userinfo endpoint, so there is no signature, no `nonce` and no
+`aud`. A UI rendering these buttons should make that distinction visible rather than presenting the
+two as equivalent.
+
+**`FederationProvider` is modelled faithfully** — `id`, `providerKind`, `displayName`, `protocol`,
+`hasBundledMark`, `inherited`, and the nullable `buttonIcon` (a `data:` URL, `null` for most
+providers). Inheritance from the organization is resolved **server-side** (§12.1 note 13): pass back
+the workspace and the `id` `ssoProviders` gave you, and compute nothing locally. `inherited` is
+reported so an admin surface can show that a provider is not the tenant's to edit.
+
+**A `400` from a start call is a configuration refusal** (§12.1 rule 12a). On the SAML and Apple
+flows the identity provider never validates the SPA `redirectUri`, so the server confines it to its
+own issuer origin plus `AXIAM__AUTH__SSO_SPA_ORIGINS`. That refusal surfaces as **`NetworkError`** —
+§2's `400` row, the taxonomy's configuration/programming-error member, as distinct from the
+`AuthError` a `401` gets — and is not retried, because the same origin will be refused again. Never
+build a `redirectUri` out of anything the identity provider supplied.
+
+```kotlin
+val providers = client.ssoProviders().providers
+// An empty list is normal: render a password form, not an error.
+for (provider in providers) {
+    when (provider.protocol) {
+        PROTOCOL_OIDC_CONNECT -> client.ssoStart(SsoStartParams(provider.id, redirectUri))
+        PROTOCOL_OAUTH2 -> client.ssoStartOauth2(SsoStartOauth2Params(provider.id, redirectUri))
+        else -> { /* Saml: use the SAML login endpoint */ }
+    }
+}
+
+// SAML / Apple come back through a handoff code on your own callback route.
+val code = call.request.queryParameters[HANDOFF_QUERY_PARAM]!!
+val session = client.ssoCompleteHandoff(SsoCompleteHandoffParams(code)) // once, never retried
+```
 
 Configure the relying party's `client_id`/`client_secret` **at construction time** (needed by
 `oidcExchange`'s §12.4 rule 4 audience check, so it can never disagree with a per-call value):
@@ -374,7 +436,7 @@ The five §12.5 secret fields — `accessToken`, `refreshToken`, `idToken`, `oid
 material in this SDK (§7); `state` and `nonce` are not secrets and are plain strings.
 
 See [`examples/oidc-login/OidcLoginExample.kt`](examples/oidc-login/OidcLoginExample.kt) for a
-complete, framework-free walk-through of all nine operations.
+complete, framework-free walk-through of the original nine operations.
 
 ## UMA 2.0 — protecting resources whose owner isn't the caller (§20)
 

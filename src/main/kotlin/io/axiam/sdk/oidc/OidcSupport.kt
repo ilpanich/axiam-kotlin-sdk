@@ -561,6 +561,188 @@ internal class OidcSupport(
         }
     }
 
+    // -- 10-13. Public "Sign in with X" login providers (contract 1.38) ---------
+
+    /**
+     * `GET /api/v1/auth/federation/providers` (§12.1) — which "Sign in with X"
+     * buttons to render for a workspace.
+     *
+     * The identifiers travel as QUERY parameters; this is a `GET` and sends no
+     * body. The neighbouring start operations take the same four in a JSON
+     * body, and the two are one copy-paste apart.
+     *
+     * **An empty list is a success.** An unknown organization, a known one
+     * with nothing configured, and a request naming no workspace at all all
+     * answer `200` with an empty `providers` array (§12.1 note 9). Every one
+     * of them comes back as an ordinary result and nothing here synthesises a
+     * not-found: the endpoint is deliberately shaped so it cannot be used to
+     * enumerate organization or tenant slugs, and an SDK that reintroduced the
+     * distinction would reintroduce the oracle. A caller learns it named the
+     * workspace wrongly at the start operations, where every failure is a
+     * uniform `401`.
+     *
+     * For the same reason this is the one federation operation that does NOT
+     * throw client-side when no workspace resolves.
+     */
+    suspend fun ssoProviders(params: SsoProvidersParams): FederationProviderList {
+        val tenantIsUuid = UUID_RE.matches(configuredTenantId)
+        val tenantId = params.tenantId ?: configuredTenantId.takeIf { tenantIsUuid }
+        val tenantSlug = params.tenantSlug ?: configuredTenantId.takeUnless { tenantIsUuid }
+        val orgId = params.orgId ?: session.configuredOrgId()?.toString()
+        val orgSlug = params.orgSlug ?: session.configuredOrgSlug()
+
+        val url = (baseUrl + SSO_PROVIDERS_PATH).toHttpUrlOrNull()
+            ?.newBuilder()
+            ?.apply {
+                if (orgId != null) addQueryParameter("org_id", orgId)
+                else if (orgSlug != null) addQueryParameter("org_slug", orgSlug)
+                if (tenantId != null) addQueryParameter("tenant_id", tenantId)
+                else if (tenantSlug != null) addQueryParameter("tenant_slug", tenantSlug)
+            }
+            ?.build()
+            ?: throw NetworkError("ssoProviders: the client base URL is not a valid HTTP URL")
+
+        val response = executeRequest(Request.Builder().url(url).get().build())
+        response.use {
+            if (it.code != 200) throw ErrorMapper.fromHttpStatus(it.code, "ssoProviders request failed", it)
+            val json = parseJsonObject(it)
+            val providers = (json["providers"] as? JsonArray).orEmpty().map { element ->
+                val provider = element.jsonObject
+                FederationProvider(
+                    id = provider.str("id"),
+                    providerKind = provider.str("provider_kind"),
+                    displayName = provider.str("display_name"),
+                    protocol = provider.str("protocol"),
+                    hasBundledMark = provider.boolOrFalse("has_bundled_mark"),
+                    inherited = provider.boolOrFalse("inherited"),
+                    buttonIcon = provider.strOrNull("button_icon"),
+                )
+            }
+            return FederationProviderList(providers)
+        }
+    }
+
+    /**
+     * `POST /api/v1/auth/federation/oauth2/start` (§12.1) — step 1 of a login
+     * through a PLAIN-OAUTH2 upstream (GitHub, Facebook, `generic_oauth2`).
+     *
+     * Call this, rather than [ssoStart], exactly when the provider's
+     * `protocol` is [PROTOCOL_OAUTH2] (§12.1 note 10). The server refuses a
+     * mismatch with `400` rather than accepting it silently, so a client that
+     * assumes OIDC fails on every GitHub button.
+     *
+     * PKCE is mandatory on this path and is generated and stored SERVER-SIDE;
+     * nothing about it appears in the request or the response (§12.1 note 11).
+     *
+     * A `400` here can mean the `redirectUri` is not on an origin the
+     * deployment accepts (§12.1 rule 12a). §2's `400` row makes that a
+     * [NetworkError] — this taxonomy's configuration/programming-error member,
+     * as distinct from the [AuthError] a `401` gets. It is not retried.
+     */
+    suspend fun ssoStartOauth2(params: SsoStartOauth2Params): SsoStartResult {
+        val tenantIsUuid = UUID_RE.matches(configuredTenantId)
+        val tenantId = params.tenantId ?: configuredTenantId.takeIf { tenantIsUuid }
+        val tenantSlug = params.tenantSlug ?: configuredTenantId.takeUnless { tenantIsUuid }
+        val orgId = params.orgId ?: session.configuredOrgId()?.toString()
+        val orgSlug = params.orgSlug ?: session.configuredOrgSlug()
+
+        if (orgId == null && orgSlug == null) {
+            throw AuthError(
+                "ssoStartOauth2 requires organization context: pass orgId or orgSlug, or construct " +
+                    "the client with one (CONTRACT.md §5.1).",
+            )
+        }
+
+        val body = buildJsonObject {
+            put("federation_config_id", params.federationConfigId)
+            put("redirect_uri", params.redirectUri)
+            if (tenantId != null) put("tenant_id", tenantId) else put("tenant_slug", tenantSlug)
+            if (orgId != null) put("org_id", orgId) else put("org_slug", orgSlug)
+        }
+        val response = postJsonAbsolute(baseUrl + SSO_OAUTH2_START_PATH, body)
+        response.use {
+            // The federation endpoints document no error schema — fall through
+            // to the generic §2 status mapping, never an OAuth2ErrorResponse
+            // parse, which §12.3 rule 3 scopes to /oauth2/*.
+            if (it.code != 200) {
+                throw ErrorMapper.fromHttpStatus(it.code, "ssoStartOauth2 request failed", it)
+            }
+            val json = parseJsonObject(it)
+            return SsoStartResult(
+                authorizeUrl = json.str("authorize_url"),
+                state = json.str("state"),
+                expiresInSecs = json.long("expires_in_secs"),
+            )
+        }
+    }
+
+    /**
+     * `POST /api/v1/auth/federation/oauth2/callback` (§12.1) — step 2 of a
+     * plain-OAuth2 login.
+     *
+     * The session arrives as `Set-Cookie` (§12.1 note 6) and, because this
+     * request runs through the SAME shared [httpClient] every other call uses,
+     * the §4 cookie jar captures it automatically.
+     *
+     * §12.4 does not apply: an `OAuth2` provider issues no ID token, so there
+     * is nothing to validate — the server authenticated the user by calling a
+     * configured userinfo endpoint with the access token it had just received
+     * (§12.1 note 11).
+     */
+    suspend fun ssoCompleteOauth2(params: SsoCompleteOauth2Params): SsoCompleteResult {
+        val body = buildJsonObject {
+            put("state", params.state)
+            put("code", params.code)
+        }
+        return completeFederationSession(SSO_OAUTH2_CALLBACK_PATH, body, "ssoCompleteOauth2")
+    }
+
+    /**
+     * `POST /api/v1/auth/federation/handoff` (§12.1) — redeem the single-use
+     * code the SAML and Apple flows deliver.
+     *
+     * Those two protocols return CROSS-SITE, so the server cannot set
+     * `SameSite=Strict` session cookies on that response. It instead redirects
+     * the browser to the SPA's callback URL with a [HANDOFF_QUERY_PARAM] query
+     * parameter; this call posts that code back same-origin, and THIS response
+     * is the one that carries the cookies (§12.1 note 12).
+     *
+     * **The code is gone either way.** It is valid for
+     * [HANDOFF_CODE_TTL_SECONDS] seconds and redeemable ONCE. Redeem it from
+     * the same origin, immediately, and never retry a failed redemption: a
+     * `401` is terminal, and this makes exactly one wire call so that it
+     * cannot become a retry by accident. Unknown, expired and already-redeemed
+     * all answer the same `401`, deliberately.
+     */
+    suspend fun ssoCompleteHandoff(params: SsoCompleteHandoffParams): SsoCompleteResult {
+        val body = buildJsonObject { put("code", params.code) }
+        return completeFederationSession(SSO_HANDOFF_PATH, body, "ssoCompleteHandoff")
+    }
+
+    /**
+     * The shared body of the two session-establishing federation POSTs: one
+     * wire call, the §2 status mapping on anything but `200`, and the §4
+     * cookie jar absorbing the session because the request went through the
+     * shared [httpClient].
+     */
+    private suspend fun completeFederationSession(
+        path: String,
+        body: JsonObject,
+        operation: String,
+    ): SsoCompleteResult {
+        val response = postJsonAbsolute(baseUrl + path, body)
+        response.use {
+            if (it.code != 200) throw ErrorMapper.fromHttpStatus(it.code, "$operation request failed", it)
+            val json = parseJsonObject(it)
+            return SsoCompleteResult(
+                userId = json.str("user_id"),
+                sessionId = json.str("session_id"),
+                expiresIn = json.long("expires_in"),
+                redirectUri = json.str("redirect_uri"),
+            )
+        }
+    }
+
     // -- shared wire mechanics -------------------------------------------------
 
     // -- §14 Device Authorization Grant (RFC 8628) -------------------------
@@ -1473,6 +1655,18 @@ internal class OidcSupport(
 
         /** Path of the federation SSO step-2 (callback) endpoint. */
         const val SSO_CALLBACK_PATH: String = "/api/v1/auth/federation/oidc/callback"
+
+        /** Path of the public provider-listing endpoint (contract 1.38). */
+        const val SSO_PROVIDERS_PATH: String = "/api/v1/auth/federation/providers"
+
+        /** Path of the plain-OAuth2 federation step-1 endpoint (contract 1.38). */
+        const val SSO_OAUTH2_START_PATH: String = "/api/v1/auth/federation/oauth2/start"
+
+        /** Path of the plain-OAuth2 federation step-2 (callback) endpoint (contract 1.38). */
+        const val SSO_OAUTH2_CALLBACK_PATH: String = "/api/v1/auth/federation/oauth2/callback"
+
+        /** Path of the handoff-code redemption endpoint (contract 1.38). */
+        const val SSO_HANDOFF_PATH: String = "/api/v1/auth/federation/handoff"
 
         /** Minimum — and default — discovery-cache TTL (CONTRACT.md §12.3 rule 6). */
         const val MIN_DISCOVERY_TTL_MS: Long = 300_000L

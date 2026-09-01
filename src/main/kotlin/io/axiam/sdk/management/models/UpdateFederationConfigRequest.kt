@@ -17,8 +17,17 @@ import kotlinx.serialization.json.JsonElement
  * the properties you mean to change is the whole API — there is no builder because Kotlin does not
  * need one, and no way to accidentally send a field you did not name.
  *
+ * @property allowTenantInheritance Whether tenants may inherit this organization-level
+ *     provider.
  * @property allowedAlgorithms Accepted signature algorithms (CQ-B40/REQ-14 AC-5).
+ * @property allowedIssuerTenants Accepted external IdP tenants for a templated issuer.
+ *     Replaced wholesale.
+ * @property appleKeyId Apple Key ID. `Some(None)` clears it.
+ * @property appleTeamId Apple Team ID. `Some(None)` clears it.
  * @property attributeMap the server's attribute_map field
+ * @property authorizationEndpoint OAuth2-variant authorization endpoint. `Some(None)` clears
+ *     it.
+ * @property buttonIcon Sign-in-button icon for a generic provider. `Some(None)` clears it.
  * @property clientId the server's client_id field
  * @property clientSecret the server's client_secret field -- SECRET: redacted from toString
  *     and from every rendering except the one request body it is sent in
@@ -27,17 +36,34 @@ import kotlinx.serialization.json.JsonElement
  *     (CQ-B40/REQ-14 AC-5). `Some(None)` clears the stored cert.
  * @property metadataUrl the server's metadata_url field
  * @property provider the server's provider field
+ * @property providerSlug Operator-chosen identifier for a `generic_*` kind. `Some(None)`
+ *     clears it.
+ * @property requirePkce Send PKCE on the authorization request.
+ * @property scopes Scopes to request. Replaced wholesale; empty restores the per-kind default.
+ * @property tokenEndpoint OAuth2-variant token endpoint. `Some(None)` clears it.
  * @property tokenExchange the server's token_exchange field
+ * @property userinfoEndpoint OAuth2-variant userinfo endpoint. `Some(None)` clears it.
  */
 @Serializable
 data class UpdateFederationConfigRequest(
+    @SerialName("allow_tenant_inheritance") val allowTenantInheritance: Boolean? = null,
     @SerialName("allowed_algorithms") val allowedAlgorithms: List<String>? = null,
+    @SerialName("allowed_issuer_tenants") val allowedIssuerTenants: List<String>? = null,
+    @SerialName("apple_key_id") val appleKeyId: String? = null,
+    @SerialName("apple_team_id") val appleTeamId: String? = null,
     @SerialName("attribute_map") val attributeMap: JsonElement? = null,
+    @SerialName("authorization_endpoint") val authorizationEndpoint: String? = null,
+    @SerialName("button_icon") val buttonIcon: String? = null,
     @SerialName("client_id") val clientId: String? = null,
     @SerialName("client_secret") val clientSecret: @Contextual Sensitive<String>? = null,
     @SerialName("enabled") val enabled: Boolean? = null,
     @SerialName("idp_signing_cert_pem") val idpSigningCertPem: String? = null,
     @SerialName("metadata_url") val metadataUrl: String? = null,
     @SerialName("provider") val provider: String? = null,
+    @SerialName("provider_slug") val providerSlug: String? = null,
+    @SerialName("require_pkce") val requirePkce: Boolean? = null,
+    @SerialName("scopes") val scopes: List<String>? = null,
+    @SerialName("token_endpoint") val tokenEndpoint: String? = null,
     @SerialName("token_exchange") val tokenExchange: TokenExchangeTrustRequest? = null,
+    @SerialName("userinfo_endpoint") val userinfoEndpoint: String? = null,
 )
