@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-beta08] - 2026-09-02
+
 ### Added
+
+- Contract 1.38 — the four public "Sign in with X" operations (#57)
 
 - **Contract 1.38: the four public "Sign in with X" operations.** `ssoProviders`,
   `ssoStartOauth2`, `ssoCompleteOauth2` and `ssoCompleteHandoff`, under the exact
