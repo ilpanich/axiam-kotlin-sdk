@@ -1101,7 +1101,7 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
     /** Exercises federation.list_configs. */
     @Test
     fun `federation list_configs`() = runTest {
-        val body = "{\"items\": [{\"attribute_map\": null, \"client_id\": \"example\", \"created_at\": \"2026-08-26T00:00:00Z\", \"enabled\": true, \"id\": \"11111111-1111-4111-8111-111111111111\", \"protocol\": \"example\", \"provider\": \"example\", \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"token_exchange\": {\"accepted_audiences\": [], \"enabled\": true, \"max_token_age_secs\": 1, \"scope_map\": {}, \"subject_mapping\": \"example\"}, \"updated_at\": \"2026-08-26T00:00:00Z\"}], \"total\": 1, \"offset\": 0, \"limit\": 200}"
+        val body = "{\"items\": [{\"allow_tenant_inheritance\": true, \"allowed_algorithms\": [], \"allowed_issuer_tenants\": [], \"attribute_map\": null, \"client_id\": \"example\", \"created_at\": \"2026-08-26T00:00:00Z\", \"effective_scopes\": [], \"enabled\": true, \"has_bundled_mark\": true, \"id\": \"11111111-1111-4111-8111-111111111111\", \"mints_client_secret\": true, \"pkce_required\": true, \"protocol\": \"example\", \"provider\": \"example\", \"provider_kind\": \"example\", \"scopes\": [], \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"token_exchange\": {\"accepted_audiences\": [], \"enabled\": true, \"max_token_age_secs\": 1, \"scope_map\": {}, \"subject_mapping\": \"example\"}, \"updated_at\": \"2026-08-26T00:00:00Z\"}], \"total\": 1, \"offset\": 0, \"limit\": 200}"
         mount("GET", "/api/v1/federation-configs", 200, body)
         val result = client.management().federation().listConfigs(page = PageRequest.of(50))
         val item = (Json.parseToJsonElement(body) as JsonObject)["items"]!!.jsonArray.first().toString()
@@ -1113,7 +1113,7 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
     /** Exercises federation.create_config. */
     @Test
     fun `federation create_config`() = runTest {
-        val body = "{\"attribute_map\": null, \"client_id\": \"example\", \"created_at\": \"2026-08-26T00:00:00Z\", \"enabled\": true, \"id\": \"11111111-1111-4111-8111-111111111111\", \"protocol\": \"example\", \"provider\": \"example\", \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"token_exchange\": {\"accepted_audiences\": [], \"enabled\": true, \"max_token_age_secs\": 1, \"scope_map\": {}, \"subject_mapping\": \"example\"}, \"updated_at\": \"2026-08-26T00:00:00Z\"}"
+        val body = "{\"allow_tenant_inheritance\": true, \"allowed_algorithms\": [], \"allowed_issuer_tenants\": [], \"attribute_map\": null, \"client_id\": \"example\", \"created_at\": \"2026-08-26T00:00:00Z\", \"effective_scopes\": [], \"enabled\": true, \"has_bundled_mark\": true, \"id\": \"11111111-1111-4111-8111-111111111111\", \"mints_client_secret\": true, \"pkce_required\": true, \"protocol\": \"example\", \"provider\": \"example\", \"provider_kind\": \"example\", \"scopes\": [], \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"token_exchange\": {\"accepted_audiences\": [], \"enabled\": true, \"max_token_age_secs\": 1, \"scope_map\": {}, \"subject_mapping\": \"example\"}, \"updated_at\": \"2026-08-26T00:00:00Z\"}"
         mount("POST", "/api/v1/federation-configs", 201, body)
         val result = client.management().federation().createConfig(body = CreateFederationConfigRequest(clientId = "example", clientSecret = Sensitive.of("example"), protocol = "example", provider = "example"))
         assertDecodedEveryField(result, FederationConfigResponse.serializer(), body)
@@ -1122,7 +1122,7 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
     /** Exercises federation.get_config. */
     @Test
     fun `federation get_config`() = runTest {
-        val body = "{\"attribute_map\": null, \"client_id\": \"example\", \"created_at\": \"2026-08-26T00:00:00Z\", \"enabled\": true, \"id\": \"11111111-1111-4111-8111-111111111111\", \"protocol\": \"example\", \"provider\": \"example\", \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"token_exchange\": {\"accepted_audiences\": [], \"enabled\": true, \"max_token_age_secs\": 1, \"scope_map\": {}, \"subject_mapping\": \"example\"}, \"updated_at\": \"2026-08-26T00:00:00Z\"}"
+        val body = "{\"allow_tenant_inheritance\": true, \"allowed_algorithms\": [], \"allowed_issuer_tenants\": [], \"attribute_map\": null, \"client_id\": \"example\", \"created_at\": \"2026-08-26T00:00:00Z\", \"effective_scopes\": [], \"enabled\": true, \"has_bundled_mark\": true, \"id\": \"11111111-1111-4111-8111-111111111111\", \"mints_client_secret\": true, \"pkce_required\": true, \"protocol\": \"example\", \"provider\": \"example\", \"provider_kind\": \"example\", \"scopes\": [], \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"token_exchange\": {\"accepted_audiences\": [], \"enabled\": true, \"max_token_age_secs\": 1, \"scope_map\": {}, \"subject_mapping\": \"example\"}, \"updated_at\": \"2026-08-26T00:00:00Z\"}"
         mount("GET", "/api/v1/federation-configs/$EXAMPLE_ID", 200, body)
         val result = client.management().federation().getConfig(id = EXAMPLE_ID)
         assertDecodedEveryField(result, FederationConfigResponse.serializer(), body)
@@ -1131,7 +1131,7 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
     /** Exercises federation.update_config. */
     @Test
     fun `federation update_config`() = runTest {
-        val body = "{\"attribute_map\": null, \"client_id\": \"example\", \"created_at\": \"2026-08-26T00:00:00Z\", \"enabled\": true, \"id\": \"11111111-1111-4111-8111-111111111111\", \"protocol\": \"example\", \"provider\": \"example\", \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"token_exchange\": {\"accepted_audiences\": [], \"enabled\": true, \"max_token_age_secs\": 1, \"scope_map\": {}, \"subject_mapping\": \"example\"}, \"updated_at\": \"2026-08-26T00:00:00Z\"}"
+        val body = "{\"allow_tenant_inheritance\": true, \"allowed_algorithms\": [], \"allowed_issuer_tenants\": [], \"attribute_map\": null, \"client_id\": \"example\", \"created_at\": \"2026-08-26T00:00:00Z\", \"effective_scopes\": [], \"enabled\": true, \"has_bundled_mark\": true, \"id\": \"11111111-1111-4111-8111-111111111111\", \"mints_client_secret\": true, \"pkce_required\": true, \"protocol\": \"example\", \"provider\": \"example\", \"provider_kind\": \"example\", \"scopes\": [], \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"token_exchange\": {\"accepted_audiences\": [], \"enabled\": true, \"max_token_age_secs\": 1, \"scope_map\": {}, \"subject_mapping\": \"example\"}, \"updated_at\": \"2026-08-26T00:00:00Z\"}"
         mount("PUT", "/api/v1/federation-configs/$EXAMPLE_ID", 200, body)
         val result = client.management().federation().updateConfig(id = EXAMPLE_ID, body = UpdateFederationConfigRequest(clientSecret = Sensitive.of("example")))
         assertDecodedEveryField(result, FederationConfigResponse.serializer(), body)

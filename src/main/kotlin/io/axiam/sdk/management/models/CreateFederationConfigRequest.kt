@@ -12,9 +12,24 @@ import kotlinx.serialization.json.JsonElement
 /**
  * The CreateFederationConfigRequest schema from the server's OpenAPI document.
  *
+ * @property allowTenantInheritance Whether tenants of this organization may inherit this
+ *     provider. Only meaningful on a config in the organization-scope tenant.
  * @property allowedAlgorithms Accepted JWT signing algorithms (OIDC) or signature algorithms
  *     (SAML). Defaults to `&#91;"RS256"&#93;` when not provided (CQ-B40/REQ-14 AC-5).
+ * @property allowedIssuerTenants External IdP tenant identifiers accepted when the provider
+ *     publishes a templated issuer (Entra ID's `{tenantid}`).
+ * @property appleKeyId Apple Key ID of the `.p8` signing key (10 characters). With both Apple
+ *     identifiers set, `client_secret` is the `.p8` key itself and AXIAM mints a fresh five-minute
+ *     client secret per token exchange.
+ * @property appleTeamId Apple Team ID (10 characters).
  * @property attributeMap Maps external IdP attributes to AXIAM user fields.
+ * @property authorizationEndpoint OAuth2-variant authorization endpoint. Required for
+ *     `OAuth2`.
+ * @property buttonIcon Sign-in-button icon for a **generic** provider, as a base64 raster data
+ *     URL (`data:image/png;base64,…`), already cropped to `PROVIDER_ICON_SIZE_PX` square by the
+ *     client. Refused for the branded kinds: Google, Apple and Microsoft all publish
+ *     sign-in-button rules that require their own mark, so substituting a picture would produce a
+ *     button that breaks the guidelines it exists to follow.
  * @property clientId OAuth2 client ID registered with the external IdP.
  * @property clientSecret OAuth2 client secret registered with the external IdP. -- SECRET:
  *     redacted from toString and from every rendering except the one request body it is sent in
@@ -23,17 +38,40 @@ import kotlinx.serialization.json.JsonElement
  * @property metadataUrl OIDC discovery URL or SAML metadata URL.
  * @property protocol Federation protocol: "OidcConnect" or "Saml".
  * @property provider Display name for the identity provider (e.g., "Google", "Okta").
+ * @property providerKind Which provider this is: `google`, `github`, `facebook`, `apple`,
+ *     `microsoft`, `generic_oidc`, `generic_oauth2` or `generic_saml`. Selects the sign-in
+ *     button's branding, the per-kind defaults, and the key on which a tenant config overrides an
+ *     inherited organization one. Omitted ⇒ derived from `protocol`, which is what every config
+ *     written before this field existed means.
+ * @property providerSlug Operator-chosen identifier, **required** for the `generic_*` kinds
+ *     and refused for the branded ones.
+ * @property requirePkce Send PKCE on the authorization request. Forced on for `OAuth2`.
+ * @property scopes Scopes to request. Omitted or empty ⇒ the per-kind default.
+ * @property tokenEndpoint OAuth2-variant token endpoint. Required for `OAuth2`.
  * @property tokenExchange the server's token_exchange field
+ * @property userinfoEndpoint OAuth2-variant userinfo endpoint. Required for `OAuth2`.
  */
 @Serializable
 data class CreateFederationConfigRequest(
+    @SerialName("allow_tenant_inheritance") val allowTenantInheritance: Boolean? = null,
     @SerialName("allowed_algorithms") val allowedAlgorithms: List<String>? = null,
+    @SerialName("allowed_issuer_tenants") val allowedIssuerTenants: List<String>? = null,
+    @SerialName("apple_key_id") val appleKeyId: String? = null,
+    @SerialName("apple_team_id") val appleTeamId: String? = null,
     @SerialName("attribute_map") val attributeMap: JsonElement? = null,
+    @SerialName("authorization_endpoint") val authorizationEndpoint: String? = null,
+    @SerialName("button_icon") val buttonIcon: String? = null,
     @SerialName("client_id") val clientId: String,
     @SerialName("client_secret") val clientSecret: @Contextual Sensitive<String>,
     @SerialName("idp_signing_cert_pem") val idpSigningCertPem: String? = null,
     @SerialName("metadata_url") val metadataUrl: String? = null,
     @SerialName("protocol") val protocol: String,
     @SerialName("provider") val provider: String,
+    @SerialName("provider_kind") val providerKind: String? = null,
+    @SerialName("provider_slug") val providerSlug: String? = null,
+    @SerialName("require_pkce") val requirePkce: Boolean? = null,
+    @SerialName("scopes") val scopes: List<String>? = null,
+    @SerialName("token_endpoint") val tokenEndpoint: String? = null,
     @SerialName("token_exchange") val tokenExchange: TokenExchangeTrustRequest? = null,
+    @SerialName("userinfo_endpoint") val userinfoEndpoint: String? = null,
 )

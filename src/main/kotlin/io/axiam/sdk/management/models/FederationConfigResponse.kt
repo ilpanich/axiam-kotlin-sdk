@@ -14,29 +14,72 @@ import kotlinx.serialization.json.JsonElement
 /**
  * Federation config response -- omits client_secret.
  *
+ * @property allowTenantInheritance Whether tenants of this organization may inherit this
+ *     provider.
+ * @property allowedAlgorithms Accepted signing algorithms. Returned for OIDC and SAML;
+ *     meaningless, and therefore empty, for the OAuth2 variant.
+ * @property allowedIssuerTenants Accepted external IdP tenants for a templated issuer.
+ * @property appleKeyId Apple Key ID.
+ * @property appleTeamId Apple Team ID. Not secret — the `.p8` key is, and it is never
+ *     returned.
  * @property attributeMap the server's attribute_map field
+ * @property authorizationEndpoint OAuth2-variant authorization endpoint.
+ * @property buttonIcon Custom sign-in-button icon, when one is set.
  * @property clientId the server's client_id field
  * @property createdAt the server's created_at field
+ * @property effectiveScopes The per-kind default that an empty `scopes` resolves to. Returned
+ *     so the admin UI can show what will actually be requested without duplicating the table.
  * @property enabled the server's enabled field
+ * @property hasBundledMark Whether AXIAM ships this provider's own mark. When true the button
+ *     uses it and `button_icon` is refused; when false the button reads "Sign in with <provider>"
+ *     and may carry a custom icon.
  * @property id the server's id field
  * @property metadataUrl the server's metadata_url field
+ * @property mintsClientSecret Whether AXIAM mints this provider's client secret itself, per
+ *     exchange, rather than sending a stored one. True only for an Apple config with both
+ *     identifiers set.
+ * @property pkceRequired Whether PKCE is sent on the authorization request. Always true for
+ *     the OAuth2 variant regardless of the stored flag.
  * @property protocol the server's protocol field
  * @property provider the server's provider field
+ * @property providerKind Which provider this is. Derived from `protocol` for a config written
+ *     before the field existed.
+ * @property providerSlug Operator-chosen identifier for a `generic_*` kind.
+ * @property scopes Scopes as stored. Empty means "use the per-kind default"; see
+ *     `effective_scopes`.
  * @property tenantId the server's tenant_id field
+ * @property tokenEndpoint OAuth2-variant token endpoint.
  * @property tokenExchange X4 external token-exchange trust.
  * @property updatedAt the server's updated_at field
+ * @property userinfoEndpoint OAuth2-variant userinfo endpoint.
  */
 @Serializable
 data class FederationConfigResponse(
+    @SerialName("allow_tenant_inheritance") val allowTenantInheritance: Boolean,
+    @SerialName("allowed_algorithms") val allowedAlgorithms: List<String>,
+    @SerialName("allowed_issuer_tenants") val allowedIssuerTenants: List<String>,
+    @SerialName("apple_key_id") val appleKeyId: String? = null,
+    @SerialName("apple_team_id") val appleTeamId: String? = null,
     @SerialName("attribute_map") val attributeMap: JsonElement,
+    @SerialName("authorization_endpoint") val authorizationEndpoint: String? = null,
+    @SerialName("button_icon") val buttonIcon: String? = null,
     @SerialName("client_id") val clientId: String,
     @SerialName("created_at") val createdAt: @Serializable(with = InstantSerializer::class) Instant,
+    @SerialName("effective_scopes") val effectiveScopes: List<String>,
     @SerialName("enabled") val enabled: Boolean,
+    @SerialName("has_bundled_mark") val hasBundledMark: Boolean,
     @SerialName("id") val id: @Serializable(with = UuidSerializer::class) UUID,
     @SerialName("metadata_url") val metadataUrl: String? = null,
+    @SerialName("mints_client_secret") val mintsClientSecret: Boolean,
+    @SerialName("pkce_required") val pkceRequired: Boolean,
     @SerialName("protocol") val protocol: String,
     @SerialName("provider") val provider: String,
+    @SerialName("provider_kind") val providerKind: String,
+    @SerialName("provider_slug") val providerSlug: String? = null,
+    @SerialName("scopes") val scopes: List<String>,
     @SerialName("tenant_id") val tenantId: @Serializable(with = UuidSerializer::class) UUID,
+    @SerialName("token_endpoint") val tokenEndpoint: String? = null,
     @SerialName("token_exchange") val tokenExchange: TokenExchangeTrustResponse,
     @SerialName("updated_at") val updatedAt: @Serializable(with = InstantSerializer::class) Instant,
+    @SerialName("userinfo_endpoint") val userinfoEndpoint: String? = null,
 )

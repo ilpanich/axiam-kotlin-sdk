@@ -294,12 +294,36 @@ class ManagementSparseBodiesGeneratedTest {
     @Test
     fun `updateFederationConfigRequest sends only what was set`() {
         assertKeys(
+            UpdateFederationConfigRequest(allowTenantInheritance = true),
+            UpdateFederationConfigRequest.serializer(), "allow_tenant_inheritance",
+        )
+        assertKeys(
             UpdateFederationConfigRequest(allowedAlgorithms = emptyList()),
             UpdateFederationConfigRequest.serializer(), "allowed_algorithms",
         )
         assertKeys(
+            UpdateFederationConfigRequest(allowedIssuerTenants = emptyList()),
+            UpdateFederationConfigRequest.serializer(), "allowed_issuer_tenants",
+        )
+        assertKeys(
+            UpdateFederationConfigRequest(appleKeyId = "example"),
+            UpdateFederationConfigRequest.serializer(), "apple_key_id",
+        )
+        assertKeys(
+            UpdateFederationConfigRequest(appleTeamId = "example"),
+            UpdateFederationConfigRequest.serializer(), "apple_team_id",
+        )
+        assertKeys(
             UpdateFederationConfigRequest(attributeMap = kotlinx.serialization.json.JsonObject(emptyMap())),
             UpdateFederationConfigRequest.serializer(), "attribute_map",
+        )
+        assertKeys(
+            UpdateFederationConfigRequest(authorizationEndpoint = "example"),
+            UpdateFederationConfigRequest.serializer(), "authorization_endpoint",
+        )
+        assertKeys(
+            UpdateFederationConfigRequest(buttonIcon = "example"),
+            UpdateFederationConfigRequest.serializer(), "button_icon",
         )
         assertKeys(
             UpdateFederationConfigRequest(clientId = "example"),
@@ -326,25 +350,58 @@ class ManagementSparseBodiesGeneratedTest {
             UpdateFederationConfigRequest.serializer(), "provider",
         )
         assertKeys(
+            UpdateFederationConfigRequest(providerSlug = "example"),
+            UpdateFederationConfigRequest.serializer(), "provider_slug",
+        )
+        assertKeys(
+            UpdateFederationConfigRequest(requirePkce = true),
+            UpdateFederationConfigRequest.serializer(), "require_pkce",
+        )
+        assertKeys(
+            UpdateFederationConfigRequest(scopes = emptyList()),
+            UpdateFederationConfigRequest.serializer(), "scopes",
+        )
+        assertKeys(
+            UpdateFederationConfigRequest(tokenEndpoint = "example"),
+            UpdateFederationConfigRequest.serializer(), "token_endpoint",
+        )
+        assertKeys(
             UpdateFederationConfigRequest(tokenExchange = TokenExchangeTrustRequest()),
             UpdateFederationConfigRequest.serializer(), "token_exchange",
         )
         assertKeys(
+            UpdateFederationConfigRequest(userinfoEndpoint = "example"),
+            UpdateFederationConfigRequest.serializer(), "userinfo_endpoint",
+        )
+        assertKeys(
             UpdateFederationConfigRequest(
+                allowTenantInheritance = true,
                 allowedAlgorithms = emptyList(),
+                allowedIssuerTenants = emptyList(),
+                appleKeyId = "example",
+                appleTeamId = "example",
                 attributeMap = kotlinx.serialization.json.JsonObject(emptyMap()),
+                authorizationEndpoint = "example",
+                buttonIcon = "example",
                 clientId = "example",
                 clientSecret = Sensitive.of("example"),
                 enabled = true,
                 idpSigningCertPem = "example",
                 metadataUrl = "example",
                 provider = "example",
+                providerSlug = "example",
+                requirePkce = true,
+                scopes = emptyList(),
+                tokenEndpoint = "example",
                 tokenExchange = TokenExchangeTrustRequest(),
+                userinfoEndpoint = "example",
             ),
             UpdateFederationConfigRequest.serializer(),
-            "allowed_algorithms", "attribute_map", "client_id", "client_secret",
-            "enabled", "idp_signing_cert_pem", "metadata_url", "provider",
-            "token_exchange",
+            "allow_tenant_inheritance", "allowed_algorithms", "allowed_issuer_tenants",
+            "apple_key_id", "apple_team_id", "attribute_map", "authorization_endpoint",
+            "button_icon", "client_id", "client_secret", "enabled", "idp_signing_cert_pem",
+            "metadata_url", "provider", "provider_slug", "require_pkce", "scopes",
+            "token_endpoint", "token_exchange", "userinfo_endpoint",
         )
         assertKeys(UpdateFederationConfigRequest(), UpdateFederationConfigRequest.serializer())
     }
