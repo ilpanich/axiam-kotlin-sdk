@@ -31,8 +31,14 @@ import io.axiam.sdk.oidc.VerifiedLogoutToken
 import io.axiam.sdk.oidc.OidcSupport
 import io.axiam.sdk.oidc.OidcTokenSet
 import io.axiam.sdk.oidc.RevokeParams
+import io.axiam.sdk.oidc.FederationProviderList
+import io.axiam.sdk.oidc.PROTOCOL_OAUTH2
+import io.axiam.sdk.oidc.SsoCompleteHandoffParams
+import io.axiam.sdk.oidc.SsoCompleteOauth2Params
 import io.axiam.sdk.oidc.SsoCompleteParams
 import io.axiam.sdk.oidc.SsoCompleteResult
+import io.axiam.sdk.oidc.SsoProvidersParams
+import io.axiam.sdk.oidc.SsoStartOauth2Params
 import io.axiam.sdk.oidc.SsoStartParams
 import io.axiam.sdk.oidc.SsoStartResult
 import io.axiam.sdk.opaque.KsfParams
@@ -1250,6 +1256,42 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
      * cookie jar captures it automatically.
      */
     suspend fun ssoComplete(params: SsoCompleteParams): SsoCompleteResult = oidcSupport.ssoComplete(params)
+
+    /**
+     * `GET /api/v1/auth/federation/providers` (§12.1, contract 1.38) — which
+     * "Sign in with X" buttons to render.
+     *
+     * An **empty list is a success**: an unknown organization, a known one
+     * with nothing configured, and a request naming no workspace at all all
+     * answer that way (§12.1 note 9), so the endpoint cannot be used to
+     * enumerate organization or tenant slugs.
+     */
+    suspend fun ssoProviders(params: SsoProvidersParams = SsoProvidersParams()): FederationProviderList =
+        oidcSupport.ssoProviders(params)
+
+    /**
+     * `POST /api/v1/auth/federation/oauth2/start` (§12.1, contract 1.38) —
+     * step 1 through a plain-OAuth2 upstream. Call this, rather than
+     * [ssoStart], exactly when the provider's `protocol` is [PROTOCOL_OAUTH2]
+     * (§12.1 note 10). PKCE here is server-side (§12.1 note 11).
+     */
+    suspend fun ssoStartOauth2(params: SsoStartOauth2Params): SsoStartResult =
+        oidcSupport.ssoStartOauth2(params)
+
+    /**
+     * `POST /api/v1/auth/federation/oauth2/callback` (§12.1, contract 1.38) —
+     * step 2 of a plain-OAuth2 login; the session arrives as `Set-Cookie`.
+     */
+    suspend fun ssoCompleteOauth2(params: SsoCompleteOauth2Params): SsoCompleteResult =
+        oidcSupport.ssoCompleteOauth2(params)
+
+    /**
+     * `POST /api/v1/auth/federation/handoff` (§12.1, contract 1.38) — redeem
+     * the single-use `axiam_handoff` code the SAML and Apple flows deliver.
+     * Valid 60 s, redeemable once; a `401` is terminal and is never retried.
+     */
+    suspend fun ssoCompleteHandoff(params: SsoCompleteHandoffParams): SsoCompleteResult =
+        oidcSupport.ssoCompleteHandoff(params)
 
     /**
      * Releases this client's local resources (CONTRACT.md §18).

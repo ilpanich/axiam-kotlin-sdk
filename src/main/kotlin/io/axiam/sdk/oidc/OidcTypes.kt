@@ -363,6 +363,157 @@ data class SsoCompleteResult(
 
 
 // ---------------------------------------------------------------------------
+// Public "Sign in with X" login providers (contract 1.38)
+// ---------------------------------------------------------------------------
+
+/** `protocol` value selecting `ssoStart` (CONTRACT.md §12.1 note 10). */
+public const val PROTOCOL_OIDC_CONNECT: String = "OidcConnect"
+
+/** `protocol` value selecting `ssoStartOauth2` (§12.1 note 10). */
+public const val PROTOCOL_OAUTH2: String = "OAuth2"
+
+/**
+ * `protocol` value selecting the SAML login endpoint, which is NOT a §12
+ * vocabulary operation (§12.1 note 10).
+ */
+public const val PROTOCOL_SAML: String = "Saml"
+
+/**
+ * The query parameter the server delivers a handoff code in, on the SPA's own
+ * callback URL (CONTRACT.md §12.1 note 12).
+ */
+public const val HANDOFF_QUERY_PARAM: String = "axiam_handoff"
+
+/**
+ * How long a handoff code is valid, in seconds (§12.1 note 12). It exists to
+ * survive one redirect. Redeem it immediately, once.
+ */
+public const val HANDOFF_CODE_TTL_SECONDS: Long = 60L
+
+/**
+ * One sign-in button (wire schema `PublicFederationProvider`, §12.1).
+ *
+ * This is an UNAUTHENTICATED response and carries only what a button needs.
+ * There is no `client_id`, no `metadata_url`, no endpoint URL and no secret —
+ * absent by construction rather than filtered out — and §12.1 note 9 forbids
+ * an SDK from expecting one.
+ *
+ * @property id config id, echoed back to the matching start operation. Pass it
+ *   through unmodified: inheritance is resolved server-side (§12.1 note 13)
+ *   and this id is how the server is told what resolution produced.
+ * @property providerKind which provider this is, for the button's branding —
+ *   `google`, `github`, `generic_oidc`, … NOT what selects the start
+ *   operation; see [protocol].
+ * @property displayName the operator's display name for the provider.
+ * @property protocol [PROTOCOL_OIDC_CONNECT], [PROTOCOL_SAML] or
+ *   [PROTOCOL_OAUTH2] — the value that selects which start operation to call
+ *   (§12.1 note 10). Kept as the wire string rather than narrowed to an enum:
+ *   the server owns this vocabulary, and a value added server-side must not
+ *   become a parse failure for the whole list. An `OAuth2` provider issues NO
+ *   ID token (§12.1 note 11), which a surface rendering these buttons SHOULD
+ *   make visible rather than presenting the two as equivalent.
+ * @property hasBundledMark whether AXIAM ships this provider's own sign-in
+ *   mark, which its button must then use. `false` for the generic kinds, whose
+ *   buttons read "Sign in with [displayName]" and use [buttonIcon] where the
+ *   operator uploaded one.
+ * @property inherited `true` when the provider is inherited from the
+ *   organization rather than configured on this tenant (§12.1 note 13).
+ *   Informational — it is not needed to sign in, and nothing here computes it.
+ * @property buttonIcon the operator's uploaded button icon as a bounded raster
+ *   `data:` URL, or `null` — which is the case for most providers.
+ */
+public data class FederationProvider(
+    val id: String,
+    val providerKind: String,
+    val displayName: String,
+    val protocol: String,
+    val hasBundledMark: Boolean,
+    val inherited: Boolean,
+    val buttonIcon: String? = null,
+)
+
+/**
+ * The result of `ssoProviders` (wire schema
+ * `PublicFederationProvidersResponse`, §12.1).
+ *
+ * An EMPTY [providers] is a normal success, never an error (§12.1 note 9).
+ *
+ * @property providers the providers to offer, in a stable server-defined order
+ */
+public data class FederationProviderList(
+    val providers: List<FederationProvider>,
+)
+
+/**
+ * Arguments to `ssoProviders` (`GET /api/v1/auth/federation/providers`).
+ *
+ * Every field is optional and all four travel as QUERY parameters — this is a
+ * `GET` and sends no body (§12.1). Unset forms fall back to the client's own
+ * configuration (§5.1); when neither these nor the client supply a workspace
+ * the request is still sent, and still answers `200` with an empty list.
+ *
+ * @property orgId organization UUID. Alternative to [orgSlug].
+ * @property orgSlug organization slug, as typed on a login page.
+ * @property tenantId tenant UUID. Alternative to [tenantSlug].
+ * @property tenantSlug tenant slug. Omitted or blank means the organization's own scope.
+ */
+public data class SsoProvidersParams(
+    val orgId: String? = null,
+    val orgSlug: String? = null,
+    val tenantId: String? = null,
+    val tenantSlug: String? = null,
+)
+
+/**
+ * Arguments to `ssoStartOauth2`
+ * (`POST /api/v1/auth/federation/oauth2/start`).
+ *
+ * Deliberately identical in shape to [SsoStartParams], because the wire
+ * schemas are: `OAuth2StartRequest` and `OidcStartRequest` differ in name
+ * only. There is NO PKCE field, and there must not be — the verifier is
+ * generated and held server-side (§12.1 note 11).
+ *
+ * @property federationConfigId UUID of the federation configuration, from [FederationProvider.id].
+ * @property redirectUri the SPA callback route, sent to the provider verbatim.
+ * @property tenantId tenant UUID; defaults to the client's configuration (§5.1).
+ * @property tenantSlug tenant slug. Alternative to [tenantId].
+ * @property orgId organization UUID; defaults to the client's configuration (§5.1).
+ * @property orgSlug organization slug. Alternative to [orgId].
+ */
+public data class SsoStartOauth2Params(
+    val federationConfigId: String,
+    val redirectUri: String,
+    val tenantId: String? = null,
+    val tenantSlug: String? = null,
+    val orgId: String? = null,
+    val orgSlug: String? = null,
+)
+
+/**
+ * Arguments to `ssoCompleteOauth2`
+ * (`POST /api/v1/auth/federation/oauth2/callback`).
+ *
+ * @property state the `state` the provider redirected back with — the one `ssoStartOauth2` returned.
+ * @property code the authorization code the provider redirected back with.
+ */
+public data class SsoCompleteOauth2Params(
+    val state: String,
+    val code: String,
+)
+
+/**
+ * Arguments to `ssoCompleteHandoff` (`POST /api/v1/auth/federation/handoff`).
+ *
+ * @property code the single-use code read from the [HANDOFF_QUERY_PARAM] query
+ *   parameter on the SPA's callback URL. Valid for [HANDOFF_CODE_TTL_SECONDS]
+ *   seconds and redeemable ONCE.
+ */
+public data class SsoCompleteHandoffParams(
+    val code: String,
+)
+
+
+// ---------------------------------------------------------------------------
 // §14 Device Authorization Grant (RFC 8628)
 // ---------------------------------------------------------------------------
 
