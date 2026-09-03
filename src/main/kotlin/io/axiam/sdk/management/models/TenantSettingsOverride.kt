@@ -39,6 +39,7 @@ import kotlinx.serialization.Serializable
  * @property requireLowercase the server's require_lowercase field
  * @property requireSymbols the server's require_symbols field
  * @property requireUppercase the server's require_uppercase field
+ * @property webauthnUserVerification the server's webauthn_user_verification field
  */
 @Serializable
 data class TenantSettingsOverride(
@@ -66,4 +67,5 @@ data class TenantSettingsOverride(
     @SerialName("require_lowercase") val requireLowercase: Boolean? = null,
     @SerialName("require_symbols") val requireSymbols: Boolean? = null,
     @SerialName("require_uppercase") val requireUppercase: Boolean? = null,
+    @SerialName("webauthn_user_verification") val webauthnUserVerification: String? = null,
 )
