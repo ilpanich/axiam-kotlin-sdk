@@ -208,6 +208,10 @@ class ManagementSparseBodiesGeneratedTest {
             TenantSettingsOverride.serializer(), "require_uppercase",
         )
         assertKeys(
+            TenantSettingsOverride(webauthnUserVerification = "example"),
+            TenantSettingsOverride.serializer(), "webauthn_user_verification",
+        )
+        assertKeys(
             TenantSettingsOverride(
                 accessTokenLifetimeSecs = 1L,
                 adminNotificationsEnabled = true,
@@ -233,6 +237,7 @@ class ManagementSparseBodiesGeneratedTest {
                 requireLowercase = true,
                 requireSymbols = true,
                 requireUppercase = true,
+                webauthnUserVerification = "example",
             ),
             TenantSettingsOverride.serializer(),
             "access_token_lifetime_secs", "admin_notifications_enabled", "default_cert_validity_days",
@@ -242,7 +247,7 @@ class ManagementSparseBodiesGeneratedTest {
             "max_lockout_duration_secs", "mfa_challenge_lifetime_secs", "mfa_enforced",
             "min_length", "opaque_ksf", "opaque_mode", "opaque_suite", "password_history_count",
             "refresh_token_lifetime_secs", "require_digits", "require_lowercase",
-            "require_symbols", "require_uppercase",
+            "require_symbols", "require_uppercase", "webauthn_user_verification",
         )
         assertKeys(TenantSettingsOverride(), TenantSettingsOverride.serializer())
     }

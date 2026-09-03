@@ -27,6 +27,7 @@ import kotlinx.serialization.Serializable
  * @property scopeId the server's scope_id field
  * @property token the server's token field
  * @property updatedAt the server's updated_at field
+ * @property webauthn the server's webauthn field
  */
 @Serializable
 data class SecuritySettings(
@@ -44,4 +45,5 @@ data class SecuritySettings(
     @SerialName("scope_id") val scopeId: @Serializable(with = UuidSerializer::class) UUID,
     @SerialName("token") val token: TokenPolicy,
     @SerialName("updated_at") val updatedAt: @Serializable(with = InstantSerializer::class) Instant,
+    @SerialName("webauthn") val webauthn: WebauthnPolicy,
 )
