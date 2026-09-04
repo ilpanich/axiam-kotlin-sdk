@@ -98,9 +98,12 @@ jobs:
       - name: No TLS-bypass patterns in src/main
         run: bash scripts/tls-bypass-gate.sh
 
+  # R-2 (T-235): runs on BOTH triggers. It was `pull_request`-only, so a stale
+  # §27 surface reaching a tag by any route other than `scripts/mass-tag.sh`
+  # met no repository-side gate at all — and the version it shipped under can
+  # never be reused.
   management-drift-check:
     name: "§27 management surface drift-check"
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
@@ -311,7 +314,7 @@ jobs:
     # pull_request, so the GPG_PRIVATE_KEY / CENTRAL_TOKEN_* secrets are never
     # exposed to a PR-triggered job.
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    needs: verify-tag-on-main
+    needs: [management-drift-check, verify-tag-on-main]
     runs-on: ubuntu-latest
     environment: maven-central
     permissions:
