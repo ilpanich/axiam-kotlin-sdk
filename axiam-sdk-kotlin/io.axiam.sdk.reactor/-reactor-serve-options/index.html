@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html class="no-js">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" charset="UTF-8">
+    <title>ReactorServeOptions</title>
+    <link href="../../../images/logo-icon.svg" rel="icon" type="image/svg">
+    <script>var pathToRoot = "../../../";</script>
+    <script>document.documentElement.classList.replace("no-js","js");</script>
+    <script>const storage = localStorage.getItem("dokka-dark-mode")
+    if (storage == null) {
+        const osDarkSchemePreferred = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+        if (osDarkSchemePreferred === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    } else {
+        const savedDarkMode = JSON.parse(storage)
+        if(savedDarkMode === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    }
+    </script>
+<script type="text/javascript" src="https://unpkg.com/kotlin-playground@1/dist/playground.min.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/sourceset_dependencies.js" async="async"></script>
+<link href="../../../styles/style.css" rel="Stylesheet">
+<link href="../../../styles/main.css" rel="Stylesheet">
+<link href="../../../styles/prism.css" rel="Stylesheet">
+<link href="../../../styles/logo-styles.css" rel="Stylesheet">
+<link href="../../../styles/font-jb-sans-auto.css" rel="Stylesheet">
+<script type="text/javascript" src="../../../scripts/clipboard.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/navigation-loader.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/platform-content-handler.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/main.js" defer="defer"></script>
+<script type="text/javascript" src="../../../scripts/prism.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/symbol-parameters-wrapper_deferred.js" defer="defer"></script>
+</head>
+<body>
+    <div class="root">
+<nav class="navigation" id="navigation-wrapper">
+    <div class="navigation--inner">
+        <div class="navigation-title">
+            <button class="menu-toggle" id="menu-toggle" type="button">toggle menu</button>
+            <div class="library-name">
+                    <a class="library-name--link" href="../../../index.html">
+                            axiam-sdk-kotlin
+                    </a>
+            </div>
+            <div class="library-version">
+1.0.0-beta11            </div>
+        </div>
+        <div class="filter-section" id="filter-section">
+                <button class="platform-tag platform-selector jvm-like" data-active="" data-filter=":dokkaHtml/main">jvm</button>
+        </div>
+    </div>
+    <div class="navigation-controls">
+        <button class="navigation-controls--btn navigation-controls--theme" id="theme-toggle-button" type="button">switch theme</button>
+        <div class="navigation-controls--btn navigation-controls--search" id="searchBar" role="button">search in API</div>
+    </div>
+</nav>
+        <div id="container">
+            <div class="sidebar" id="leftColumn">
+                <div class="sidebar--inner" id="sideMenu"></div>
+            </div>
+            <div id="main">
+<div class="main-content" data-page-type="classlike" id="content" pageIds="axiam-sdk-kotlin::io.axiam.sdk.reactor/ReactorServeOptions///PointingToDeclaration//769193423">
+  <div class="breadcrumbs"><a href="../../../index.html">axiam-sdk-kotlin</a><span class="delimiter">/</span><a href="../index.html">io.axiam.sdk.reactor</a><span class="delimiter">/</span><span class="current">ReactorServeOptions</span></div>
+  <div class="cover ">
+    <h1 class="cover"><span>Reactor</span><wbr></wbr><span>Serve</span><wbr></wbr><span><span>Options</span></span></h1>
+    <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">class </span><a href="index.html">ReactorServeOptions</a><span class="token punctuation">(</span><span class="parameters "><span class="parameter "><span class="token keyword">val </span>transport<span class="token operator">: </span><a href="../-reactor-transport/index.html">ReactorTransport</a><span class="token punctuation">, </span></span><span class="parameter "><span class="token keyword">val </span>tenantId<span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/util/UUID.html">UUID</a><span class="token punctuation">, </span></span><span class="parameter "><span class="token keyword">val </span>signingKey<span class="token operator">: </span><a href="../../io.axiam.sdk/-sensitive/index.html">Sensitive</a><span class="token operator">&lt;</span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-byte-array/index.html">ByteArray</a><span class="token operator">&gt;</span><span class="token punctuation">, </span></span><span class="parameter "><span class="token keyword">val </span>handler<span class="token operator">: </span><a href="../-reactor-handler/index.html">ReactorHandler</a><span class="token operator">?</span><span class="token operator"> = </span>null<span class="token punctuation">, </span></span><span class="parameter "><span class="token keyword">val </span>listener<span class="token operator">: </span><a href="../-reactor-listener/index.html">ReactorListener</a><span class="token operator">?</span><span class="token operator"> = </span>null<span class="token punctuation">, </span></span><span class="parameter "><span class="token keyword">val </span>queue<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">?</span><span class="token operator"> = </span>null<span class="token punctuation">, </span></span><span class="parameter "><span class="token keyword">val </span>reactorId<span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/util/UUID.html">UUID</a><span class="token operator">?</span><span class="token operator"> = </span>null<span class="token punctuation">, </span></span><span class="parameter "><span class="token keyword">val </span>log<span class="token operator">: </span><a href="../-reactor-log/index.html">ReactorLog</a><span class="token operator"> = </span>ReactorLog { }<span class="token punctuation">, </span></span><span class="parameter "><span class="token keyword">val </span>freshnessSkew<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.time/-duration/index.html">Duration</a><span class="token operator"> = </span>ReactorProtocol.DEFAULT_FRESHNESS_SKEW<span class="token punctuation">, </span></span><span class="parameter "><span class="token keyword">val </span>shutdownGrace<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.time/-duration/index.html">Duration</a><span class="token operator"> = </span>10.seconds<span class="token punctuation">, </span></span><span class="parameter "><span class="token keyword">val </span>clock<span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/time/Clock.html">Clock</a><span class="token operator"> = </span>Clock.systemUTC()<span class="token punctuation">, </span></span><span class="parameter "><span class="token keyword">val </span>telemetryHook<span class="token operator">: </span><a href="../../io.axiam.sdk.telemetry/-telemetry-hook/index.html">TelemetryHook</a><span class="token operator">?</span><span class="token operator"> = </span>null</span></span><span class="token punctuation">)</span></div><p class="paragraph">Configuration for <a href="../reactor-serve.html">reactorServe</a>.</p><p class="paragraph">Exactly one of <a href="handler.html">handler</a> (intercept) or <a href="listener.html">listener</a> (observe) must be supplied, and exactly one of <a href="queue.html">queue</a> or <a href="reactor-id.html">reactorId</a> must name the queue to consume.</p><p class="paragraph"><strong>The queue is the server's, not yours.</strong> Whichever you use, the runtime only ever <i>consumes</i> it. <a href="reactor-id.html">reactorId</a> derives <code class="lang-kotlin">axiam.reactor.q.&lt;tenant&gt;.&lt;id&gt;</code> from the tenant and reactor id this runtime is configured as, and nothing else.</p></div></div>
+  </div>
+  <div class="tabbedcontent">
+    <div class="tabs-section" tabs-section="tabs-section"><button class="section-tab" data-active="" data-togglable="CONSTRUCTOR,TYPE,PROPERTY,FUNCTION">Members</button></div>
+    <div class="tabs-section-body">
+      <div data-togglable="CONSTRUCTOR">
+        <h2 class="">Constructors</h2>
+        <div class="table"><a data-name="-1585153824%2FConstructors%2F769193423" anchor-label="ReactorServeOptions" id="-1585153824%2FConstructors%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-togglable="CONSTRUCTOR" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="-reactor-serve-options.html"><span>Reactor</span><wbr></wbr><span>Serve</span><wbr></wbr><span><span>Options</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1585153824%2FConstructors%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">constructor</span><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">transport<span class="token operator">: </span><a href="../-reactor-transport/index.html">ReactorTransport</a><span class="token punctuation">, </span></span><span class="parameter ">tenantId<span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/util/UUID.html">UUID</a><span class="token punctuation">, </span></span><span class="parameter ">signingKey<span class="token operator">: </span><a href="../../io.axiam.sdk/-sensitive/index.html">Sensitive</a><span class="token operator">&lt;</span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-byte-array/index.html">ByteArray</a><span class="token operator">&gt;</span><span class="token punctuation">, </span></span><span class="parameter ">handler<span class="token operator">: </span><a href="../-reactor-handler/index.html">ReactorHandler</a><span class="token operator">?</span><span class="token operator"> = </span>null<span class="token punctuation">, </span></span><span class="parameter ">listener<span class="token operator">: </span><a href="../-reactor-listener/index.html">ReactorListener</a><span class="token operator">?</span><span class="token operator"> = </span>null<span class="token punctuation">, </span></span><span class="parameter ">queue<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">?</span><span class="token operator"> = </span>null<span class="token punctuation">, </span></span><span class="parameter ">reactorId<span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/util/UUID.html">UUID</a><span class="token operator">?</span><span class="token operator"> = </span>null<span class="token punctuation">, </span></span><span class="parameter ">log<span class="token operator">: </span><a href="../-reactor-log/index.html">ReactorLog</a><span class="token operator"> = </span>ReactorLog { }<span class="token punctuation">, </span></span><span class="parameter ">freshnessSkew<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.time/-duration/index.html">Duration</a><span class="token operator"> = </span>ReactorProtocol.DEFAULT_FRESHNESS_SKEW<span class="token punctuation">, </span></span><span class="parameter ">shutdownGrace<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.time/-duration/index.html">Duration</a><span class="token operator"> = </span>10.seconds<span class="token punctuation">, </span></span><span class="parameter ">clock<span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/time/Clock.html">Clock</a><span class="token operator"> = </span>Clock.systemUTC()<span class="token punctuation">, </span></span><span class="parameter ">telemetryHook<span class="token operator">: </span><a href="../../io.axiam.sdk.telemetry/-telemetry-hook/index.html">TelemetryHook</a><span class="token operator">?</span><span class="token operator"> = </span>null</span></span><span class="token punctuation">)</span></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div data-togglable="PROPERTY">
+        <h2 class="">Properties</h2>
+        <div class="table"><a data-name="849754822%2FProperties%2F769193423" anchor-label="clock" id="849754822%2FProperties%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="clock.html"><span><span>clock</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="849754822%2FProperties%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">val </span><a href="clock.html">clock</a><span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/time/Clock.html">Clock</a></div><div class="brief "><p class="paragraph">the clock used for freshness, deadlines and reply timestamps.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-481829947%2FProperties%2F769193423" anchor-label="freshnessSkew" id="-481829947%2FProperties%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="freshness-skew.html"><span>freshness</span><wbr></wbr><span><span>Skew</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-481829947%2FProperties%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">val </span><a href="freshness-skew.html">freshnessSkew</a><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.time/-duration/index.html">Duration</a></div><div class="brief "><p class="paragraph">the §8 v2 acceptance window applied to <code class="lang-kotlin">issued_at</code> in both directions.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-2054938294%2FProperties%2F769193423" anchor-label="handler" id="-2054938294%2FProperties%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="handler.html"><span><span>handler</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-2054938294%2FProperties%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">val </span><a href="handler.html">handler</a><span class="token operator">: </span><a href="../-reactor-handler/index.html">ReactorHandler</a><span class="token operator">?</span><span class="token operator"> = </span>null</div><div class="brief "><p class="paragraph">the intercept decision function, or <code class="lang-kotlin">null</code> for a listener.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-1614440750%2FProperties%2F769193423" anchor-label="listener" id="-1614440750%2FProperties%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="listener.html"><span><span>listener</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1614440750%2FProperties%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">val </span><a href="listener.html">listener</a><span class="token operator">: </span><a href="../-reactor-listener/index.html">ReactorListener</a><span class="token operator">?</span><span class="token operator"> = </span>null</div><div class="brief "><p class="paragraph">the observe callback, or <code class="lang-kotlin">null</code> for an interceptor.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="1131398672%2FProperties%2F769193423" anchor-label="log" id="1131398672%2FProperties%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="log.html"><span><span>log</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="1131398672%2FProperties%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">val </span><a href="log.html">log</a><span class="token operator">: </span><a href="../-reactor-log/index.html">ReactorLog</a></div><div class="brief "><p class="paragraph">where refusals are reported.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="1146591011%2FProperties%2F769193423" anchor-label="queue" id="1146591011%2FProperties%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="queue.html"><span><span>queue</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="1146591011%2FProperties%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">val </span><a href="queue.html">queue</a><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">?</span><span class="token operator"> = </span>null</div><div class="brief "><p class="paragraph">an explicitly named server-declared queue, or <code class="lang-kotlin">null</code> to derive it from <a href="reactor-id.html">reactorId</a>.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="1528958423%2FProperties%2F769193423" anchor-label="reactorId" id="1528958423%2FProperties%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="reactor-id.html"><span>reactor</span><wbr></wbr><span><span>Id</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="1528958423%2FProperties%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">val </span><a href="reactor-id.html">reactorId</a><span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/util/UUID.html">UUID</a><span class="token operator">?</span><span class="token operator"> = </span>null</div><div class="brief "><p class="paragraph">this reactor's own registration id, or <code class="lang-kotlin">null</code> when <a href="queue.html">queue</a> is given. The runtime will not name a queue for any other reactor.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="299718203%2FProperties%2F769193423" anchor-label="resolvedQueue" id="299718203%2FProperties%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="resolved-queue.html"><span>resolved</span><wbr></wbr><span><span>Queue</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="299718203%2FProperties%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">val </span><a href="resolved-queue.html">resolvedQueue</a><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a></div><div class="brief "><p class="paragraph">The server-declared queue this runtime will consume.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="1439955794%2FProperties%2F769193423" anchor-label="shutdownGrace" id="1439955794%2FProperties%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="shutdown-grace.html"><span>shutdown</span><wbr></wbr><span><span>Grace</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="1439955794%2FProperties%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">val </span><a href="shutdown-grace.html">shutdownGrace</a><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.time/-duration/index.html">Duration</a></div><div class="brief "><p class="paragraph">how long <a href="../-reactor-server/close.html">ReactorServer.close</a> waits for in-flight events to drain.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="132302060%2FProperties%2F769193423" anchor-label="signingKey" id="132302060%2FProperties%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="signing-key.html"><span>signing</span><wbr></wbr><span><span>Key</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="132302060%2FProperties%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">val </span><a href="signing-key.html">signingKey</a><span class="token operator">: </span><a href="../../io.axiam.sdk/-sensitive/index.html">Sensitive</a><span class="token operator">&lt;</span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-byte-array/index.html">ByteArray</a><span class="token operator">&gt;</span></div><div class="brief "><p class="paragraph">the tenant's HKDF-derived AMQP subkey — the same key the server signed the event with. Wrapped in <a href="../../io.axiam.sdk/-sensitive/index.html">Sensitive</a> because it is a credential (§22.12): it is never logged at any level and never appears in a reconnect diagnostic. Derive it with <a href="../-reactor-protocol/derive-tenant-key.html">ReactorProtocol.deriveTenantKey</a> or fetch it from the management API.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-1762197736%2FProperties%2F769193423" anchor-label="telemetryHook" id="-1762197736%2FProperties%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="telemetry-hook.html"><span>telemetry</span><wbr></wbr><span><span>Hook</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1762197736%2FProperties%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">val </span><a href="telemetry-hook.html">telemetryHook</a><span class="token operator">: </span><a href="../../io.axiam.sdk.telemetry/-telemetry-hook/index.html">TelemetryHook</a><span class="token operator">?</span><span class="token operator"> = </span>null</div><div class="brief "><p class="paragraph">the §19 sink; one <code class="lang-kotlin">RequestStart</code>/<code class="lang-kotlin">RequestEnd</code> pair per dispatched event.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-1302682303%2FProperties%2F769193423" anchor-label="tenantId" id="-1302682303%2FProperties%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="tenant-id.html"><span>tenant</span><wbr></wbr><span><span>Id</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1302682303%2FProperties%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">val </span><a href="tenant-id.html">tenantId</a><span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/util/UUID.html">UUID</a></div><div class="brief "><p class="paragraph">the tenant this reactor is registered in. An event naming any other tenant is discarded.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-1055407989%2FProperties%2F769193423" anchor-label="transport" id="-1055407989%2FProperties%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="transport.html"><span><span>transport</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1055407989%2FProperties%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">val </span><a href="transport.html">transport</a><span class="token operator">: </span><a href="../-reactor-transport/index.html">ReactorTransport</a></div><div class="brief "><p class="paragraph">the broker seam; <a href="../-rabbit-mq-reactor-transport/index.html">RabbitMqReactorTransport</a> wraps the RabbitMQ Java client. Its connection MUST have been opened over <code class="lang-kotlin">amqps://</code> with a trusted CA (§8b) — a reactor reply is an instruction to change a token, and HMAC gives authenticity, not confidentiality.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      <div class="footer">
+        <span class="go-to-top-icon"><a href="#content" id="go-to-top-link"></a></span><span>© 2026 Copyright</span><span
+                class="pull-right"><span>Generated by </span><a
+                href="https://github.com/Kotlin/dokka"><span>dokka</span><span class="padded-icon"></span></a></span>
+      </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

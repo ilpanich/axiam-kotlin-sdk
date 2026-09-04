@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html class="no-js">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" charset="UTF-8">
+    <title>RolesApi</title>
+    <link href="../../../images/logo-icon.svg" rel="icon" type="image/svg">
+    <script>var pathToRoot = "../../../";</script>
+    <script>document.documentElement.classList.replace("no-js","js");</script>
+    <script>const storage = localStorage.getItem("dokka-dark-mode")
+    if (storage == null) {
+        const osDarkSchemePreferred = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+        if (osDarkSchemePreferred === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    } else {
+        const savedDarkMode = JSON.parse(storage)
+        if(savedDarkMode === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    }
+    </script>
+<script type="text/javascript" src="https://unpkg.com/kotlin-playground@1/dist/playground.min.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/sourceset_dependencies.js" async="async"></script>
+<link href="../../../styles/style.css" rel="Stylesheet">
+<link href="../../../styles/main.css" rel="Stylesheet">
+<link href="../../../styles/prism.css" rel="Stylesheet">
+<link href="../../../styles/logo-styles.css" rel="Stylesheet">
+<link href="../../../styles/font-jb-sans-auto.css" rel="Stylesheet">
+<script type="text/javascript" src="../../../scripts/clipboard.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/navigation-loader.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/platform-content-handler.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/main.js" defer="defer"></script>
+<script type="text/javascript" src="../../../scripts/prism.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/symbol-parameters-wrapper_deferred.js" defer="defer"></script>
+</head>
+<body>
+    <div class="root">
+<nav class="navigation" id="navigation-wrapper">
+    <div class="navigation--inner">
+        <div class="navigation-title">
+            <button class="menu-toggle" id="menu-toggle" type="button">toggle menu</button>
+            <div class="library-name">
+                    <a class="library-name--link" href="../../../index.html">
+                            axiam-sdk-kotlin
+                    </a>
+            </div>
+            <div class="library-version">
+1.0.0-beta11            </div>
+        </div>
+        <div class="filter-section" id="filter-section">
+                <button class="platform-tag platform-selector jvm-like" data-active="" data-filter=":dokkaHtml/main">jvm</button>
+        </div>
+    </div>
+    <div class="navigation-controls">
+        <button class="navigation-controls--btn navigation-controls--theme" id="theme-toggle-button" type="button">switch theme</button>
+        <div class="navigation-controls--btn navigation-controls--search" id="searchBar" role="button">search in API</div>
+    </div>
+</nav>
+        <div id="container">
+            <div class="sidebar" id="leftColumn">
+                <div class="sidebar--inner" id="sideMenu"></div>
+            </div>
+            <div id="main">
+<div class="main-content" data-page-type="classlike" id="content" pageIds="axiam-sdk-kotlin::io.axiam.sdk.management/RolesApi///PointingToDeclaration//769193423">
+  <div class="breadcrumbs"><a href="../../../index.html">axiam-sdk-kotlin</a><span class="delimiter">/</span><a href="../index.html">io.axiam.sdk.management</a><span class="delimiter">/</span><span class="current">RolesApi</span></div>
+  <div class="cover ">
+    <h1 class="cover"><span>Roles</span><wbr></wbr><span><span>Api</span></span></h1>
+    <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">class </span><a href="index.html">RolesApi</a></div><p class="paragraph">The roles management operations.</p><p class="paragraph">A view over the client that created it, not a connection: constructing one performs no I/O (§27.2 rule 1), so there is nothing to cache and nothing to close.</p></div></div>
+  </div>
+  <div class="tabbedcontent">
+    <div class="tabs-section" tabs-section="tabs-section"><button class="section-tab" data-active="" data-togglable="CONSTRUCTOR,TYPE,PROPERTY,FUNCTION">Members</button></div>
+    <div class="tabs-section-body">
+      <div data-togglable="FUNCTION">
+        <h2 class="">Functions</h2>
+        <div class="table"><a data-name="-452104051%2FFunctions%2F769193423" anchor-label="assignToGroup" id="-452104051%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="assign-to-group.html"><span>assign</span><wbr></wbr><span>To</span><wbr></wbr><span><span>Group</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-452104051%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="assign-to-group.html"><span class="token function">assignToGroup</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">roleId<span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/util/UUID.html">UUID</a><span class="token punctuation">, </span></span><span class="parameter ">body<span class="token operator">: </span><a href="../../io.axiam.sdk.management.models/-assign-role-to-group-request/index.html">AssignRoleToGroupRequest</a></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">Issues <code class="lang-kotlin">POST /api/v1/roles/{role_id}/groups</code>.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-108230177%2FFunctions%2F769193423" anchor-label="assignToServiceAccount" id="-108230177%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="assign-to-service-account.html"><span>assign</span><wbr></wbr><span>To</span><wbr></wbr><span>Service</span><wbr></wbr><span><span>Account</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-108230177%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="assign-to-service-account.html"><span class="token function">assignToServiceAccount</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">roleId<span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/util/UUID.html">UUID</a><span class="token punctuation">, </span></span><span class="parameter ">body<span class="token operator">: </span><a href="../../io.axiam.sdk.management.models/-assign-role-to-service-account-request/index.html">AssignRoleToServiceAccountRequest</a></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">Issues <code class="lang-kotlin">POST /api/v1/roles/{role_id}/service-accounts</code>.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="1591837893%2FFunctions%2F769193423" anchor-label="assignToUser" id="1591837893%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="assign-to-user.html"><span>assign</span><wbr></wbr><span>To</span><wbr></wbr><span><span>User</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="1591837893%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="assign-to-user.html"><span class="token function">assignToUser</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">roleId<span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/util/UUID.html">UUID</a><span class="token punctuation">, </span></span><span class="parameter ">body<span class="token operator">: </span><a href="../../io.axiam.sdk.management.models/-assign-role-to-user-request/index.html">AssignRoleToUserRequest</a></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">Issues <code class="lang-kotlin">POST /api/v1/roles/{role_id}/users</code>.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-2099700617%2FFunctions%2F769193423" anchor-label="create" id="-2099700617%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="create.html"><span><span>create</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-2099700617%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="create.html"><span class="token function">create</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">body<span class="token operator">: </span><a href="../../io.axiam.sdk.management.models/-create-role-request/index.html">CreateRoleRequest</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../../io.axiam.sdk.management.models/-role/index.html">Role</a></div><div class="brief "><p class="paragraph">Issues <code class="lang-kotlin">POST /api/v1/roles</code>.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-670616251%2FFunctions%2F769193423" anchor-label="delete" id="-670616251%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="delete.html"><span><span>delete</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-670616251%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="delete.html"><span class="token function">delete</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">roleId<span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/util/UUID.html">UUID</a></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">Issues <code class="lang-kotlin">DELETE /api/v1/roles/{role_id}</code>.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="751695710%2FFunctions%2F769193423" anchor-label="get" id="751695710%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="get.html"><span><span>get</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="751695710%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="get.html"><span class="token function">get</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">roleId<span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/util/UUID.html">UUID</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../../io.axiam.sdk.management.models/-role/index.html">Role</a></div><div class="brief "><p class="paragraph">Issues <code class="lang-kotlin">GET /api/v1/roles/{role_id}</code>.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-995000413%2FFunctions%2F769193423" anchor-label="grantPermission" id="-995000413%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="grant-permission.html"><span>grant</span><wbr></wbr><span><span>Permission</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-995000413%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="grant-permission.html"><span class="token function">grantPermission</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">roleId<span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/util/UUID.html">UUID</a><span class="token punctuation">, </span></span><span class="parameter ">body<span class="token operator">: </span><a href="../../io.axiam.sdk.management.models/-grant-permission-request/index.html">GrantPermissionRequest</a></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">Issues <code class="lang-kotlin">POST /api/v1/roles/{role_id}/permissions</code>.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="2131563503%2FFunctions%2F769193423" anchor-label="list" id="2131563503%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="list.html"><span><span>list</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="2131563503%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="list.html"><span class="token function">list</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">page<span class="token operator">: </span><a href="../-page-request/index.html">PageRequest</a><span class="token operator">?</span></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../-page/index.html">Page</a><span class="token operator">&lt;</span><a href="../../io.axiam.sdk.management.models/-role/index.html">Role</a><span class="token operator">&gt;</span></div><div class="brief "><p class="paragraph">Issues <code class="lang-kotlin">GET /api/v1/roles</code>.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="521481518%2FFunctions%2F769193423" anchor-label="listAll" id="521481518%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="list-all.html"><span>list</span><wbr></wbr><span><span>All</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="521481518%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="list-all.html"><span class="token function">listAll</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">start<span class="token operator">: </span><a href="../-page-request/index.html">PageRequest</a><span class="token operator">?</span><span class="token operator"> = </span>null</span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-list/index.html">List</a><span class="token operator">&lt;</span><a href="../../io.axiam.sdk.management.models/-role/index.html">Role</a><span class="token operator">&gt;</span></div><div class="brief "><p class="paragraph">Walks <code class="lang-kotlin">list</code> to exhaustion and returns every item (§27.4 rule 4).</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-192313858%2FFunctions%2F769193423" anchor-label="listGroups" id="-192313858%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="list-groups.html"><span>list</span><wbr></wbr><span><span>Groups</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-192313858%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="list-groups.html"><span class="token function">listGroups</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">roleId<span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/util/UUID.html">UUID</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-list/index.html">List</a><span class="token operator">&lt;</span><a href="../../io.axiam.sdk.management.models/-role-group-assignment/index.html">RoleGroupAssignment</a><span class="token operator">&gt;</span></div><div class="brief "><p class="paragraph">Lists this role's group assignments (the inverse of <code class="lang-kotlin">GET /groups/{group_id}/roles</code>), each with the resource it is scoped to — see [<code class="lang-kotlin">list_users</code>] for why that field is here.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="2068539566%2FFunctions%2F769193423" anchor-label="listPermissions" id="2068539566%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="list-permissions.html"><span>list</span><wbr></wbr><span><span>Permissions</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="2068539566%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="list-permissions.html"><span class="token function">listPermissions</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">roleId<span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/util/UUID.html">UUID</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-list/index.html">List</a><span class="token operator">&lt;</span><a href="../../io.axiam.sdk.management.models/-resolved-permission-grant/index.html">ResolvedPermissionGrant</a><span class="token operator">&gt;</span></div><div class="brief "><p class="paragraph">Issues <code class="lang-kotlin">GET /api/v1/roles/{role_id}/permissions</code>.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-1472773225%2FFunctions%2F769193423" anchor-label="listServiceAccounts" id="-1472773225%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="list-service-accounts.html"><span>list</span><wbr></wbr><span>Service</span><wbr></wbr><span><span>Accounts</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1472773225%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="list-service-accounts.html"><span class="token function">listServiceAccounts</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">roleId<span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/util/UUID.html">UUID</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-list/index.html">List</a><span class="token operator">&lt;</span><a href="../../io.axiam.sdk.management.models/-role-service-account-assignment/index.html">RoleServiceAccountAssignment</a><span class="token operator">&gt;</span></div><div class="brief "><p class="paragraph">Issues <code class="lang-kotlin">GET /api/v1/roles/{role_id}/service-accounts</code>.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-1417435478%2FFunctions%2F769193423" anchor-label="listUsers" id="-1417435478%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="list-users.html"><span>list</span><wbr></wbr><span><span>Users</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1417435478%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="list-users.html"><span class="token function">listUsers</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">roleId<span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/util/UUID.html">UUID</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-list/index.html">List</a><span class="token operator">&lt;</span><a href="../../io.axiam.sdk.management.models/-role-user-assignment/index.html">RoleUserAssignment</a><span class="token operator">&gt;</span></div><div class="brief "><p class="paragraph">Lists this role's user assignments (the inverse of <code class="lang-kotlin">GET /users/{user_id}/roles</code>). Used by the role detail page's members panel. Directly-assigned users only — a user who reaches this role through a group is not a member of it and has no grant here to revoke. <code class="lang-kotlin">resource_id</code> says whether the grant is global or applies only under one resource; <code class="lang-kotlin">has_role</code> is <code class="lang-kotlin">UNIQUE(in, out)</code>, so each user appears at most once.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="199358377%2FFunctions%2F769193423" anchor-label="revokePermission" id="199358377%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="revoke-permission.html"><span>revoke</span><wbr></wbr><span><span>Permission</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="199358377%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="revoke-permission.html"><span class="token function">revokePermission</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">roleId<span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/util/UUID.html">UUID</a><span class="token punctuation">, </span></span><span class="parameter ">permissionId<span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/util/UUID.html">UUID</a></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">Issues <code class="lang-kotlin">DELETE /api/v1/roles/{role_id}/permissions/{permission_id}</code>.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-750806047%2FFunctions%2F769193423" anchor-label="unassignFromGroup" id="-750806047%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="unassign-from-group.html"><span>unassign</span><wbr></wbr><span>From</span><wbr></wbr><span><span>Group</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-750806047%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="unassign-from-group.html"><span class="token function">unassignFromGroup</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">roleId<span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/util/UUID.html">UUID</a><span class="token punctuation">, </span></span><span class="parameter ">groupId<span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/util/UUID.html">UUID</a><span class="token punctuation">, </span></span><span class="parameter ">resourceId<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">?</span></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">Issues <code class="lang-kotlin">DELETE /api/v1/roles/{role_id}/groups/{group_id}</code>.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="596552064%2FFunctions%2F769193423" anchor-label="unassignFromServiceAccount" id="596552064%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="unassign-from-service-account.html"><span>unassign</span><wbr></wbr><span>From</span><wbr></wbr><span>Service</span><wbr></wbr><span><span>Account</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="596552064%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="unassign-from-service-account.html"><span class="token function">unassignFromServiceAccount</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">roleId<span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/util/UUID.html">UUID</a><span class="token punctuation">, </span></span><span class="parameter ">serviceAccountId<span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/util/UUID.html">UUID</a><span class="token punctuation">, </span></span><span class="parameter ">resourceId<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">?</span></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">Issues <code class="lang-kotlin">DELETE /api/v1/roles/{role_id}/service-accounts/{service_account_id}</code>.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="941695565%2FFunctions%2F769193423" anchor-label="unassignFromUser" id="941695565%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="unassign-from-user.html"><span>unassign</span><wbr></wbr><span>From</span><wbr></wbr><span><span>User</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="941695565%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="unassign-from-user.html"><span class="token function">unassignFromUser</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">roleId<span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/util/UUID.html">UUID</a><span class="token punctuation">, </span></span><span class="parameter ">userId<span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/util/UUID.html">UUID</a><span class="token punctuation">, </span></span><span class="parameter ">resourceId<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">?</span></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">Issues <code class="lang-kotlin">DELETE /api/v1/roles/{role_id}/users/{user_id}</code>.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="1104301638%2FFunctions%2F769193423" anchor-label="update" id="1104301638%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="update.html"><span><span>update</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="1104301638%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="update.html"><span class="token function">update</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">roleId<span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/util/UUID.html">UUID</a><span class="token punctuation">, </span></span><span class="parameter ">body<span class="token operator">: </span><a href="../../io.axiam.sdk.management.models/-update-role/index.html">UpdateRole</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../../io.axiam.sdk.management.models/-role/index.html">Role</a></div><div class="brief "><p class="paragraph">Issues <code class="lang-kotlin">PUT /api/v1/roles/{role_id}</code>.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      <div class="footer">
+        <span class="go-to-top-icon"><a href="#content" id="go-to-top-link"></a></span><span>© 2026 Copyright</span><span
+                class="pull-right"><span>Generated by </span><a
+                href="https://github.com/Kotlin/dokka"><span>dokka</span><span class="padded-icon"></span></a></span>
+      </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

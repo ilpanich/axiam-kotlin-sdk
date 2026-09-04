@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html class="no-js">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" charset="UTF-8">
+    <title>ManagementApi</title>
+    <link href="../../../images/logo-icon.svg" rel="icon" type="image/svg">
+    <script>var pathToRoot = "../../../";</script>
+    <script>document.documentElement.classList.replace("no-js","js");</script>
+    <script>const storage = localStorage.getItem("dokka-dark-mode")
+    if (storage == null) {
+        const osDarkSchemePreferred = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+        if (osDarkSchemePreferred === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    } else {
+        const savedDarkMode = JSON.parse(storage)
+        if(savedDarkMode === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    }
+    </script>
+<script type="text/javascript" src="https://unpkg.com/kotlin-playground@1/dist/playground.min.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/sourceset_dependencies.js" async="async"></script>
+<link href="../../../styles/style.css" rel="Stylesheet">
+<link href="../../../styles/main.css" rel="Stylesheet">
+<link href="../../../styles/prism.css" rel="Stylesheet">
+<link href="../../../styles/logo-styles.css" rel="Stylesheet">
+<link href="../../../styles/font-jb-sans-auto.css" rel="Stylesheet">
+<script type="text/javascript" src="../../../scripts/clipboard.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/navigation-loader.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/platform-content-handler.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/main.js" defer="defer"></script>
+<script type="text/javascript" src="../../../scripts/prism.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/symbol-parameters-wrapper_deferred.js" defer="defer"></script>
+</head>
+<body>
+    <div class="root">
+<nav class="navigation" id="navigation-wrapper">
+    <div class="navigation--inner">
+        <div class="navigation-title">
+            <button class="menu-toggle" id="menu-toggle" type="button">toggle menu</button>
+            <div class="library-name">
+                    <a class="library-name--link" href="../../../index.html">
+                            axiam-sdk-kotlin
+                    </a>
+            </div>
+            <div class="library-version">
+1.0.0-beta11            </div>
+        </div>
+        <div class="filter-section" id="filter-section">
+                <button class="platform-tag platform-selector jvm-like" data-active="" data-filter=":dokkaHtml/main">jvm</button>
+        </div>
+    </div>
+    <div class="navigation-controls">
+        <button class="navigation-controls--btn navigation-controls--theme" id="theme-toggle-button" type="button">switch theme</button>
+        <div class="navigation-controls--btn navigation-controls--search" id="searchBar" role="button">search in API</div>
+    </div>
+</nav>
+        <div id="container">
+            <div class="sidebar" id="leftColumn">
+                <div class="sidebar--inner" id="sideMenu"></div>
+            </div>
+            <div id="main">
+<div class="main-content" data-page-type="classlike" id="content" pageIds="axiam-sdk-kotlin::io.axiam.sdk.management/ManagementApi///PointingToDeclaration//769193423">
+  <div class="breadcrumbs"><a href="../../../index.html">axiam-sdk-kotlin</a><span class="delimiter">/</span><a href="../index.html">io.axiam.sdk.management</a><span class="delimiter">/</span><span class="current">ManagementApi</span></div>
+  <div class="cover ">
+    <h1 class="cover"><span>Management</span><wbr></wbr><span><span>Api</span></span></h1>
+    <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">class </span><a href="index.html">ManagementApi</a></div><p class="paragraph">The CONTRACT.md §27 management API: 147 operations across 24 namespaces.</p><p class="paragraph">Obtained from <code class="lang-kotlin">client.management()</code>. Each accessor returns a namespace handle, which is a view over the same session — acquiring one performs no I/O (§27.2 rule 1).</p><p class="paragraph">The namespaces are grouped behind this one accessor rather than added to <code class="lang-kotlin">AxiamClient</code> directly: §27.2's own argument for handles is that a flat surface of 147 functions buries the twenty a given caller needs, and hanging 24 more functions off the client would do to <code class="lang-kotlin">AxiamClient</code> exactly what the handles exist to prevent.</p></div></div>
+  </div>
+  <div class="tabbedcontent">
+    <div class="tabs-section" tabs-section="tabs-section"><button class="section-tab" data-active="" data-togglable="CONSTRUCTOR,TYPE,PROPERTY,FUNCTION">Members</button></div>
+    <div class="tabs-section-body">
+      <div data-togglable="FUNCTION">
+        <h2 class="">Functions</h2>
+        <div class="table"><a data-name="359158074%2FFunctions%2F769193423" anchor-label="audit" id="359158074%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="audit.html"><span><span>audit</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="359158074%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">fun </span><a href="audit.html"><span class="token function">audit</span></a><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../-audit-api/index.html">AuditApi</a></div><div class="brief "><p class="paragraph">The audit operations.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="180792779%2FFunctions%2F769193423" anchor-label="caCertificates" id="180792779%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="ca-certificates.html"><span>ca</span><wbr></wbr><span><span>Certificates</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="180792779%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">fun </span><a href="ca-certificates.html"><span class="token function">caCertificates</span></a><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../-ca-certificates-api/index.html">CaCertificatesApi</a></div><div class="brief "><p class="paragraph">The ca_certificates operations.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="2096040329%2FFunctions%2F769193423" anchor-label="certificates" id="2096040329%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="certificates.html"><span><span>certificates</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="2096040329%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">fun </span><a href="certificates.html"><span class="token function">certificates</span></a><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../-certificates-api/index.html">CertificatesApi</a></div><div class="brief "><p class="paragraph">The certificates operations.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-313828745%2FFunctions%2F769193423" anchor-label="emailConfig" id="-313828745%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="email-config.html"><span>email</span><wbr></wbr><span><span>Config</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-313828745%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">fun </span><a href="email-config.html"><span class="token function">emailConfig</span></a><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../-email-config-api/index.html">EmailConfigApi</a></div><div class="brief "><p class="paragraph">The email_config operations.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-1098228766%2FFunctions%2F769193423" anchor-label="federation" id="-1098228766%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="federation.html"><span><span>federation</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1098228766%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">fun </span><a href="federation.html"><span class="token function">federation</span></a><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../-federation-api/index.html">FederationApi</a></div><div class="brief "><p class="paragraph">The federation operations.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-1688038799%2FFunctions%2F769193423" anchor-label="groups" id="-1688038799%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="groups.html"><span><span>groups</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1688038799%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">fun </span><a href="groups.html"><span class="token function">groups</span></a><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../-groups-api/index.html">GroupsApi</a></div><div class="brief "><p class="paragraph">The groups operations.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-57546634%2FFunctions%2F769193423" anchor-label="manifest" id="-57546634%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="manifest.html"><span><span>manifest</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-57546634%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">fun </span><a href="manifest.html"><span class="token function">manifest</span></a><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../-manifest-api/index.html">ManifestApi</a></div><div class="brief "><p class="paragraph">The §27.6 declarative layer: describe the tenant you want, then reconcile.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-362967191%2FFunctions%2F769193423" anchor-label="notificationRules" id="-362967191%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="notification-rules.html"><span>notification</span><wbr></wbr><span><span>Rules</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-362967191%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">fun </span><a href="notification-rules.html"><span class="token function">notificationRules</span></a><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../-notification-rules-api/index.html">NotificationRulesApi</a></div><div class="brief "><p class="paragraph">The notification_rules operations.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="515893320%2FFunctions%2F769193423" anchor-label="oauth2Clients" id="515893320%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="oauth2-clients.html"><span><span>oauth2Clients</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="515893320%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">fun </span><a href="oauth2-clients.html"><span class="token function">oauth2Clients</span></a><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../-oauth2-clients-api/index.html">Oauth2ClientsApi</a></div><div class="brief "><p class="paragraph">The oauth2_clients operations.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-1989913835%2FFunctions%2F769193423" anchor-label="organizations" id="-1989913835%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="organizations.html"><span><span>organizations</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1989913835%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">fun </span><a href="organizations.html"><span class="token function">organizations</span></a><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../-organizations-api/index.html">OrganizationsApi</a></div><div class="brief "><p class="paragraph">The organizations operations.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-284279119%2FFunctions%2F769193423" anchor-label="permissions" id="-284279119%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="permissions.html"><span><span>permissions</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-284279119%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">fun </span><a href="permissions.html"><span class="token function">permissions</span></a><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../-permissions-api/index.html">PermissionsApi</a></div><div class="brief "><p class="paragraph">The permissions operations.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="1249429608%2FFunctions%2F769193423" anchor-label="pgpKeys" id="1249429608%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="pgp-keys.html"><span>pgp</span><wbr></wbr><span><span>Keys</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="1249429608%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">fun </span><a href="pgp-keys.html"><span class="token function">pgpKeys</span></a><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../-pgp-keys-api/index.html">PgpKeysApi</a></div><div class="brief "><p class="paragraph">The pgp_keys operations.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="1772946098%2FFunctions%2F769193423" anchor-label="platform" id="1772946098%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="platform.html"><span><span>platform</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="1772946098%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">fun </span><a href="platform.html"><span class="token function">platform</span></a><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../-platform-api/index.html">PlatformApi</a></div><div class="brief "><p class="paragraph">The platform operations.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="1997043757%2FFunctions%2F769193423" anchor-label="privacy" id="1997043757%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="privacy.html"><span><span>privacy</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="1997043757%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">fun </span><a href="privacy.html"><span class="token function">privacy</span></a><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../-privacy-api/index.html">PrivacyApi</a></div><div class="brief "><p class="paragraph">The privacy operations.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-301348908%2FFunctions%2F769193423" anchor-label="reactors" id="-301348908%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="reactors.html"><span><span>reactors</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-301348908%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">fun </span><a href="reactors.html"><span class="token function">reactors</span></a><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../-reactors-api/index.html">ReactorsApi</a></div><div class="brief "><p class="paragraph">The reactors operations.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-54117840%2FFunctions%2F769193423" anchor-label="resources" id="-54117840%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="resources.html"><span><span>resources</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-54117840%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">fun </span><a href="resources.html"><span class="token function">resources</span></a><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../-resources-api/index.html">ResourcesApi</a></div><div class="brief "><p class="paragraph">The resources operations.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-932511592%2FFunctions%2F769193423" anchor-label="roles" id="-932511592%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="roles.html"><span><span>roles</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-932511592%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">fun </span><a href="roles.html"><span class="token function">roles</span></a><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../-roles-api/index.html">RolesApi</a></div><div class="brief "><p class="paragraph">The roles operations.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="1661570903%2FFunctions%2F769193423" anchor-label="scimTokens" id="1661570903%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="scim-tokens.html"><span>scim</span><wbr></wbr><span><span>Tokens</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="1661570903%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">fun </span><a href="scim-tokens.html"><span class="token function">scimTokens</span></a><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../-scim-tokens-api/index.html">ScimTokensApi</a></div><div class="brief "><p class="paragraph">The scim_tokens operations.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="1637681670%2FFunctions%2F769193423" anchor-label="scopes" id="1637681670%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="scopes.html"><span><span>scopes</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="1637681670%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">fun </span><a href="scopes.html"><span class="token function">scopes</span></a><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../-scopes-api/index.html">ScopesApi</a></div><div class="brief "><p class="paragraph">The scopes operations.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="278663514%2FFunctions%2F769193423" anchor-label="serviceAccounts" id="278663514%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="service-accounts.html"><span>service</span><wbr></wbr><span><span>Accounts</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="278663514%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">fun </span><a href="service-accounts.html"><span class="token function">serviceAccounts</span></a><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../-service-accounts-api/index.html">ServiceAccountsApi</a></div><div class="brief "><p class="paragraph">The service_accounts operations.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-689687294%2FFunctions%2F769193423" anchor-label="settings" id="-689687294%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="settings.html"><span><span>settings</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-689687294%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">fun </span><a href="settings.html"><span class="token function">settings</span></a><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../-settings-api/index.html">SettingsApi</a></div><div class="brief "><p class="paragraph">The settings operations.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="632320460%2FFunctions%2F769193423" anchor-label="tenants" id="632320460%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="tenants.html"><span><span>tenants</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="632320460%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">fun </span><a href="tenants.html"><span class="token function">tenants</span></a><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../-tenants-api/index.html">TenantsApi</a></div><div class="brief "><p class="paragraph">The tenants operations.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-1021887571%2FFunctions%2F769193423" anchor-label="users" id="-1021887571%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="users.html"><span><span>users</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1021887571%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">fun </span><a href="users.html"><span class="token function">users</span></a><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../-users-api/index.html">UsersApi</a></div><div class="brief "><p class="paragraph">The users operations.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-806060671%2FFunctions%2F769193423" anchor-label="webauthnPolicy" id="-806060671%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="webauthn-policy.html"><span>webauthn</span><wbr></wbr><span><span>Policy</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-806060671%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">fun </span><a href="webauthn-policy.html"><span class="token function">webauthnPolicy</span></a><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../-webauthn-policy-api/index.html">WebauthnPolicyApi</a></div><div class="brief "><p class="paragraph">The webauthn_policy operations.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="465676905%2FFunctions%2F769193423" anchor-label="webhooks" id="465676905%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="webhooks.html"><span><span>webhooks</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="465676905%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">fun </span><a href="webhooks.html"><span class="token function">webhooks</span></a><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../-webhooks-api/index.html">WebhooksApi</a></div><div class="brief "><p class="paragraph">The webhooks operations.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      <div class="footer">
+        <span class="go-to-top-icon"><a href="#content" id="go-to-top-link"></a></span><span>© 2026 Copyright</span><span
+                class="pull-right"><span>Generated by </span><a
+                href="https://github.com/Kotlin/dokka"><span>dokka</span><span class="padded-icon"></span></a></span>
+      </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

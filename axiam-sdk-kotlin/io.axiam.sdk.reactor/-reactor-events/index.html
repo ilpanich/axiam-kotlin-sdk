@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html class="no-js">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" charset="UTF-8">
+    <title>ReactorEvents</title>
+    <link href="../../../images/logo-icon.svg" rel="icon" type="image/svg">
+    <script>var pathToRoot = "../../../";</script>
+    <script>document.documentElement.classList.replace("no-js","js");</script>
+    <script>const storage = localStorage.getItem("dokka-dark-mode")
+    if (storage == null) {
+        const osDarkSchemePreferred = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+        if (osDarkSchemePreferred === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    } else {
+        const savedDarkMode = JSON.parse(storage)
+        if(savedDarkMode === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    }
+    </script>
+<script type="text/javascript" src="https://unpkg.com/kotlin-playground@1/dist/playground.min.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/sourceset_dependencies.js" async="async"></script>
+<link href="../../../styles/style.css" rel="Stylesheet">
+<link href="../../../styles/main.css" rel="Stylesheet">
+<link href="../../../styles/prism.css" rel="Stylesheet">
+<link href="../../../styles/logo-styles.css" rel="Stylesheet">
+<link href="../../../styles/font-jb-sans-auto.css" rel="Stylesheet">
+<script type="text/javascript" src="../../../scripts/clipboard.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/navigation-loader.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/platform-content-handler.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/main.js" defer="defer"></script>
+<script type="text/javascript" src="../../../scripts/prism.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/symbol-parameters-wrapper_deferred.js" defer="defer"></script>
+</head>
+<body>
+    <div class="root">
+<nav class="navigation" id="navigation-wrapper">
+    <div class="navigation--inner">
+        <div class="navigation-title">
+            <button class="menu-toggle" id="menu-toggle" type="button">toggle menu</button>
+            <div class="library-name">
+                    <a class="library-name--link" href="../../../index.html">
+                            axiam-sdk-kotlin
+                    </a>
+            </div>
+            <div class="library-version">
+1.0.0-beta11            </div>
+        </div>
+        <div class="filter-section" id="filter-section">
+                <button class="platform-tag platform-selector jvm-like" data-active="" data-filter=":dokkaHtml/main">jvm</button>
+        </div>
+    </div>
+    <div class="navigation-controls">
+        <button class="navigation-controls--btn navigation-controls--theme" id="theme-toggle-button" type="button">switch theme</button>
+        <div class="navigation-controls--btn navigation-controls--search" id="searchBar" role="button">search in API</div>
+    </div>
+</nav>
+        <div id="container">
+            <div class="sidebar" id="leftColumn">
+                <div class="sidebar--inner" id="sideMenu"></div>
+            </div>
+            <div id="main">
+<div class="main-content" data-page-type="classlike" id="content" pageIds="axiam-sdk-kotlin::io.axiam.sdk.reactor/ReactorEvents///PointingToDeclaration//769193423">
+  <div class="breadcrumbs"><a href="../../../index.html">axiam-sdk-kotlin</a><span class="delimiter">/</span><a href="../index.html">io.axiam.sdk.reactor</a><span class="delimiter">/</span><span class="current">ReactorEvents</span></div>
+  <div class="cover ">
+    <h1 class="cover"><span>Reactor</span><wbr></wbr><span><span>Events</span></span></h1>
+    <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">object </span><a href="index.html">ReactorEvents</a></div><p class="paragraph">The v1 reactor event registry (CONTRACT.md §22.5) — five interceptable events, their mutable-field allow-lists, and their default failure policies.</p><p class="paragraph">The live copy is served at <code class="lang-kotlin">GET /api/v1/reactors/events</code> and is the one an admin UI SHOULD read. This constant list is the same data, restated because a wire contract that requires a network call to be understood is not a contract.</p><p class="paragraph"><strong>§22.7 hot-path exclusion.</strong> <code class="lang-kotlin">authz.check</code>, <code class="lang-kotlin">authz.check_batch</code> and <code class="lang-kotlin">token.introspect</code> are not hookable and are absent from <a href="-r-e-g-i-s-t-r-y.html">REGISTRY</a> and from every constant below. That absence is asserted by a test, not documented by a comment. This SDK also offers no client-side interceptor, middleware hook or callback presenting itself as the reactor equivalent for those operations. An application that needs external input on an authorization decision writes a <strong>deny grant</strong>, which the engine evaluates in the hot path at hot-path cost.</p></div></div>
+  </div>
+  <div class="tabbedcontent">
+    <div class="tabs-section" tabs-section="tabs-section"><button class="section-tab" data-active="" data-togglable="CONSTRUCTOR,TYPE,PROPERTY,FUNCTION">Members</button></div>
+    <div class="tabs-section-body">
+      <div data-togglable="PROPERTY">
+        <h2 class="">Properties</h2>
+        <div class="table"><a data-name="300903746%2FProperties%2F769193423" anchor-label="GRANT_PRE_ASSIGN" id="300903746%2FProperties%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="-g-r-a-n-t_-p-r-e_-a-s-s-i-g-n.html"><span><span>GRANT_PRE_ASSIGN</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="300903746%2FProperties%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">const </span><span class="token keyword">val </span><a href="-g-r-a-n-t_-p-r-e_-a-s-s-i-g-n.html">GRANT_PRE_ASSIGN</a><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a></div><div class="brief "><p class="paragraph">Before a role or permission is assigned (four-eyes workflows). Veto only.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="1615297273%2FProperties%2F769193423" anchor-label="LOGIN_POST_AUTH" id="1615297273%2FProperties%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="-l-o-g-i-n_-p-o-s-t_-a-u-t-h.html"><span><span>LOGIN_POST_AUTH</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="1615297273%2FProperties%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">const </span><span class="token keyword">val </span><a href="-l-o-g-i-n_-p-o-s-t_-a-u-t-h.html">LOGIN_POST_AUTH</a><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a></div><div class="brief "><p class="paragraph">After credentials verify, before a session is issued. Veto, or <code class="lang-kotlin">require_mfa</code> step-up.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="1469133875%2FProperties%2F769193423" anchor-label="REGISTRY" id="1469133875%2FProperties%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="-r-e-g-i-s-t-r-y.html"><span><span>REGISTRY</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="1469133875%2FProperties%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">val </span><a href="-r-e-g-i-s-t-r-y.html">REGISTRY</a><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-list/index.html">List</a><span class="token operator">&lt;</span><a href="../-reactor-event-spec/index.html">ReactorEventSpec</a><span class="token operator">&gt;</span></div><div class="brief "><p class="paragraph">Every hookable event in v1, in registry order.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="1739641107%2FProperties%2F769193423" anchor-label="TOKEN_PRE_ISSUE" id="1739641107%2FProperties%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="-t-o-k-e-n_-p-r-e_-i-s-s-u-e.html"><span><span>TOKEN_PRE_ISSUE</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="1739641107%2FProperties%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">const </span><span class="token keyword">val </span><a href="-t-o-k-e-n_-p-r-e_-i-s-s-u-e.html">TOKEN_PRE_ISSUE</a><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a></div><div class="brief "><p class="paragraph">Before an access token is minted. Mutable: the <code class="lang-kotlin">ext.</code> claim namespace.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-1991001954%2FProperties%2F769193423" anchor-label="USER_PRE_CREATE" id="-1991001954%2FProperties%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="-u-s-e-r_-p-r-e_-c-r-e-a-t-e.html"><span><span>USER_PRE_CREATE</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1991001954%2FProperties%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">const </span><span class="token keyword">val </span><a href="-u-s-e-r_-p-r-e_-c-r-e-a-t-e.html">USER_PRE_CREATE</a><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a></div><div class="brief "><p class="paragraph">Before a user row is written. Mutable: <code class="lang-kotlin">username</code>, <code class="lang-kotlin">email</code>, <code class="lang-kotlin">metadata.</code>.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-687304335%2FProperties%2F769193423" anchor-label="USER_PRE_UPDATE" id="-687304335%2FProperties%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="-u-s-e-r_-p-r-e_-u-p-d-a-t-e.html"><span><span>USER_PRE_UPDATE</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-687304335%2FProperties%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">const </span><span class="token keyword">val </span><a href="-u-s-e-r_-p-r-e_-u-p-d-a-t-e.html">USER_PRE_UPDATE</a><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a></div><div class="brief "><p class="paragraph">Before a user row is updated. Mutable: <code class="lang-kotlin">username</code>, <code class="lang-kotlin">email</code>, <code class="lang-kotlin">metadata.</code>.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div data-togglable="FUNCTION">
+        <h2 class="">Functions</h2>
+        <div class="table"><a data-name="1803610342%2FFunctions%2F769193423" anchor-label="defaultFailurePolicyFor" id="1803610342%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="default-failure-policy-for.html"><span>default</span><wbr></wbr><span>Failure</span><wbr></wbr><span>Policy</span><wbr></wbr><span><span>For</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="1803610342%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">fun </span><a href="default-failure-policy-for.html"><span class="token function">defaultFailurePolicyFor</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">events<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-collection/index.html">Collection</a><span class="token operator">&lt;</span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">&gt;</span></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../-failure-policy/index.html">FailurePolicy</a></div><div class="brief "><p class="paragraph">The <code class="lang-kotlin">failure_policy</code> a registration should get when it names none: the <strong>strictest</strong> default among the events it subscribes to (CONTRACT.md §22.8).</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-357450348%2FFunctions%2F769193423" anchor-label="spec" id="-357450348%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="spec.html"><span><span>spec</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-357450348%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">fun </span><a href="spec.html"><span class="token function">spec</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">name<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">?</span></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../-reactor-event-spec/index.html">ReactorEventSpec</a><span class="token operator">?</span></div><div class="brief "><p class="paragraph">Looks an event up by wire name.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      <div class="footer">
+        <span class="go-to-top-icon"><a href="#content" id="go-to-top-link"></a></span><span>© 2026 Copyright</span><span
+                class="pull-right"><span>Generated by </span><a
+                href="https://github.com/Kotlin/dokka"><span>dokka</span><span class="padded-icon"></span></a></span>
+      </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

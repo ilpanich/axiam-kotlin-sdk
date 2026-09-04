@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html class="no-js">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" charset="UTF-8">
+    <title>CaCertificatesApi</title>
+    <link href="../../../images/logo-icon.svg" rel="icon" type="image/svg">
+    <script>var pathToRoot = "../../../";</script>
+    <script>document.documentElement.classList.replace("no-js","js");</script>
+    <script>const storage = localStorage.getItem("dokka-dark-mode")
+    if (storage == null) {
+        const osDarkSchemePreferred = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+        if (osDarkSchemePreferred === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    } else {
+        const savedDarkMode = JSON.parse(storage)
+        if(savedDarkMode === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    }
+    </script>
+<script type="text/javascript" src="https://unpkg.com/kotlin-playground@1/dist/playground.min.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/sourceset_dependencies.js" async="async"></script>
+<link href="../../../styles/style.css" rel="Stylesheet">
+<link href="../../../styles/main.css" rel="Stylesheet">
+<link href="../../../styles/prism.css" rel="Stylesheet">
+<link href="../../../styles/logo-styles.css" rel="Stylesheet">
+<link href="../../../styles/font-jb-sans-auto.css" rel="Stylesheet">
+<script type="text/javascript" src="../../../scripts/clipboard.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/navigation-loader.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/platform-content-handler.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/main.js" defer="defer"></script>
+<script type="text/javascript" src="../../../scripts/prism.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/symbol-parameters-wrapper_deferred.js" defer="defer"></script>
+</head>
+<body>
+    <div class="root">
+<nav class="navigation" id="navigation-wrapper">
+    <div class="navigation--inner">
+        <div class="navigation-title">
+            <button class="menu-toggle" id="menu-toggle" type="button">toggle menu</button>
+            <div class="library-name">
+                    <a class="library-name--link" href="../../../index.html">
+                            axiam-sdk-kotlin
+                    </a>
+            </div>
+            <div class="library-version">
+1.0.0-beta11            </div>
+        </div>
+        <div class="filter-section" id="filter-section">
+                <button class="platform-tag platform-selector jvm-like" data-active="" data-filter=":dokkaHtml/main">jvm</button>
+        </div>
+    </div>
+    <div class="navigation-controls">
+        <button class="navigation-controls--btn navigation-controls--theme" id="theme-toggle-button" type="button">switch theme</button>
+        <div class="navigation-controls--btn navigation-controls--search" id="searchBar" role="button">search in API</div>
+    </div>
+</nav>
+        <div id="container">
+            <div class="sidebar" id="leftColumn">
+                <div class="sidebar--inner" id="sideMenu"></div>
+            </div>
+            <div id="main">
+<div class="main-content" data-page-type="classlike" id="content" pageIds="axiam-sdk-kotlin::io.axiam.sdk.management/CaCertificatesApi///PointingToDeclaration//769193423">
+  <div class="breadcrumbs"><a href="../../../index.html">axiam-sdk-kotlin</a><span class="delimiter">/</span><a href="../index.html">io.axiam.sdk.management</a><span class="delimiter">/</span><span class="current">CaCertificatesApi</span></div>
+  <div class="cover ">
+    <h1 class="cover"><span>Ca</span><wbr></wbr><span>Certificates</span><wbr></wbr><span><span>Api</span></span></h1>
+    <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">class </span><a href="index.html">CaCertificatesApi</a></div><p class="paragraph">The ca_certificates management operations.</p><p class="paragraph">A view over the client that created it, not a connection: constructing one performs no I/O (§27.2 rule 1), so there is nothing to cache and nothing to close.</p></div></div>
+  </div>
+  <div class="tabbedcontent">
+    <div class="tabs-section" tabs-section="tabs-section"><button class="section-tab" data-active="" data-togglable="CONSTRUCTOR,TYPE,PROPERTY,FUNCTION">Members</button></div>
+    <div class="tabs-section-body">
+      <div data-togglable="FUNCTION">
+        <h2 class="">Functions</h2>
+        <div class="table"><a data-name="-1503560334%2FFunctions%2F769193423" anchor-label="generate" id="-1503560334%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="generate.html"><span><span>generate</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1503560334%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="generate.html"><span class="token function">generate</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">body<span class="token operator">: </span><a href="../../io.axiam.sdk.management.models/-create-ca-certificate-request/index.html">CreateCaCertificateRequest</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../../io.axiam.sdk.management.models/-generated-ca-certificate/index.html">GeneratedCaCertificate</a></div><div class="brief "><p class="paragraph">Generate a CA. What that means depends on the configured key custodian, and deliberately not on the request: * Under <code class="lang-kotlin">database</code> or <code class="lang-kotlin">vault</code> custody, AXIAM generates a self-signed root and returns its private key once, in <code class="lang-kotlin">private_key_pem</code>. * Under <code class="lang-kotlin">vault_pki</code> custody, Vault generates a root and a signing intermediate beneath it, and the response has <strong>no</strong> <code class="lang-kotlin">private_key_pem</code> because the key never existed outside Vault. The root's certificate comes back in <code class="lang-kotlin">chain_pem</code>, which is the only copy anything outside Vault will see.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-1379950619%2FFunctions%2F769193423" anchor-label="generateSigningCa" id="-1379950619%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="generate-signing-ca.html"><span>generate</span><wbr></wbr><span>Signing</span><wbr></wbr><span><span>Ca</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1379950619%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="generate-signing-ca.html"><span class="token function">generateSigningCa</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">tenantId<span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/util/UUID.html">UUID</a><span class="token punctuation">, </span></span><span class="parameter ">body<span class="token operator">: </span><a href="../../io.axiam.sdk.management.models/-create-intermediate-ca-request/index.html">CreateIntermediateCaRequest</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../../io.axiam.sdk.management.models/-generated-ca-certificate/index.html">GeneratedCaCertificate</a></div><div class="brief "><p class="paragraph">Create a tenant signing CA beneath one of the organization's CAs, with the key generated by whoever the deployment's custodian is. The private key is returned exactly once — and not at all under <code class="lang-kotlin">vault_pki</code>, where it was born inside Vault and no API exports it.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-1615484773%2FFunctions%2F769193423" anchor-label="get" id="-1615484773%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="get.html"><span><span>get</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1615484773%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="get.html"><span class="token function">get</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">id<span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/util/UUID.html">UUID</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../../io.axiam.sdk.management.models/-ca-certificate/index.html">CaCertificate</a></div><div class="brief "><p class="paragraph">Issues <code class="lang-kotlin">GET /api/v1/organizations/{org_id}/ca-certificates/{id}</code>.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-119513833%2FFunctions%2F769193423" anchor-label="importCa" id="-119513833%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="import-ca.html"><span>import</span><wbr></wbr><span><span>Ca</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-119513833%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="import-ca.html"><span class="token function">importCa</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">body<span class="token operator">: </span><a href="../../io.axiam.sdk.management.models/-import-ca-certificate-request/index.html">ImportCaCertificateRequest</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../../io.axiam.sdk.management.models/-ca-certificate/index.html">CaCertificate</a></div><div class="brief "><p class="paragraph">Register a CA an organization already has, instead of generating one. The case this exists for: an organization whose root lives offline, in an HSM, or in an existing internal PKI, and which wants AXIAM in the chain rather than at the top of it. Without it, the only CA AXIAM could use was one it generated, which means every AXIAM-issued certificate chains to a root nothing else in the estate trusts. With a private key, AXIAM takes custody of it and can issue against the CA. Where it goes is the configured custodian's business: sealed into the row, written to Vault's KV engine, or — under <code class="lang-kotlin">vault_pki</code> — imported into Vault's PKI engine as an issuer, after which AXIAM signs through Vault and holds nothing. That last one is the BYOK counterpart to generating in Vault: the key does pass through AXIAM's memory on the way in, because AXIAM is what received the request, but it is never stored here and every later use of it is Vault's. Without a private key, the certificate is a trust anchor and <code class="lang-kotlin">/api/v1/certificates</code> says so rather than failing at the point of use. Gated on <code class="lang-kotlin">ca_certificates:generate</code>: importing a CA is the same act as generating one from every relying party's point of view — it decides what this organization's certificates chain to.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-1196834670%2FFunctions%2F769193423" anchor-label="inOrg" id="-1196834670%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="in-org.html"><span>in</span><wbr></wbr><span><span>Org</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1196834670%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">fun </span><a href="in-org.html"><span class="token function">inOrg</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">orgId<span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/util/UUID.html">UUID</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="index.html">CaCertificatesApi</a></div><div class="brief "><p class="paragraph">Returns a handle addressing <a href="in-org.html">orgId</a> instead of the client's organization.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-663925230%2FFunctions%2F769193423" anchor-label="list" id="-663925230%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="list.html"><span><span>list</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-663925230%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="list.html"><span class="token function">list</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">page<span class="token operator">: </span><a href="../-page-request/index.html">PageRequest</a><span class="token operator">?</span></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../-page/index.html">Page</a><span class="token operator">&lt;</span><a href="../../io.axiam.sdk.management.models/-ca-certificate/index.html">CaCertificate</a><span class="token operator">&gt;</span></div><div class="brief "><p class="paragraph">Issues <code class="lang-kotlin">GET /api/v1/organizations/{org_id}/ca-certificates</code>.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-467493845%2FFunctions%2F769193423" anchor-label="listAll" id="-467493845%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="list-all.html"><span>list</span><wbr></wbr><span><span>All</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-467493845%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="list-all.html"><span class="token function">listAll</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">start<span class="token operator">: </span><a href="../-page-request/index.html">PageRequest</a><span class="token operator">?</span><span class="token operator"> = </span>null</span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-list/index.html">List</a><span class="token operator">&lt;</span><a href="../../io.axiam.sdk.management.models/-ca-certificate/index.html">CaCertificate</a><span class="token operator">&gt;</span></div><div class="brief "><p class="paragraph">Walks <code class="lang-kotlin">list</code> to exhaustion and returns every item (§27.4 rule 4).</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="221857532%2FFunctions%2F769193423" anchor-label="listSigningCas" id="221857532%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="list-signing-cas.html"><span>list</span><wbr></wbr><span>Signing</span><wbr></wbr><span><span>Cas</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="221857532%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="list-signing-cas.html"><span class="token function">listSigningCas</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">tenantId<span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/util/UUID.html">UUID</a><span class="token punctuation">, </span></span><span class="parameter ">page<span class="token operator">: </span><a href="../-page-request/index.html">PageRequest</a><span class="token operator">?</span></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../-page/index.html">Page</a><span class="token operator">&lt;</span><a href="../../io.axiam.sdk.management.models/-ca-certificate/index.html">CaCertificate</a><span class="token operator">&gt;</span></div><div class="brief "><p class="paragraph">Issues <code class="lang-kotlin">GET /api/v1/organizations/{org_id}/tenants/{tenant_id}/signing-cas</code>.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="1831054563%2FFunctions%2F769193423" anchor-label="listSigningCasAll" id="1831054563%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="list-signing-cas-all.html"><span>list</span><wbr></wbr><span>Signing</span><wbr></wbr><span>Cas</span><wbr></wbr><span><span>All</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="1831054563%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="list-signing-cas-all.html"><span class="token function">listSigningCasAll</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">tenantId<span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/util/UUID.html">UUID</a><span class="token punctuation">, </span></span><span class="parameter ">start<span class="token operator">: </span><a href="../-page-request/index.html">PageRequest</a><span class="token operator">?</span><span class="token operator"> = </span>null</span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-list/index.html">List</a><span class="token operator">&lt;</span><a href="../../io.axiam.sdk.management.models/-ca-certificate/index.html">CaCertificate</a><span class="token operator">&gt;</span></div><div class="brief "><p class="paragraph">Walks <code class="lang-kotlin">listSigningCas</code> to exhaustion and returns every item (§27.4 rule 4).</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-831051443%2FFunctions%2F769193423" anchor-label="migrateCustody" id="-831051443%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="migrate-custody.html"><span>migrate</span><wbr></wbr><span><span>Custody</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-831051443%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="migrate-custody.html"><span class="token function">migrateCustody</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">id<span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/util/UUID.html">UUID</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../../io.axiam.sdk.management.models/-migrate-custody-response/index.html">MigrateCustodyResponse</a></div><div class="brief "><p class="paragraph">Move this CA's signing key to the custodian the deployment is configured for. Custody is recorded per CA rather than read from configuration, so adopting Vault does not move the CAs that already exist — their keys stay sealed in their rows until something moves them. This is that something, and without it the only route out of database custody is to generate a new CA and re-issue every leaf beneath it, which for a trust anchor means touching every relying party. Takes effect immediately; no restart. The row is the authority on where a key lives, and the signing path reads it per request.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="972891565%2FFunctions%2F769193423" anchor-label="revoke" id="972891565%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="revoke.html"><span><span>revoke</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="972891565%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="revoke.html"><span class="token function">revoke</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">id<span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/util/UUID.html">UUID</a></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">Issues <code class="lang-kotlin">POST /api/v1/organizations/{org_id}/ca-certificates/{id}/revoke</code>.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="1697877463%2FFunctions%2F769193423" anchor-label="setMtlsTrustAnchor" id="1697877463%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="set-mtls-trust-anchor.html"><span>set</span><wbr></wbr><span>Mtls</span><wbr></wbr><span>Trust</span><wbr></wbr><span><span>Anchor</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="1697877463%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="set-mtls-trust-anchor.html"><span class="token function">setMtlsTrustAnchor</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">id<span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/util/UUID.html">UUID</a><span class="token punctuation">, </span></span><span class="parameter ">body<span class="token operator">: </span><a href="../../io.axiam.sdk.management.models/-set-mtls-trust-anchor/index.html">SetMtlsTrustAnchor</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../../io.axiam.sdk.management.models/-mtls-trust-anchor-response/index.html">MtlsTrustAnchorResponse</a></div><div class="brief "><p class="paragraph">Offer this CA — or stop offering it — as a trust anchor for mutual TLS. When enabled, this CA's <strong>public</strong> certificate is exported into the client-CA bundle and client-certificate verification is turned on in <code class="lang-kotlin">optional</code> mode, unless the operator has configured <code class="lang-kotlin">AXIAM__SERVER__TLS__CLIENT_AUTH</code> / <code class="lang-kotlin">CLIENT_CA_PATH</code> themselves, which is never overridden. The signing key is not copied and stays with its custodian. The change applies to the <strong>running listener</strong>. rustls consults its client certificate verifier per handshake rather than only at construction, so a verifier that delegates to a swappable anchor set can be updated in place; see <code class="lang-kotlin">axiam_server::tls::ReloadableClientCertVerifier</code>. Connections already established keep the verifier they handshook with, which is correct — a certificate accepted a moment ago does not become invalid mid-connection. <code class="lang-kotlin">restart_required</code> is therefore <code class="lang-kotlin">false</code> on a TLS deployment, and <code class="lang-kotlin">true</code> only when there is no listener to reload into.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-1098270414%2FFunctions%2F769193423" anchor-label="signSigningCaCsr" id="-1098270414%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="sign-signing-ca-csr.html"><span>sign</span><wbr></wbr><span>Signing</span><wbr></wbr><span>Ca</span><wbr></wbr><span><span>Csr</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1098270414%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="sign-signing-ca-csr.html"><span class="token function">signSigningCaCsr</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">tenantId<span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/util/UUID.html">UUID</a><span class="token punctuation">, </span></span><span class="parameter ">body<span class="token operator">: </span><a href="../../io.axiam.sdk.management.models/-sign-intermediate-csr-request/index.html">SignIntermediateCsrRequest</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../../io.axiam.sdk.management.models/-ca-certificate/index.html">CaCertificate</a></div><div class="brief "><p class="paragraph">Sign a certificate signing request the tenant produced elsewhere. The response has no <code class="lang-kotlin">private_key_pem</code> because the key never reached AXIAM: it is wherever the CSR was made, and that is the point of this endpoint rather than a shortcoming of it.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      <div class="footer">
+        <span class="go-to-top-icon"><a href="#content" id="go-to-top-link"></a></span><span>© 2026 Copyright</span><span
+                class="pull-right"><span>Generated by </span><a
+                href="https://github.com/Kotlin/dokka"><span>dokka</span><span class="padded-icon"></span></a></span>
+      </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
