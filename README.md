@@ -229,6 +229,47 @@ AxiamClient.builder(baseUrl, "acme")
     .build()
 ```
 
+### RFC 8705 §5 `mtls_endpoint_aliases` (contract 1.40, CONTRACT.md §21.3 rule 2)
+
+A TLS listener decides whether to ask for a client certificate during the handshake, before
+it has seen a byte of HTTP, so "request one on `/oauth2/token` but not on
+`/oauth2/authorize`" is not something a single listener can do. A deployment that wants both
+runs two — and `mtls_endpoint_aliases` in the discovery document is how the second one is
+named.
+
+Once a client is built with `clientCertificate(...)`, every request it makes presents that
+certificate, so the §12 helpers **prefer the alias** over the top-level entry of the same
+name wherever the document publishes one:
+
+| Operation | Endpoint aliased |
+|---|---|
+| `oidcExchange`, `oidcRefresh`, `loginClientCredentials`, `devicePoll`, `tokenExchange`, `umaExchangeTicket` | `token_endpoint` |
+| `introspect` | `introspection_endpoint` |
+| `revoke` | `revocation_endpoint` |
+| `deviceAuthorize` | `device_authorization_endpoint` |
+| `oidcPar` | `pushed_authorization_request_endpoint` |
+
+Three things this deliberately does **not** do:
+
+- **A null `mtls_endpoint_aliases` is not an error.** It means "this deployment terminates
+  mutual TLS on the issuer's own host", so the conventional endpoints keep being used. A
+  deployment running `client_auth = optional` on one listener serves both populations there
+  and correctly publishes nothing. The same holds one level in: every property of
+  `MtlsEndpointAliases` is nullable, and an endpoint the object does not name falls back
+  rather than failing the document.
+- **No alias is ever synthesised.** Only the six endpoints RFC 8705 §5 lists can be aliased —
+  never `authorization_endpoint`, `end_session_endpoint` or `jwks_uri`. The first two are
+  front-channel and the third is public key material; sending a browser to an mTLS host
+  raises a native certificate-chooser dialog most users cannot answer.
+- **`issuer` does not move.** It is an identifier, not an endpoint. §12.4 rule 3 still
+  requires a token's `iss` to equal the document's `issuer` by exact string comparison,
+  including for a token minted at an alias endpoint — the expected issuer is never derived
+  from the host that was called.
+
+A client built without `clientCertificate(...)` keeps using the top-level endpoints even when
+the document publishes aliases: the alias exists for the handshake, and there is no handshake
+to make.
+
 ## Framework integration (§10 / §11)
 
 For **Ktor**, install the `AxiamAuthentication` plugin with a client; it verifies the incoming

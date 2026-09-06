@@ -189,6 +189,9 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
             oidcClientSecret = b.oidcClientSecret,
             discoveryTtlMs = b.oidcDiscoveryTtlMs,
             clockSkewSecInput = b.oidcClockSkewSec,
+            // §6.1 is all-or-nothing: TlsFactory.build above has already
+            // refused a half-configured pair, so either half implies both.
+            presentsClientCertificate = b.clientCertPem != null,
         )
 
         // §19.2 rule 6: a setting we lowered is reported, not swallowed. The
