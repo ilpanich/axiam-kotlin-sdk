@@ -82,6 +82,15 @@ internal class OidcSupport(
     private val oidcClientSecret: Sensitive<String>?,
     discoveryTtlMs: Long,
     clockSkewSecInput: Int?,
+    /**
+     * Whether the owning client was built with a §6.1 mTLS identity, and so
+     * whether CONTRACT.md §21.3 rule 2 applies to the calls it makes.
+     *
+     * The identity is configured once and presented on every request, so "is
+     * this call going over mutual TLS" has a whole-client answer here rather
+     * than a per-call one.
+     */
+    private val presentsClientCertificate: Boolean = false,
 ) {
     private val discoveryTtlMs: Long = discoveryTtlMs.coerceAtLeast(MIN_DISCOVERY_TTL_MS)
     private val clockSkewSec: Int = OidcIdToken.resolveClockSkewSec(clockSkewSecInput)
@@ -150,7 +159,71 @@ internal class OidcSupport(
         end_session_endpoint = json.strOrNull("end_session_endpoint"),
         backchannel_logout_supported = json.boolOrFalse("backchannel_logout_supported"),
         backchannel_logout_session_supported = json.boolOrFalse("backchannel_logout_session_supported"),
+        mtls_endpoint_aliases = parseMtlsEndpointAliases(json),
     )
+
+    /**
+     * Parses the RFC 8705 §5 `mtls_endpoint_aliases` object (contract 1.40,
+     * CONTRACT.md §21.3 rule 2), or `null` when the document carries none.
+     *
+     * Absence is never an error: it means "no separate mTLS host", not "mTLS
+     * unsupported". Each member is read independently, so a partial object —
+     * which RFC 8705 §5 permits — aliases what it names and leaves the rest
+     * falling back to the top-level entries, rather than failing the whole
+     * document.
+     */
+    private fun parseMtlsEndpointAliases(json: JsonObject): MtlsEndpointAliases? {
+        val aliases = json["mtls_endpoint_aliases"]
+        if (aliases == null || aliases is JsonNull) return null
+        val obj = aliases.jsonObject
+        return MtlsEndpointAliases(
+            token_endpoint = obj.strOrNull("token_endpoint"),
+            userinfo_endpoint = obj.strOrNull("userinfo_endpoint"),
+            revocation_endpoint = obj.strOrNull("revocation_endpoint"),
+            introspection_endpoint = obj.strOrNull("introspection_endpoint"),
+            device_authorization_endpoint = obj.strOrNull("device_authorization_endpoint"),
+            pushed_authorization_request_endpoint =
+                obj.strOrNull("pushed_authorization_request_endpoint"),
+        )
+    }
+
+    /**
+     * The endpoint a call should use, preferring its RFC 8705 §5 alias when
+     * this client presents a §6.1 certificate (CONTRACT.md §21.3 rule 2).
+     *
+     * Three things this deliberately does NOT do, each of them a documented
+     * way to get rule 2 wrong:
+     *
+     *  * An absent `mtls_endpoint_aliases` is never an error. It means "no
+     *    separate mTLS host", not "mTLS unsupported" — a deployment running
+     *    `client_auth = optional` on one listener serves both populations at
+     *    the conventional endpoints and correctly publishes nothing.
+     *  * [pick] can only reach [MtlsEndpointAliases], so
+     *    `authorization_endpoint`, `end_session_endpoint` and `jwks_uri` are
+     *    unreachable rather than merely unused: they are front-channel or
+     *    public, and an mTLS host would raise a certificate-chooser dialog in
+     *    the user's browser.
+     *  * `issuer` is untouched. It is an identifier, not an endpoint, and
+     *    §12.4 rule 3 still compares a token's `iss` against
+     *    `configuration.issuer` by exact string — including for a token minted
+     *    at an alias endpoint.
+     *
+     * A `null` result for a conditionally-advertised endpoint still means
+     * "this server does not support the feature" — the caller raises that, and
+     * never concatenates a URL onto the issuer.
+     */
+    private fun preferredEndpoint(
+        configuration: OidcConfiguration,
+        pick: (MtlsEndpointAliases) -> String?,
+        topLevel: String?,
+    ): String? {
+        if (presentsClientCertificate) {
+            configuration.mtls_endpoint_aliases?.let { aliases ->
+                pick(aliases)?.takeIf { it.isNotEmpty() }?.let { return it }
+            }
+        }
+        return topLevel
+    }
 
     // -- 2. oidcBegin: pure local computation, no network I/O ---------------
 
@@ -219,7 +292,11 @@ internal class OidcSupport(
     suspend fun oidcPar(params: OidcParParams): PushedAuthorizationRequest {
         val configuration = params.configuration ?: oidcDiscover()
         val clientId = requireClientId()
-        val endpoint = configuration.pushed_authorization_request_endpoint
+        val endpoint = preferredEndpoint(
+            configuration,
+            { it.pushed_authorization_request_endpoint },
+            configuration.pushed_authorization_request_endpoint,
+        )
         if (endpoint.isNullOrEmpty()) {
             throw AuthError(
                 "the authorization server's discovery document advertises no " +
@@ -430,7 +507,10 @@ internal class OidcSupport(
             "client_secret" to secret,
             "token_type_hint" to params.tokenTypeHint,
         )
-        val url = endpointUrl(configuration.introspection_endpoint, params.tenantId)
+        val url = endpointUrl(
+            preferredEndpoint(configuration, { it.introspection_endpoint }, configuration.introspection_endpoint)!!,
+            params.tenantId,
+        )
         val json = postOAuth2Form(url, form, "introspect request failed")
         return IntrospectionResult(
             active = json["active"]?.jsonPrimitive?.boolean ?: false,
@@ -465,7 +545,10 @@ internal class OidcSupport(
             "client_secret" to secret,
             "token_type_hint" to params.tokenTypeHint,
         )
-        val url = endpointUrl(configuration.revocation_endpoint, params.tenantId)
+        val url = endpointUrl(
+            preferredEndpoint(configuration, { it.revocation_endpoint }, configuration.revocation_endpoint)!!,
+            params.tenantId,
+        )
         val request = Request.Builder().url(url).post(form).build()
         val response = executeRequest(request)
         response.use {
@@ -762,7 +845,11 @@ internal class OidcSupport(
      */
     suspend fun deviceAuthorize(params: DeviceAuthorizeParams): DeviceAuthorization {
         val configuration = params.configuration ?: oidcDiscover()
-        val endpoint = configuration.device_authorization_endpoint
+        val endpoint = preferredEndpoint(
+            configuration,
+            { it.device_authorization_endpoint },
+            configuration.device_authorization_endpoint,
+        )
             ?: throw AuthError(
                 "the authorization server's discovery document advertises no " +
                     "device_authorization_endpoint: this server does not support the device " +
@@ -952,7 +1039,10 @@ internal class OidcSupport(
             "client_id" to requireClientId(),
             "client_secret" to requireClientSecret("tokenExchange"),
         )
-        val url = endpointUrl(configuration.token_endpoint, params.tenantId)
+        val url = endpointUrl(
+            preferredEndpoint(configuration, { it.token_endpoint }, configuration.token_endpoint)!!,
+            params.tenantId,
+        )
         val json = postOAuth2Form(url, form, "token exchange request failed")
 
         return ExchangedToken(
@@ -1088,7 +1178,10 @@ internal class OidcSupport(
             "client_id" to requireClientId(),
             "client_secret" to requireClientSecret("umaExchangeTicket"),
         )
-        val url = endpointUrl(configuration.token_endpoint, params.tenantId)
+        val url = endpointUrl(
+            preferredEndpoint(configuration, { it.token_endpoint }, configuration.token_endpoint)!!,
+            params.tenantId,
+        )
         // One POST, no retry wrapper. See the rule-6 note above — this is the
         // §16 exception, and it is load-bearing rather than stylistic.
         val request = Request.Builder().url(url).post(form).build()
@@ -1357,7 +1450,10 @@ internal class OidcSupport(
     }
 
     private suspend fun postToken(configuration: OidcConfiguration, form: RequestBody, tenantIdOverride: String?): JsonObject {
-        val url = endpointUrl(configuration.token_endpoint, tenantIdOverride)
+        val url = endpointUrl(
+            preferredEndpoint(configuration, { it.token_endpoint }, configuration.token_endpoint)!!,
+            tenantIdOverride,
+        )
         return postOAuth2Form(url, form, "token request failed")
     }
 
