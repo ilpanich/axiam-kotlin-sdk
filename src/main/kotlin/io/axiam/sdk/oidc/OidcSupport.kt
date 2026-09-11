@@ -160,6 +160,9 @@ internal class OidcSupport(
         backchannel_logout_supported = json.boolOrFalse("backchannel_logout_supported"),
         backchannel_logout_session_supported = json.boolOrFalse("backchannel_logout_session_supported"),
         mtls_endpoint_aliases = parseMtlsEndpointAliases(json),
+        code_challenge_methods_supported = json.strListOrNull("code_challenge_methods_supported"),
+        token_endpoint_auth_signing_alg_values_supported =
+            json.strListOrNull("token_endpoint_auth_signing_alg_values_supported"),
     )
 
     /**
@@ -317,6 +320,15 @@ internal class OidcSupport(
             "nonce" to params.request.nonce,
             "code_challenge" to OidcPkce.computeCodeChallenge(params.request.codeVerifier.expose()),
             "code_challenge_method" to OidcPkce.CODE_CHALLENGE_METHOD_S256,
+            // RFC 9449 §10.1: the JWK SHA-256 thumbprint of the key the client
+            // will prove possession of at the token endpoint, pinned at push
+            // time so the binding cannot be re-pointed by whoever holds the
+            // browser. Caller-supplied — this SDK VERIFIES DPoP proofs and
+            // does not generate them, so it is not in a position to compute
+            // the thumbprint of a key it does not hold. Omitted entirely when
+            // null: `buildForm` drops null values, and an empty `dpop_jkt` is
+            // not the same request as no `dpop_jkt`.
+            "dpop_jkt" to params.dpopJkt,
             "client_secret" to oidcClientSecret?.expose(),
         )
 
@@ -330,13 +342,30 @@ internal class OidcSupport(
         val requestUri = wire["request_uri"]?.jsonPrimitive?.contentOrNull
             ?: throw NetworkError("pushed authorization response carried no request_uri")
 
-        // §26.2 rule 2: exactly two query parameters. The server REFUSES a
-        // request carrying both a request_uri and any inline authorization
-        // parameter rather than merging them: an attacker supplies the inline
-        // value they want and lets the pushed copy satisfy whichever check
-        // reads the other one. Re-adding them "for compatibility" restores the
-        // attack — which is why any query the discovered endpoint already
-        // carried is dropped here rather than preserved.
+        // §26.2 rule 2: exactly two AUTHORIZATION parameters. The server
+        // refuses to merge an inline authorization parameter with a
+        // request_uri — an attacker supplies the inline value they want and
+        // lets the pushed copy satisfy whichever check reads the other one —
+        // so any query the discovered endpoint already carried is dropped
+        // here rather than preserved.
+        //
+        // `tenant_id` is the one exception, and it is not an exception to
+        // rule 2 so much as outside its subject. It is not an RFC 6749
+        // authorization request parameter; it is the tenant-routing parameter
+        // the server itself publishes on `authorization_endpoint` (contract
+        // 1.42 `tenant_scoped()`), and the authorize handler documents it as
+        // "read only when the request carries no authenticated principal —
+        // ignored whenever a principal was resolved from a token". For a
+        // browser arriving at the login hop with no session it is the ONLY
+        // thing that resolves a tenant, and without it that browser gets a
+        // 401 instead of a login page.
+        //
+        // It also has to be the SAME tenant the push used: `/oauth2/par` was
+        // called with the resolved tenant just above, and the handle is
+        // consumed with `consume(tenant_id, client_id, request_uri)`. A
+        // redirect naming a different tenant looks up the handle in a store
+        // that does not hold it. So the resolved value is carried through
+        // here, not the published one, exactly as `endpointUrl` resolves it.
         val authorizationEndpoint = configuration.authorization_endpoint.toHttpUrlOrNull()
             ?: throw NetworkError(
                 "discovery document authorization_endpoint is not a valid URL: " +
@@ -344,6 +373,7 @@ internal class OidcSupport(
             )
         val authorizationUrl = authorizationEndpoint.newBuilder()
             .query(null)
+            .addQueryParameter("tenant_id", resolveTenantId(params.tenantId))
             .addQueryParameter("client_id", clientId)
             .addQueryParameter("request_uri", requestUri)
             .build()
@@ -1635,12 +1665,37 @@ internal class OidcSupport(
      * from the document, NEVER hardcoded — §12.3 rule 6) plus the mandatory
      * `?tenant_id=<uuid>` query parameter (§12.1 note 2). Existing query
      * parameters on the endpoint, if any, are preserved.
+     *
+     * **`tenant_id` is REPLACED, never appended.** As of contract 1.42 the
+     * server's own discovery document publishes the tenant inside the
+     * endpoints it advertises: `tenant_scoped()` appends `?tenant_id=<uuid>`
+     * to the token, revocation, introspection, device-authorization, PAR and
+     * end-session URLs whenever the discovery request named a tenant, or the
+     * deployment sets `oauth2_default_tenant_id`. OkHttp's
+     * [HttpUrl.Builder.addQueryParameter] appends, so adding ours on top of
+     * that produced `?tenant_id=A&tenant_id=B` — two values for a parameter
+     * that selects a tenant, resolved by whichever end of the query string
+     * the server's extractor happens to read.
+     *
+     * [removeAllQueryParameters] first, then add exactly one. Every *other*
+     * query parameter the endpoint carried is still preserved: RFC 6749
+     * §3.1/§3.2 require a client to retain the endpoint's own query
+     * component, and only `tenant_id` is ours to own.
+     *
+     * The resolved value wins on a disagreement with the published one. It is
+     * what this caller or session actually authenticated against (§12.3
+     * rule 4's precedence), and a deterministic mismatch is a better failure
+     * than one that depends on parser order.
      */
     private fun endpointUrl(endpoint: String, tenantIdOverride: String?): String {
         val tenantId = resolveTenantId(tenantIdOverride)
         val httpUrl = endpoint.toHttpUrlOrNull()
             ?: throw NetworkError("invalid endpoint URL from discovery document: $endpoint")
-        return httpUrl.newBuilder().addQueryParameter("tenant_id", tenantId).build().toString()
+        return httpUrl.newBuilder()
+            .removeAllQueryParameters("tenant_id")
+            .addQueryParameter("tenant_id", tenantId)
+            .build()
+            .toString()
     }
 
     /**
@@ -1871,6 +1926,17 @@ private fun JsonObject.strOrNull(key: String): String? =
 
 private fun JsonObject.strList(key: String): List<String> =
     this[key]?.jsonArray?.map { it.jsonPrimitive.content } ?: emptyList()
+
+/**
+ * The `null`-distinguishing sibling of [strList]: `null` when the member is
+ * absent (or JSON `null`), an empty list when the server really sent `[]`.
+ *
+ * Discovery members that RFC 8414 gives no default to need that distinction —
+ * "the document said nothing" and "the document said none" are different
+ * facts, and [strList]'s `emptyList()` fallback erases the difference.
+ */
+private fun JsonObject.strListOrNull(key: String): List<String>? =
+    (this[key] as? JsonArray)?.map { it.jsonPrimitive.content }
 
 private fun JsonObject.long(key: String): Long =
     strOrNull(key)?.toLongOrNull() ?: throw NetworkError("response is missing the required field \"$key\"")

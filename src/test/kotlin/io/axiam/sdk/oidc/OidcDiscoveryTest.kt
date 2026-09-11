@@ -10,6 +10,7 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
@@ -122,5 +123,112 @@ class OidcDiscoveryTest {
         }
         val client = OidcTestKit.clientFor(server)
         assertThrows(NetworkError::class.java) { runBlocking { client.oidcDiscover() } }
+    }
+
+    // -----------------------------------------------------------------------
+    // Contract 1.42 — the two new RFC 8414 members (§21.5)
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `the two contract-1_42 metadata members are parsed when present`(): Unit = runBlocking {
+        server.dispatcher = discoveryDispatcher(
+            """
+              "code_challenge_methods_supported": ["S256"],
+              "token_endpoint_auth_signing_alg_values_supported": ["EdDSA", "ES256"],
+            """.trimIndent(),
+        )
+        val doc = OidcTestKit.clientFor(server).oidcDiscover()
+        assertEquals(listOf("S256"), doc.code_challenge_methods_supported)
+        assertEquals(listOf("EdDSA", "ES256"), doc.token_endpoint_auth_signing_alg_values_supported)
+    }
+
+    @Test
+    fun `an absent code_challenge_methods_supported is null, never an assumed S256`(): Unit = runBlocking {
+        // CONTRACT.md §21.5: RFC 8414 defines no default for this member, so
+        // its absence does not mean S256 — and openapi.json marking it
+        // required must not stop this SDK parsing a document from a
+        // non-AXIAM OP that omits it. `null` is "the document said nothing";
+        // an empty list would be "the document said none".
+        val doc = OidcTestKit.clientFor(server).oidcDiscover()
+        assertNull(doc.code_challenge_methods_supported)
+        assertNull(doc.token_endpoint_auth_signing_alg_values_supported)
+    }
+
+    // -----------------------------------------------------------------------
+    // Contract 1.42 — the server publishes the tenant inside the endpoints it
+    // advertises, so the SDK must REPLACE `tenant_id`, not append it.
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `a tenant-scoped discovered endpoint yields exactly one tenant_id on the wire`(): Unit = runBlocking {
+        // `tenant_scoped()` appends `?tenant_id=<uuid>` to the token,
+        // revocation, introspection, device-authorization, PAR and
+        // end-session URLs whenever the discovery request named a tenant or
+        // the deployment sets `oauth2_default_tenant_id`. OkHttp's
+        // addQueryParameter APPENDS, so the SDK used to produce
+        // `?tenant_id=A&tenant_id=B` — two values for the parameter that
+        // selects a tenant.
+        val published = "99999999-9999-9999-9999-999999999999"
+        val resolved = "22222222-2222-2222-2222-222222222222"
+        server.dispatcher = tenantScopedIntrospectDispatcher(published)
+
+        val client = OidcTestKit.clientFor(
+            server,
+            clientSecret = OidcTestKit.CLIENT_SECRET,
+            tenantId = resolved,
+        )
+        client.introspect(IntrospectParams.of("tok"))
+
+        val url = introspectUrl!!
+        assertEquals(
+            listOf(resolved),
+            url.queryParameterValues("tenant_id"),
+            "exactly one tenant_id, and the RESOLVED one wins: it is what this caller " +
+                "authenticated against (§12.3 rule 4)",
+        )
+        assertEquals(
+            "legacy",
+            url.queryParameter("audience"),
+            "every OTHER query parameter the endpoint published is preserved — RFC 6749 " +
+                "§3.1/§3.2 require a client to retain the endpoint's own query component",
+        )
+    }
+
+    private var introspectUrl: okhttp3.HttpUrl? = null
+
+    /** A dispatcher whose discovery document splices [extraMembers] in, and whose JWKS is live. */
+    private fun discoveryDispatcher(extraMembers: String): OidcTestKit.RoutingDispatcher =
+        OidcTestKit.RoutingDispatcher(
+            discoveryBody = {
+                OidcTestKit.discoveryJson(server.url("/").toString())
+                    .replaceFirst("{", "{\n$extraMembers")
+            },
+            jwksBody = { OidcTestKit.jwksJson(signingKey.toPublicJWK()) },
+        )
+
+    /**
+     * Discovery whose `introspection_endpoint` already carries the tenant the
+     * server published plus an unrelated parameter, and an introspection
+     * handler that records the URL the SDK actually dialed.
+     */
+    private fun tenantScopedIntrospectDispatcher(publishedTenant: String): OidcTestKit.RoutingDispatcher {
+        val origin = server.url("/").toString().trimEnd('/')
+        val dispatcher = OidcTestKit.RoutingDispatcher(
+            discoveryBody = {
+                OidcTestKit.discoveryJson(server.url("/").toString()).replace(
+                    "\"introspection_endpoint\": \"$origin/oauth2/introspect\"",
+                    "\"introspection_endpoint\": " +
+                        "\"$origin/oauth2/introspect?audience=legacy&tenant_id=$publishedTenant\"",
+                )
+            },
+            jwksBody = { OidcTestKit.jwksJson(signingKey.toPublicJWK()) },
+        )
+        dispatcher.on("/oauth2/introspect") { request ->
+            introspectUrl = request.requestUrl
+            MockResponse().setResponseCode(200)
+                .addHeader("Content-Type", "application/json")
+                .setBody("""{"active": false}""")
+        }
+        return dispatcher
     }
 }

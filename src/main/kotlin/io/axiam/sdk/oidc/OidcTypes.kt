@@ -149,6 +149,33 @@ data class OidcConfiguration(
      * `null`.
      */
     val mtls_endpoint_aliases: MtlsEndpointAliases? = null,
+    /**
+     * RFC 7636 §4.2 PKCE transformations the authorization server supports
+     * (contract 1.42, CONTRACT.md §21.5).
+     *
+     * **Modelled optional even though `openapi.json` marks it required**, and
+     * that is deliberate: RFC 8414 §2 defines no default for this member, so
+     * its absence does not mean `S256` — it means the document said nothing.
+     * This struct has to keep parsing a discovery document from a non-AXIAM
+     * OP, and every neighbouring member here is `null`-able for the same
+     * reason. Making it required would reject documents this SDK accepts
+     * today.
+     *
+     * Informational only. §12.1 rule 5 pins `oidcBegin` to `S256`
+     * unconditionally, so nothing in this SDK branches on what appears here —
+     * an SDK that downgraded to `plain` because a server advertised it would
+     * be taking instructions from the party PKCE protects it against.
+     */
+    val code_challenge_methods_supported: List<String>? = null,
+    /**
+     * JWS algorithms the token endpoint accepts for `private_key_jwt` /
+     * `client_secret_jwt` client assertions (contract 1.42, §21.5).
+     *
+     * Optional for exactly the reason above. Informational only: §21.5's
+     * standing rule is that an advertised capability is a statement about the
+     * deployment, not an instruction to the client.
+     */
+    val token_endpoint_auth_signing_alg_values_supported: List<String>? = null,
 )
 
 /**
@@ -960,6 +987,24 @@ data class OidcParParams(
     val scope: String? = null,
     /** A tenant override for the `?tenant_id=` query parameter. */
     val tenantId: String? = null,
+    /**
+     * RFC 9449 §10.1 `dpop_jkt` — the base64url SHA-256 JWK thumbprint of the
+     * public key this client will prove possession of at the token endpoint
+     * (contract 1.42).
+     *
+     * Pushing it binds the eventual authorization code to that key at push
+     * time rather than at redemption time, which closes RFC 9449 §10's
+     * authorization-code-injection window: a stolen code cannot be redeemed
+     * by a client holding a different key.
+     *
+     * **Caller-supplied.** This SDK implements the resource-server half of
+     * §21.7.2 — it VERIFIES proofs and does not generate them — so it never
+     * holds the client key whose thumbprint this is, and cannot compute the
+     * value for you. Compute the RFC 7638 base64url SHA-256 JWK thumbprint of
+     * your own DPoP public key and pass it in; leave it `null` and the
+     * parameter is not sent at all.
+     */
+    val dpopJkt: String? = null,
 )
 
 /**
