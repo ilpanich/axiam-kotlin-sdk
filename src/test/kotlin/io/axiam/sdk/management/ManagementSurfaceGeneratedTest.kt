@@ -16,6 +16,7 @@ import io.axiam.sdk.management.models.CaCertificate
 import io.axiam.sdk.management.models.Certificate
 import io.axiam.sdk.management.models.CertificateType
 import io.axiam.sdk.management.models.ComplianceReportEntry
+import io.axiam.sdk.management.models.ConsentView
 import io.axiam.sdk.management.models.CreateCaCertificateRequest
 import io.axiam.sdk.management.models.CreateCertificateRequest
 import io.axiam.sdk.management.models.CreateFederationConfigRequest
@@ -46,6 +47,7 @@ import io.axiam.sdk.management.models.GeneratedCaCertificate
 import io.axiam.sdk.management.models.GeneratedCertificate
 import io.axiam.sdk.management.models.GeneratedPgpKey
 import io.axiam.sdk.management.models.GrantPermissionRequest
+import io.axiam.sdk.management.models.GrantScopeConsent
 import io.axiam.sdk.management.models.Group
 import io.axiam.sdk.management.models.HealthResponse
 import io.axiam.sdk.management.models.ImportCaCertificateRequest
@@ -1054,7 +1056,7 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
     /** Exercises oauth2_clients.list. */
     @Test
     fun `oauth2_clients list`() = runTest {
-        val body = "{\"items\": [{\"client_id\": \"example\", \"created_at\": \"2026-08-26T00:00:00Z\", \"dpop_bound_access_tokens\": true, \"dpop_require_nonce\": true, \"grant_types\": [], \"id\": \"11111111-1111-4111-8111-111111111111\", \"name\": \"example\", \"profile\": \"standard\", \"redirect_uris\": [], \"require_par\": true, \"scopes\": [], \"self_signed_tls_client_auth_thumbprints\": [], \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"tls_client_certificate_bound_access_tokens\": true, \"token_endpoint_auth_method\": \"client_secret_post\", \"updated_at\": \"2026-08-26T00:00:00Z\"}], \"total\": 1, \"offset\": 0, \"limit\": 200}"
+        val body = "{\"items\": [{\"authn_request_params\": \"ignore\", \"browser_sso\": true, \"client_id\": \"example\", \"created_at\": \"2026-08-26T00:00:00Z\", \"dpop_bound_access_tokens\": true, \"dpop_require_nonce\": true, \"grant_types\": [], \"id\": \"11111111-1111-4111-8111-111111111111\", \"name\": \"example\", \"profile\": \"standard\", \"redirect_uris\": [], \"require_par\": true, \"scopes\": [], \"self_signed_tls_client_auth_thumbprints\": [], \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"tls_client_certificate_bound_access_tokens\": true, \"token_endpoint_auth_method\": \"client_secret_post\", \"updated_at\": \"2026-08-26T00:00:00Z\"}], \"total\": 1, \"offset\": 0, \"limit\": 200}"
         mount("GET", "/api/v1/oauth2-clients", 200, body)
         val result = client.management().oauth2Clients().list(page = PageRequest.of(50))
         val item = (Json.parseToJsonElement(body) as JsonObject)["items"]!!.jsonArray.first().toString()
@@ -1075,7 +1077,7 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
     /** Exercises oauth2_clients.get. */
     @Test
     fun `oauth2_clients get`() = runTest {
-        val body = "{\"client_id\": \"example\", \"created_at\": \"2026-08-26T00:00:00Z\", \"dpop_bound_access_tokens\": true, \"dpop_require_nonce\": true, \"grant_types\": [], \"id\": \"11111111-1111-4111-8111-111111111111\", \"name\": \"example\", \"profile\": \"standard\", \"redirect_uris\": [], \"require_par\": true, \"scopes\": [], \"self_signed_tls_client_auth_thumbprints\": [], \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"tls_client_certificate_bound_access_tokens\": true, \"token_endpoint_auth_method\": \"client_secret_post\", \"updated_at\": \"2026-08-26T00:00:00Z\"}"
+        val body = "{\"authn_request_params\": \"ignore\", \"browser_sso\": true, \"client_id\": \"example\", \"created_at\": \"2026-08-26T00:00:00Z\", \"dpop_bound_access_tokens\": true, \"dpop_require_nonce\": true, \"grant_types\": [], \"id\": \"11111111-1111-4111-8111-111111111111\", \"name\": \"example\", \"profile\": \"standard\", \"redirect_uris\": [], \"require_par\": true, \"scopes\": [], \"self_signed_tls_client_auth_thumbprints\": [], \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"tls_client_certificate_bound_access_tokens\": true, \"token_endpoint_auth_method\": \"client_secret_post\", \"updated_at\": \"2026-08-26T00:00:00Z\"}"
         mount("GET", "/api/v1/oauth2-clients/$EXAMPLE_ID", 200, body)
         val result = client.management().oauth2Clients().get(id = EXAMPLE_ID)
         assertDecodedEveryField(result, OAuth2ClientResponse.serializer(), body)
@@ -1084,7 +1086,7 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
     /** Exercises oauth2_clients.update. */
     @Test
     fun `oauth2_clients update`() = runTest {
-        val body = "{\"client_id\": \"example\", \"created_at\": \"2026-08-26T00:00:00Z\", \"dpop_bound_access_tokens\": true, \"dpop_require_nonce\": true, \"grant_types\": [], \"id\": \"11111111-1111-4111-8111-111111111111\", \"name\": \"example\", \"profile\": \"standard\", \"redirect_uris\": [], \"require_par\": true, \"scopes\": [], \"self_signed_tls_client_auth_thumbprints\": [], \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"tls_client_certificate_bound_access_tokens\": true, \"token_endpoint_auth_method\": \"client_secret_post\", \"updated_at\": \"2026-08-26T00:00:00Z\"}"
+        val body = "{\"authn_request_params\": \"ignore\", \"browser_sso\": true, \"client_id\": \"example\", \"created_at\": \"2026-08-26T00:00:00Z\", \"dpop_bound_access_tokens\": true, \"dpop_require_nonce\": true, \"grant_types\": [], \"id\": \"11111111-1111-4111-8111-111111111111\", \"name\": \"example\", \"profile\": \"standard\", \"redirect_uris\": [], \"require_par\": true, \"scopes\": [], \"self_signed_tls_client_auth_thumbprints\": [], \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"tls_client_certificate_bound_access_tokens\": true, \"token_endpoint_auth_method\": \"client_secret_post\", \"updated_at\": \"2026-08-26T00:00:00Z\"}"
         mount("PUT", "/api/v1/oauth2-clients/$EXAMPLE_ID", 200, body)
         val result = client.management().oauth2Clients().update(id = EXAMPLE_ID, body = UpdateOAuth2ClientRequest())
         assertDecodedEveryField(result, OAuth2ClientResponse.serializer(), body)
@@ -1301,7 +1303,7 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
     /** Exercises settings.get_org. */
     @Test
     fun `settings get_org`() = runTest {
-        val body = "{\"certificate\": {\"default_cert_validity_days\": 1, \"max_cert_validity_days\": 1}, \"created_at\": \"2026-08-26T00:00:00Z\", \"email\": {\"email_verification_grace_period_hours\": 1, \"email_verification_required\": true}, \"id\": \"11111111-1111-4111-8111-111111111111\", \"lockout\": {\"lockout_backoff_multiplier\": 1.0, \"lockout_duration_secs\": 1, \"max_failed_login_attempts\": 1, \"max_lockout_duration_secs\": 1}, \"mfa\": {\"mfa_challenge_lifetime_secs\": 1, \"mfa_enforced\": true}, \"notification\": {\"admin_notifications_enabled\": true}, \"opaque\": {\"opaque_ksf\": \"example\", \"opaque_mode\": \"example\", \"opaque_suite\": \"example\"}, \"password\": {\"hibp_check_enabled\": true, \"min_length\": 1, \"password_history_count\": 1, \"require_digits\": true, \"require_lowercase\": true, \"require_symbols\": true, \"require_uppercase\": true}, \"privacy\": {\"deletion_grace_period_days\": 1}, \"scope\": \"Org\", \"scope_id\": \"11111111-1111-4111-8111-111111111111\", \"token\": {\"access_token_lifetime_secs\": 1, \"refresh_token_lifetime_secs\": 1}, \"updated_at\": \"2026-08-26T00:00:00Z\", \"webauthn\": {\"webauthn_user_verification\": \"example\"}}"
+        val body = "{\"certificate\": {\"default_cert_validity_days\": 1, \"max_cert_validity_days\": 1}, \"created_at\": \"2026-08-26T00:00:00Z\", \"email\": {\"email_verification_grace_period_hours\": 1, \"email_verification_required\": true}, \"id\": \"11111111-1111-4111-8111-111111111111\", \"lockout\": {\"lockout_backoff_multiplier\": 1.0, \"lockout_duration_secs\": 1, \"max_failed_login_attempts\": 1, \"max_lockout_duration_secs\": 1}, \"mfa\": {\"mfa_challenge_lifetime_secs\": 1, \"mfa_enforced\": true}, \"notification\": {\"admin_notifications_enabled\": true}, \"oidc\": {\"sensitive_scopes_enabled\": true}, \"opaque\": {\"opaque_ksf\": \"example\", \"opaque_mode\": \"example\", \"opaque_suite\": \"example\"}, \"password\": {\"hibp_check_enabled\": true, \"min_length\": 1, \"password_history_count\": 1, \"require_digits\": true, \"require_lowercase\": true, \"require_symbols\": true, \"require_uppercase\": true}, \"privacy\": {\"deletion_grace_period_days\": 1}, \"scope\": \"Org\", \"scope_id\": \"11111111-1111-4111-8111-111111111111\", \"token\": {\"access_token_lifetime_secs\": 1, \"refresh_token_lifetime_secs\": 1}, \"updated_at\": \"2026-08-26T00:00:00Z\", \"webauthn\": {\"webauthn_user_verification\": \"example\"}}"
         mount("GET", "/api/v1/organizations/$ORG_ID/settings", 200, body)
         val result = client.management().settings().getOrg()
         assertDecodedEveryField(result, SecuritySettings.serializer(), body)
@@ -1310,7 +1312,7 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
     /** Exercises settings.set_org. */
     @Test
     fun `settings set_org`() = runTest {
-        val body = "{\"certificate\": {\"default_cert_validity_days\": 1, \"max_cert_validity_days\": 1}, \"created_at\": \"2026-08-26T00:00:00Z\", \"email\": {\"email_verification_grace_period_hours\": 1, \"email_verification_required\": true}, \"id\": \"11111111-1111-4111-8111-111111111111\", \"lockout\": {\"lockout_backoff_multiplier\": 1.0, \"lockout_duration_secs\": 1, \"max_failed_login_attempts\": 1, \"max_lockout_duration_secs\": 1}, \"mfa\": {\"mfa_challenge_lifetime_secs\": 1, \"mfa_enforced\": true}, \"notification\": {\"admin_notifications_enabled\": true}, \"opaque\": {\"opaque_ksf\": \"example\", \"opaque_mode\": \"example\", \"opaque_suite\": \"example\"}, \"password\": {\"hibp_check_enabled\": true, \"min_length\": 1, \"password_history_count\": 1, \"require_digits\": true, \"require_lowercase\": true, \"require_symbols\": true, \"require_uppercase\": true}, \"privacy\": {\"deletion_grace_period_days\": 1}, \"scope\": \"Org\", \"scope_id\": \"11111111-1111-4111-8111-111111111111\", \"token\": {\"access_token_lifetime_secs\": 1, \"refresh_token_lifetime_secs\": 1}, \"updated_at\": \"2026-08-26T00:00:00Z\", \"webauthn\": {\"webauthn_user_verification\": \"example\"}}"
+        val body = "{\"certificate\": {\"default_cert_validity_days\": 1, \"max_cert_validity_days\": 1}, \"created_at\": \"2026-08-26T00:00:00Z\", \"email\": {\"email_verification_grace_period_hours\": 1, \"email_verification_required\": true}, \"id\": \"11111111-1111-4111-8111-111111111111\", \"lockout\": {\"lockout_backoff_multiplier\": 1.0, \"lockout_duration_secs\": 1, \"max_failed_login_attempts\": 1, \"max_lockout_duration_secs\": 1}, \"mfa\": {\"mfa_challenge_lifetime_secs\": 1, \"mfa_enforced\": true}, \"notification\": {\"admin_notifications_enabled\": true}, \"oidc\": {\"sensitive_scopes_enabled\": true}, \"opaque\": {\"opaque_ksf\": \"example\", \"opaque_mode\": \"example\", \"opaque_suite\": \"example\"}, \"password\": {\"hibp_check_enabled\": true, \"min_length\": 1, \"password_history_count\": 1, \"require_digits\": true, \"require_lowercase\": true, \"require_symbols\": true, \"require_uppercase\": true}, \"privacy\": {\"deletion_grace_period_days\": 1}, \"scope\": \"Org\", \"scope_id\": \"11111111-1111-4111-8111-111111111111\", \"token\": {\"access_token_lifetime_secs\": 1, \"refresh_token_lifetime_secs\": 1}, \"updated_at\": \"2026-08-26T00:00:00Z\", \"webauthn\": {\"webauthn_user_verification\": \"example\"}}"
         mount("PUT", "/api/v1/organizations/$ORG_ID/settings", 200, body)
         val result = client.management().settings().setOrg(body = SetOrgSettings(accessTokenLifetimeSecs = 1L, adminNotificationsEnabled = true, defaultCertValidityDays = 1, emailVerificationGracePeriodHours = 1, emailVerificationRequired = true, hibpCheckEnabled = true, lockoutBackoffMultiplier = 1.0, lockoutDurationSecs = 1L, maxCertValidityDays = 1, maxFailedLoginAttempts = 1, maxLockoutDurationSecs = 1L, mfaChallengeLifetimeSecs = 1L, mfaEnforced = true, minLength = 1, passwordHistoryCount = 1, refreshTokenLifetimeSecs = 1L, requireDigits = true, requireLowercase = true, requireSymbols = true, requireUppercase = true))
         assertDecodedEveryField(result, SecuritySettings.serializer(), body)
@@ -1319,7 +1321,7 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
     /** Exercises settings.get_effective. */
     @Test
     fun `settings get_effective`() = runTest {
-        val body = "{\"certificate\": {\"default_cert_validity_days\": 1, \"max_cert_validity_days\": 1}, \"created_at\": \"2026-08-26T00:00:00Z\", \"email\": {\"email_verification_grace_period_hours\": 1, \"email_verification_required\": true}, \"id\": \"11111111-1111-4111-8111-111111111111\", \"lockout\": {\"lockout_backoff_multiplier\": 1.0, \"lockout_duration_secs\": 1, \"max_failed_login_attempts\": 1, \"max_lockout_duration_secs\": 1}, \"mfa\": {\"mfa_challenge_lifetime_secs\": 1, \"mfa_enforced\": true}, \"notification\": {\"admin_notifications_enabled\": true}, \"opaque\": {\"opaque_ksf\": \"example\", \"opaque_mode\": \"example\", \"opaque_suite\": \"example\"}, \"password\": {\"hibp_check_enabled\": true, \"min_length\": 1, \"password_history_count\": 1, \"require_digits\": true, \"require_lowercase\": true, \"require_symbols\": true, \"require_uppercase\": true}, \"privacy\": {\"deletion_grace_period_days\": 1}, \"scope\": \"Org\", \"scope_id\": \"11111111-1111-4111-8111-111111111111\", \"token\": {\"access_token_lifetime_secs\": 1, \"refresh_token_lifetime_secs\": 1}, \"updated_at\": \"2026-08-26T00:00:00Z\", \"webauthn\": {\"webauthn_user_verification\": \"example\"}}"
+        val body = "{\"certificate\": {\"default_cert_validity_days\": 1, \"max_cert_validity_days\": 1}, \"created_at\": \"2026-08-26T00:00:00Z\", \"email\": {\"email_verification_grace_period_hours\": 1, \"email_verification_required\": true}, \"id\": \"11111111-1111-4111-8111-111111111111\", \"lockout\": {\"lockout_backoff_multiplier\": 1.0, \"lockout_duration_secs\": 1, \"max_failed_login_attempts\": 1, \"max_lockout_duration_secs\": 1}, \"mfa\": {\"mfa_challenge_lifetime_secs\": 1, \"mfa_enforced\": true}, \"notification\": {\"admin_notifications_enabled\": true}, \"oidc\": {\"sensitive_scopes_enabled\": true}, \"opaque\": {\"opaque_ksf\": \"example\", \"opaque_mode\": \"example\", \"opaque_suite\": \"example\"}, \"password\": {\"hibp_check_enabled\": true, \"min_length\": 1, \"password_history_count\": 1, \"require_digits\": true, \"require_lowercase\": true, \"require_symbols\": true, \"require_uppercase\": true}, \"privacy\": {\"deletion_grace_period_days\": 1}, \"scope\": \"Org\", \"scope_id\": \"11111111-1111-4111-8111-111111111111\", \"token\": {\"access_token_lifetime_secs\": 1, \"refresh_token_lifetime_secs\": 1}, \"updated_at\": \"2026-08-26T00:00:00Z\", \"webauthn\": {\"webauthn_user_verification\": \"example\"}}"
         mount("GET", "/api/v1/settings", 200, body)
         val result = client.management().settings().getEffective()
         assertDecodedEveryField(result, SecuritySettings.serializer(), body)
@@ -1328,7 +1330,7 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
     /** Exercises settings.set_effective. */
     @Test
     fun `settings set_effective`() = runTest {
-        val body = "{\"certificate\": {\"default_cert_validity_days\": 1, \"max_cert_validity_days\": 1}, \"created_at\": \"2026-08-26T00:00:00Z\", \"email\": {\"email_verification_grace_period_hours\": 1, \"email_verification_required\": true}, \"id\": \"11111111-1111-4111-8111-111111111111\", \"lockout\": {\"lockout_backoff_multiplier\": 1.0, \"lockout_duration_secs\": 1, \"max_failed_login_attempts\": 1, \"max_lockout_duration_secs\": 1}, \"mfa\": {\"mfa_challenge_lifetime_secs\": 1, \"mfa_enforced\": true}, \"notification\": {\"admin_notifications_enabled\": true}, \"opaque\": {\"opaque_ksf\": \"example\", \"opaque_mode\": \"example\", \"opaque_suite\": \"example\"}, \"password\": {\"hibp_check_enabled\": true, \"min_length\": 1, \"password_history_count\": 1, \"require_digits\": true, \"require_lowercase\": true, \"require_symbols\": true, \"require_uppercase\": true}, \"privacy\": {\"deletion_grace_period_days\": 1}, \"scope\": \"Org\", \"scope_id\": \"11111111-1111-4111-8111-111111111111\", \"token\": {\"access_token_lifetime_secs\": 1, \"refresh_token_lifetime_secs\": 1}, \"updated_at\": \"2026-08-26T00:00:00Z\", \"webauthn\": {\"webauthn_user_verification\": \"example\"}}"
+        val body = "{\"certificate\": {\"default_cert_validity_days\": 1, \"max_cert_validity_days\": 1}, \"created_at\": \"2026-08-26T00:00:00Z\", \"email\": {\"email_verification_grace_period_hours\": 1, \"email_verification_required\": true}, \"id\": \"11111111-1111-4111-8111-111111111111\", \"lockout\": {\"lockout_backoff_multiplier\": 1.0, \"lockout_duration_secs\": 1, \"max_failed_login_attempts\": 1, \"max_lockout_duration_secs\": 1}, \"mfa\": {\"mfa_challenge_lifetime_secs\": 1, \"mfa_enforced\": true}, \"notification\": {\"admin_notifications_enabled\": true}, \"oidc\": {\"sensitive_scopes_enabled\": true}, \"opaque\": {\"opaque_ksf\": \"example\", \"opaque_mode\": \"example\", \"opaque_suite\": \"example\"}, \"password\": {\"hibp_check_enabled\": true, \"min_length\": 1, \"password_history_count\": 1, \"require_digits\": true, \"require_lowercase\": true, \"require_symbols\": true, \"require_uppercase\": true}, \"privacy\": {\"deletion_grace_period_days\": 1}, \"scope\": \"Org\", \"scope_id\": \"11111111-1111-4111-8111-111111111111\", \"token\": {\"access_token_lifetime_secs\": 1, \"refresh_token_lifetime_secs\": 1}, \"updated_at\": \"2026-08-26T00:00:00Z\", \"webauthn\": {\"webauthn_user_verification\": \"example\"}}"
         mount("PUT", "/api/v1/settings", 200, body)
         val result = client.management().settings().setEffective(body = TenantSettingsOverride())
         assertDecodedEveryField(result, SecuritySettings.serializer(), body)
@@ -1528,6 +1530,32 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
         client.management().privacy().cancelDelete(token = null)
     }
 
+    /** Exercises privacy.list_consents. */
+    @Test
+    fun `privacy list_consents`() = runTest {
+        val body = "[{\"accepted_at\": \"2026-08-26T00:00:00Z\", \"consent_type\": \"example\", \"version\": \"example\", \"withdrawable\": true}]"
+        mount("GET", "/api/v1/account/consents", 200, body)
+        val result = client.management().privacy().listConsents()
+        val item = Json.parseToJsonElement(body).jsonArray.first().toString()
+        assertDecodedEveryField(result.first(), ConsentView.serializer(), item)
+    }
+
+    /** Exercises privacy.grant_scope_consent. */
+    @Test
+    fun `privacy grant_scope_consent`() = runTest {
+        val body = ""
+        mount("POST", "/api/v1/account/consents/oidc-scopes", 200, body)
+        client.management().privacy().grantScopeConsent(body = GrantScopeConsent(clientId = "example", scopes = emptyList()))
+    }
+
+    /** Exercises privacy.withdraw_scope_consent. */
+    @Test
+    fun `privacy withdraw_scope_consent`() = runTest {
+        val body = ""
+        mount("DELETE", "/api/v1/account/consents/oidc-scopes/$EXAMPLE_ID", 200, body)
+        client.management().privacy().withdrawScopeConsent(clientId = EXAMPLE_ID)
+    }
+
     /** Exercises platform.health. */
     @Test
     fun `platform health`() = runTest {
@@ -1645,8 +1673,8 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
      */
     @Test
     fun `settings inOrg changes the path`() = runTest {
-        val scoped = mount("GET", "/api/v1/organizations/$overrideId/settings", 200, "{\"certificate\": {\"default_cert_validity_days\": 1, \"max_cert_validity_days\": 1}, \"created_at\": \"2026-08-26T00:00:00Z\", \"email\": {\"email_verification_grace_period_hours\": 1, \"email_verification_required\": true}, \"id\": \"11111111-1111-4111-8111-111111111111\", \"lockout\": {\"lockout_backoff_multiplier\": 1.0, \"lockout_duration_secs\": 1, \"max_failed_login_attempts\": 1, \"max_lockout_duration_secs\": 1}, \"mfa\": {\"mfa_challenge_lifetime_secs\": 1, \"mfa_enforced\": true}, \"notification\": {\"admin_notifications_enabled\": true}, \"opaque\": {\"opaque_ksf\": \"example\", \"opaque_mode\": \"example\", \"opaque_suite\": \"example\"}, \"password\": {\"hibp_check_enabled\": true, \"min_length\": 1, \"password_history_count\": 1, \"require_digits\": true, \"require_lowercase\": true, \"require_symbols\": true, \"require_uppercase\": true}, \"privacy\": {\"deletion_grace_period_days\": 1}, \"scope\": \"Org\", \"scope_id\": \"11111111-1111-4111-8111-111111111111\", \"token\": {\"access_token_lifetime_secs\": 1, \"refresh_token_lifetime_secs\": 1}, \"updated_at\": \"2026-08-26T00:00:00Z\", \"webauthn\": {\"webauthn_user_verification\": \"example\"}}")
-        val inherited = mount("GET", "/api/v1/organizations/$ORG_ID/settings", 200, "{\"certificate\": {\"default_cert_validity_days\": 1, \"max_cert_validity_days\": 1}, \"created_at\": \"2026-08-26T00:00:00Z\", \"email\": {\"email_verification_grace_period_hours\": 1, \"email_verification_required\": true}, \"id\": \"11111111-1111-4111-8111-111111111111\", \"lockout\": {\"lockout_backoff_multiplier\": 1.0, \"lockout_duration_secs\": 1, \"max_failed_login_attempts\": 1, \"max_lockout_duration_secs\": 1}, \"mfa\": {\"mfa_challenge_lifetime_secs\": 1, \"mfa_enforced\": true}, \"notification\": {\"admin_notifications_enabled\": true}, \"opaque\": {\"opaque_ksf\": \"example\", \"opaque_mode\": \"example\", \"opaque_suite\": \"example\"}, \"password\": {\"hibp_check_enabled\": true, \"min_length\": 1, \"password_history_count\": 1, \"require_digits\": true, \"require_lowercase\": true, \"require_symbols\": true, \"require_uppercase\": true}, \"privacy\": {\"deletion_grace_period_days\": 1}, \"scope\": \"Org\", \"scope_id\": \"11111111-1111-4111-8111-111111111111\", \"token\": {\"access_token_lifetime_secs\": 1, \"refresh_token_lifetime_secs\": 1}, \"updated_at\": \"2026-08-26T00:00:00Z\", \"webauthn\": {\"webauthn_user_verification\": \"example\"}}")
+        val scoped = mount("GET", "/api/v1/organizations/$overrideId/settings", 200, "{\"certificate\": {\"default_cert_validity_days\": 1, \"max_cert_validity_days\": 1}, \"created_at\": \"2026-08-26T00:00:00Z\", \"email\": {\"email_verification_grace_period_hours\": 1, \"email_verification_required\": true}, \"id\": \"11111111-1111-4111-8111-111111111111\", \"lockout\": {\"lockout_backoff_multiplier\": 1.0, \"lockout_duration_secs\": 1, \"max_failed_login_attempts\": 1, \"max_lockout_duration_secs\": 1}, \"mfa\": {\"mfa_challenge_lifetime_secs\": 1, \"mfa_enforced\": true}, \"notification\": {\"admin_notifications_enabled\": true}, \"oidc\": {\"sensitive_scopes_enabled\": true}, \"opaque\": {\"opaque_ksf\": \"example\", \"opaque_mode\": \"example\", \"opaque_suite\": \"example\"}, \"password\": {\"hibp_check_enabled\": true, \"min_length\": 1, \"password_history_count\": 1, \"require_digits\": true, \"require_lowercase\": true, \"require_symbols\": true, \"require_uppercase\": true}, \"privacy\": {\"deletion_grace_period_days\": 1}, \"scope\": \"Org\", \"scope_id\": \"11111111-1111-4111-8111-111111111111\", \"token\": {\"access_token_lifetime_secs\": 1, \"refresh_token_lifetime_secs\": 1}, \"updated_at\": \"2026-08-26T00:00:00Z\", \"webauthn\": {\"webauthn_user_verification\": \"example\"}}")
+        val inherited = mount("GET", "/api/v1/organizations/$ORG_ID/settings", 200, "{\"certificate\": {\"default_cert_validity_days\": 1, \"max_cert_validity_days\": 1}, \"created_at\": \"2026-08-26T00:00:00Z\", \"email\": {\"email_verification_grace_period_hours\": 1, \"email_verification_required\": true}, \"id\": \"11111111-1111-4111-8111-111111111111\", \"lockout\": {\"lockout_backoff_multiplier\": 1.0, \"lockout_duration_secs\": 1, \"max_failed_login_attempts\": 1, \"max_lockout_duration_secs\": 1}, \"mfa\": {\"mfa_challenge_lifetime_secs\": 1, \"mfa_enforced\": true}, \"notification\": {\"admin_notifications_enabled\": true}, \"oidc\": {\"sensitive_scopes_enabled\": true}, \"opaque\": {\"opaque_ksf\": \"example\", \"opaque_mode\": \"example\", \"opaque_suite\": \"example\"}, \"password\": {\"hibp_check_enabled\": true, \"min_length\": 1, \"password_history_count\": 1, \"require_digits\": true, \"require_lowercase\": true, \"require_symbols\": true, \"require_uppercase\": true}, \"privacy\": {\"deletion_grace_period_days\": 1}, \"scope\": \"Org\", \"scope_id\": \"11111111-1111-4111-8111-111111111111\", \"token\": {\"access_token_lifetime_secs\": 1, \"refresh_token_lifetime_secs\": 1}, \"updated_at\": \"2026-08-26T00:00:00Z\", \"webauthn\": {\"webauthn_user_verification\": \"example\"}}")
         val handle = client.management().settings()
         handle.inOrg(overrideId).getOrg()
         handle.getOrg()
@@ -1768,8 +1796,11 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
             "platform.ready",
             "privacy.cancel_delete",
             "privacy.download_export",
+            "privacy.grant_scope_consent",
+            "privacy.list_consents",
             "privacy.request_delete",
             "privacy.request_export",
+            "privacy.withdraw_scope_consent",
             "reactors.create",
             "reactors.delete",
             "reactors.get",
@@ -1849,7 +1880,7 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
             "webhooks.list",
             "webhooks.update",
         )
-        assertEquals(155, exercised.size,
+        assertEquals(158, exercised.size,
             "the generated surface must reach every operation the registry declares")
         assertEquals(expectedSurface(), exercised,
             "the generated surface and the registry must name the same operations")

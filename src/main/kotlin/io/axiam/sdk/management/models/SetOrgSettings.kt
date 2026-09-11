@@ -17,6 +17,7 @@ import kotlinx.serialization.Serializable
  * @property accessTokenLifetimeSecs the server's access_token_lifetime_secs field
  * @property adminNotificationsEnabled the server's admin_notifications_enabled field
  * @property defaultCertValidityDays the server's default_cert_validity_days field
+ * @property defaultLocale the server's default_locale field
  * @property deletionGracePeriodDays the server's deletion_grace_period_days field
  * @property emailVerificationGracePeriodHours the server's
  *     email_verification_grace_period_hours field
@@ -39,6 +40,7 @@ import kotlinx.serialization.Serializable
  * @property requireLowercase the server's require_lowercase field
  * @property requireSymbols the server's require_symbols field
  * @property requireUppercase the server's require_uppercase field
+ * @property sensitiveScopesEnabled the server's sensitive_scopes_enabled field
  * @property webauthnUserVerification the server's webauthn_user_verification field
  */
 @Serializable
@@ -46,6 +48,7 @@ data class SetOrgSettings(
     @SerialName("access_token_lifetime_secs") val accessTokenLifetimeSecs: Long,
     @SerialName("admin_notifications_enabled") val adminNotificationsEnabled: Boolean,
     @SerialName("default_cert_validity_days") val defaultCertValidityDays: Int,
+    @SerialName("default_locale") val defaultLocale: String? = null,
     @SerialName("deletion_grace_period_days") val deletionGracePeriodDays: Int? = null,
     @SerialName("email_verification_grace_period_hours") val emailVerificationGracePeriodHours: Int,
     @SerialName("email_verification_required") val emailVerificationRequired: Boolean,
@@ -67,5 +70,6 @@ data class SetOrgSettings(
     @SerialName("require_lowercase") val requireLowercase: Boolean,
     @SerialName("require_symbols") val requireSymbols: Boolean,
     @SerialName("require_uppercase") val requireUppercase: Boolean,
+    @SerialName("sensitive_scopes_enabled") val sensitiveScopesEnabled: Boolean? = null,
     @SerialName("webauthn_user_verification") val webauthnUserVerification: String? = null,
 )

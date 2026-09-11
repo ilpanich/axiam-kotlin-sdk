@@ -20,6 +20,7 @@ import kotlinx.serialization.Serializable
  * @property lockout the server's lockout field
  * @property mfa the server's mfa field
  * @property notification the server's notification field
+ * @property oidc the server's oidc field
  * @property opaque the server's opaque field
  * @property password the server's password field
  * @property privacy the server's privacy field
@@ -38,6 +39,7 @@ data class SecuritySettings(
     @SerialName("lockout") val lockout: LockoutPolicy,
     @SerialName("mfa") val mfa: MfaPolicy,
     @SerialName("notification") val notification: NotificationPolicy,
+    @SerialName("oidc") val oidc: OidcPolicy,
     @SerialName("opaque") val opaque: OpaquePolicy,
     @SerialName("password") val password: PasswordPolicy,
     @SerialName("privacy") val privacy: PrivacyPolicy,

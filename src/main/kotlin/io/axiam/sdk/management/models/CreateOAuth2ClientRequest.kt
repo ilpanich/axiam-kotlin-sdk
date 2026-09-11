@@ -9,8 +9,20 @@ import kotlinx.serialization.Serializable
 /**
  * The CreateOAuth2ClientRequest schema from the server's OpenAPI document.
  *
+ * @property authnRequestParams X7.1 — whether this client's authorization requests may carry
+ *     the OpenID Connect authentication-request parameters (`prompt`, `max_age`, `acr_values`,
+ *     `claims`, `id_token_hint`, `login_hint`, `display`, `ui_locales`, `claims_locales`).
+ *     `"ignore"` (the default) is what every AXIAM client has always done: they are dropped and
+ *     reach no decision. `"honour"` opts in, and is **refused on a `fapi2` client** at both this
+ *     gate and the authorization endpoint — the two are different answers to the same question
+ *     about what a request from this client means.
  * @property backchannelLogoutUri B5 — where OIDC back-channel logout tokens are delivered.
  *     Omit for a client that does not participate.
+ * @property browserSso X7.3 — whether an unauthenticated authorization request from this
+ *     client may be answered with a redirect to the login page rather than the `401` AXIAM answers
+ *     today. Accepted and stored, but **nothing reads it yet**: the login hop it gates is a later
+ *     wave. Unlike `authn_request_params` it is permitted on a `fapi2` client, because it relaxes
+ *     nothing — it decides only how an anonymous browser is answered.
  * @property dpopBoundAccessTokens RFC 9449 §5.2 — issue DPoP-bound (sender-constrained) access
  *     tokens to this client. Independent of both the authentication method and
  *     `tls_client_certificate_bound_access_tokens`; a client may ask for both constraints, and a
@@ -60,7 +72,9 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class CreateOAuth2ClientRequest(
+    @SerialName("authn_request_params") val authnRequestParams: AuthnRequestParamsMode? = null,
     @SerialName("backchannel_logout_uri") val backchannelLogoutUri: String? = null,
+    @SerialName("browser_sso") val browserSso: Boolean? = null,
     @SerialName("dpop_bound_access_tokens") val dpopBoundAccessTokens: Boolean? = null,
     @SerialName("dpop_require_nonce") val dpopRequireNonce: Boolean? = null,
     @SerialName("grant_types") val grantTypes: List<String>,

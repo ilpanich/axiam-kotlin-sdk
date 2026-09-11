@@ -12,32 +12,31 @@ import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 
 /**
- * How a client proves its identity at the token endpoint (RFC 8705 §2, OIDC Core §9 naming). Only
- * the methods AXIAM actually implements are representable. There is deliberately no `none`
- * variant: every AXIAM client is confidential today (see `handle_authorization_code`), and adding
- * a public-client value here before the rest of the server understands one would let an operator
- * register a client whose authentication is silently skipped.
+ * Whether this client's authorization requests may carry OpenID Connect's authentication-request
+ * parameters, or whether they are ignored (X7.1). The bundle this governs is `prompt`, `max_age`,
+ * `acr_values`, `claims`, `id_token_hint`, `login_hint`, `display`, `ui_locales` and
+ * `claims_locales`. It is **one** field rather than nine booleans for the same reason
+ * &#91;`ClientProfile`&#93; is one field rather than a dozen: a client that honours `max_age` but
+ * ignores `prompt=none` is not "mostly conformant", it is a client a relying party cannot reason
+ * about. &#91;`Ignore`&#93;(Self::Ignore) is the serde default and is exactly what AXIAM has
+ * always done — unknown authorization-request parameters are dropped by the query deserialiser and
+ * never reach a decision. Every row written before schema v54 therefore decodes to the behaviour
+ * it already had.
  *
  * Each constant carries the spelling the server uses on the wire, so the Kotlin name can follow
  * Kotlin's conventions without changing what is sent.
  *
  * An **open** enum. A value this SDK's copy of the spec does not list decodes to
- * [ClientAuthMethod.UNKNOWN] rather than failing the response it arrived in (CONTRACT §27.11 rule
- * 1). Its own wire spelling is the empty string, which no server value is: carrying an
+ * [AuthnRequestParamsMode.UNKNOWN] rather than failing the response it arrived in (CONTRACT §27.11
+ * rule 1). Its own wire spelling is the empty string, which no server value is: carrying an
  * unrecognised value back into an update is refused by the server rather than silently written as
  * a spelling it never used. A `when` over these constants needs an `UNKNOWN` branch.
  */
-@Serializable(with = ClientAuthMethod.Companion.Serializer::class)
-enum class ClientAuthMethod(val wire: String) {
-    CLIENT_SECRET_POST("client_secret_post"),
+@Serializable(with = AuthnRequestParamsMode.Companion.Serializer::class)
+enum class AuthnRequestParamsMode(val wire: String) {
+    IGNORE("ignore"),
 
-    CLIENT_SECRET_BASIC("client_secret_basic"),
-
-    TLS_CLIENT_AUTH("tls_client_auth"),
-
-    SELF_SIGNED_TLS_CLIENT_AUTH("self_signed_tls_client_auth"),
-
-    PRIVATE_KEY_JWT("private_key_jwt"),
+    HONOUR("honour"),
 
     /** A value this SDK's copy of the spec does not list; see the type's doc. */
     UNKNOWN("");
@@ -50,15 +49,15 @@ enum class ClientAuthMethod(val wire: String) {
          * outside the constants, which fails the WHOLE response — not just the
          * field. That is the failure §27.11 rule 1 exists to prevent.
          */
-        internal object Serializer : KSerializer<ClientAuthMethod> {
+        internal object Serializer : KSerializer<AuthnRequestParamsMode> {
             override val descriptor: SerialDescriptor =
-                PrimitiveSerialDescriptor("io.axiam.sdk.management.models.ClientAuthMethod", PrimitiveKind.STRING)
+                PrimitiveSerialDescriptor("io.axiam.sdk.management.models.AuthnRequestParamsMode", PrimitiveKind.STRING)
 
-            override fun serialize(encoder: Encoder, value: ClientAuthMethod) {
+            override fun serialize(encoder: Encoder, value: AuthnRequestParamsMode) {
                 encoder.encodeString(value.wire)
             }
 
-            override fun deserialize(decoder: Decoder): ClientAuthMethod {
+            override fun deserialize(decoder: Decoder): AuthnRequestParamsMode {
                 val raw = decoder.decodeString()
                 return entries.firstOrNull { it != UNKNOWN && it.wire == raw } ?: UNKNOWN
             }
