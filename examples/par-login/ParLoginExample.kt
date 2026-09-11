@@ -82,12 +82,18 @@ object ParLoginExample {
         // eligibility. The safe recovery is a fresh push, which costs one round
         // trip and cannot double-consume anything (§26.2 rule 4).
 
-        // The URL carries EXACTLY client_id and request_uri. The server refuses
-        // a request that mixes a request_uri with inline authorization
-        // parameters rather than merging them — an attacker supplies the inline
-        // value they want and lets the pushed copy satisfy whichever check
-        // reads the other one. Re-adding scope "for compatibility" restores the
-        // attack (§26.2 rule 2).
+        // The URL carries EXACTLY client_id and request_uri, plus the tenant.
+        // The server refuses a request that mixes a request_uri with inline
+        // AUTHORIZATION parameters rather than merging them — an attacker
+        // supplies the inline value they want and lets the pushed copy satisfy
+        // whichever check reads the other one. Re-adding scope "for
+        // compatibility" restores the attack (§26.2 rule 2).
+        //
+        // tenant_id is not one of those: it is the tenant-routing parameter
+        // the server publishes on authorization_endpoint itself, read only
+        // when the request carries no authenticated principal — which is
+        // exactly this browser. It names the same tenant the push used,
+        // because that is the tenant the handle was filed under.
         println("redirect the browser to: ${pushed.url}")
         println("the handle expires in ${pushed.expiresIn}s")
 
