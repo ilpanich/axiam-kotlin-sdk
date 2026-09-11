@@ -230,28 +230,85 @@ class OidcParTest {
 
             val url = pushed.url.toHttpUrl()
             assertEquals(
-                setOf("client_id", "request_uri"),
+                setOf("tenant_id", "client_id", "request_uri"),
                 url.queryParameterNames,
-                "the server REFUSES a request_uri mixed with inline parameters rather than " +
-                    "merging them — re-adding scope/state/redirect_uri here restores the " +
-                    "parameter-confusion attack (§26.2 rule 2)",
+                "the server REFUSES a request_uri mixed with inline AUTHORIZATION parameters " +
+                    "rather than merging them — re-adding scope/state/redirect_uri here restores " +
+                    "the parameter-confusion attack (§26.2 rule 2). tenant_id is not one of " +
+                    "them: it is the routing parameter the server publishes on " +
+                    "authorization_endpoint itself, and the anonymous login hop 401s without it.",
             )
             assertEquals("app", url.queryParameter("client_id"))
             assertEquals(REQUEST_URI, url.queryParameter("request_uri"))
+            assertEquals(TENANT_ID, url.queryParameter("tenant_id"))
             assertEquals("/oauth2/authorize", url.encodedPath)
         }
     }
 
     @Test
-    fun `the redirect url drops any query the discovered endpoint carried`() = runBlocking {
+    fun `the redirect url names the same tenant the push used`() = runBlocking {
+        // Contract 1.42. `/oauth2/authorize` consumes the handle with
+        // `consume(tenant_id, client_id, request_uri)`, and for a browser that
+        // arrives with no session the query parameter is the ONLY thing that
+        // resolves a tenant — so a redirect that dropped it, or named a
+        // different tenant from the push, is a 401 or a missing handle.
+        val other = "33333333-3333-3333-3333-333333333333"
+        client().use { client ->
+            val (config, begun) = begin(client)
+            server.enqueue(parResponse())
+
+            val pushed = client.oidcPar(
+                OidcParParams(begun, REDIRECT_URI, config, tenantId = other),
+            )
+
+            val pushedTo = server.takeRequest().requestUrl!!
+            assertEquals(other, pushedTo.queryParameter("tenant_id"))
+            assertEquals(
+                other,
+                pushed.url.toHttpUrl().queryParameter("tenant_id"),
+                "the redirect must name the tenant the push was scoped to, not the client's " +
+                    "configured one",
+            )
+        }
+    }
+
+    @Test
+    fun `dpop_jkt is pushed only when the caller supplies one`() = runBlocking {
+        // RFC 9449 §10.1, contract 1.42. Caller-supplied: this SDK verifies
+        // DPoP proofs and does not generate them, so it never holds the key
+        // whose thumbprint this is.
+        val jkt = "0ZcOCORZNYy-DWpqq30jZyJGHTN0d2HglBV3uiguA4I"
+        client().use { client ->
+            val (config, begun) = begin(client)
+            server.enqueue(parResponse())
+            client.oidcPar(OidcParParams(begun, REDIRECT_URI, config, dpopJkt = jkt))
+            assertEquals(jkt, form(server.takeRequest().body.readUtf8())["dpop_jkt"])
+        }
+
+        client().use { client ->
+            val (config, begun) = begin(client)
+            server.enqueue(parResponse())
+            client.oidcPar(OidcParParams(begun, REDIRECT_URI, config))
+            assertNull(
+                form(server.takeRequest().body.readUtf8())["dpop_jkt"],
+                "an absent dpop_jkt is omitted, not sent empty — RFC 9449 §10.1 gives no " +
+                    "meaning to an empty thumbprint",
+            )
+        }
+    }
+
+    @Test
+    fun `the redirect url drops any query the discovered endpoint carried but the tenant`() = runBlocking {
         client().use { client ->
             val origin = server.url("/").toString().trimEnd('/')
             // An authorization_endpoint that already carries a query is legal,
-            // and its parameters are exactly the ones rule 2 forbids travelling
+            // and — apart from the tenant the server publishes there itself —
+            // its parameters are exactly the ones rule 2 forbids travelling
             // alongside a request_uri.
             val config = OidcConfiguration(
                 issuer = origin,
-                authorization_endpoint = "$origin/oauth2/authorize?audience=legacy&scope=all",
+                authorization_endpoint =
+                    "$origin/oauth2/authorize?audience=legacy&scope=all&tenant_id=$TENANT_ID",
                 token_endpoint = "$origin/oauth2/token",
                 userinfo_endpoint = "$origin/oauth2/userinfo",
                 jwks_uri = "$origin/oauth2/jwks",
@@ -271,7 +328,15 @@ class OidcParTest {
 
             val pushed = client.oidcPar(OidcParParams(begun, REDIRECT_URI, config, scope = "openid"))
 
-            assertEquals(setOf("client_id", "request_uri"), pushed.url.toHttpUrl().queryParameterNames)
+            assertEquals(
+                setOf("tenant_id", "client_id", "request_uri"),
+                pushed.url.toHttpUrl().queryParameterNames,
+            )
+            assertEquals(
+                listOf(TENANT_ID),
+                pushed.url.toHttpUrl().queryParameterValues("tenant_id"),
+                "exactly one tenant_id on the wire — never the published copy plus ours",
+            )
         }
     }
 

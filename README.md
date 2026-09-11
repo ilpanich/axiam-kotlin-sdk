@@ -24,7 +24,7 @@ Source: [ilpanich/axiam-kotlin-sdk](https://github.com/ilpanich/axiam-kotlin-sdk
 
 ## Contract conformance
 
-This SDK conforms to **contract 1.38**: CONTRACT.md §1–§7, §9–§13 and §12.7, §14, §15, §17, §19,
+This SDK conforms to **contract 1.42**: CONTRACT.md §1–§7, §9–§13 and §12.7, §14, §15, §17, §19,
 §20, §21, §22, §23, §24, §25, §26, §27 (including §6.1 mTLS). §12 is implemented in full at its
 1.38 shape: all **thirteen** operations, including the four public "Sign in with X" entry points,
 as `suspend` functions on the same `AxiamClient`.
@@ -33,7 +33,7 @@ as `suspend` functions on the same `AxiamClient`.
 because they landed after this SDK already stated its coverage: widening the range silently would
 turn a statement that was true when written into a different claim without anyone editing it.
 
-**§27 is the Management API** — all 147 operations across 24 namespaces, with the §27.6 declarative
+**§27 is the Management API** — all 158 operations across 24 namespaces, with the §27.6 declarative
 layer. See [Management API](#management-api-27) below.
 
 **§24.6b — the linked-API ceremony helper — is deliberately absent, and this is not a capability
@@ -1405,20 +1405,34 @@ if (config.pushed_authorization_request_endpoint == null) {
 val begun = client.oidcBegin(OidcBeginParams(config, redirectUri, scope = "openid profile"))
 val pushed = client.oidcPar(OidcParParams(begun, redirectUri, config, scope = "openid profile"))
 
-redirect(pushed.url)   // exactly ?client_id=…&request_uri=…
+redirect(pushed.url)   // exactly ?tenant_id=…&client_id=…&request_uri=…
 ```
 
-Three things worth knowing:
+Four things worth knowing:
 
 - **The server answers `201`,** not `200` — RFC 9126 §2.2 specifies *Created*. A success predicate
   written `== 200` treats every successful push as a failure.
-- **The redirect URL carries exactly two parameters.** The server refuses a request that mixes a
-  `request_uri` with inline authorization parameters rather than merging them; merging is where
-  parameter confusion lives (§26.2 rule 2). Any query the discovered `authorization_endpoint`
-  already carried is dropped.
+- **The redirect URL carries exactly two AUTHORIZATION parameters, plus the tenant.** The server
+  refuses a request that mixes a `request_uri` with inline authorization parameters rather than
+  merging them; merging is where parameter confusion lives (§26.2 rule 2). Any other query the
+  discovered `authorization_endpoint` already carried is dropped.
+
+  `tenant_id` is not one of those authorization parameters — it is the tenant-routing parameter
+  the server publishes on `authorization_endpoint` itself, read **only** when the request carries
+  no authenticated principal and ignored whenever one is resolved from a token. It is carried
+  through, and it is the same tenant the push used, because `/oauth2/authorize` consumes the
+  handle with `(tenant_id, client_id, request_uri)`: a redirect that dropped it sends a browser
+  with no session to a `401` instead of a login page, and one that named a different tenant looks
+  the handle up in a store that does not hold it.
 - **`oidcBegin` still owns `state`, `nonce` and the PKCE pair.** There is no second generator
   (§26.2 rule 1), and `PushedAuthorizationRequest` carries all three straight through to the
   exchange.
+- **`dpopJkt` is optional and caller-supplied** (RFC 9449 §10.1). Pushing the JWK thumbprint of
+  the key you will prove possession of at the token endpoint binds the eventual authorization
+  code to that key at push time. This SDK **verifies** DPoP proofs and does not generate them, so
+  it never holds that key and cannot compute the value for you — compute the RFC 7638 base64url
+  SHA-256 JWK thumbprint of your own DPoP public key and pass it in. Left `null`, the parameter is
+  not sent at all.
 
 The push is **not retried** on a 5xx or a transport failure: it is a POST that creates server state,
 so it falls outside §16.2's read-only eligibility exactly as `oidcExchange` does. The safe recovery
@@ -1433,7 +1447,7 @@ Worked end to end in [`examples/par-login`](examples/par-login) (`./gradlew runP
 
 ## Management API (§27)
 
-The administrative surface: 147 operations across 24 namespaces — users, groups, roles,
+The administrative surface: 158 operations across 24 namespaces — users, groups, roles,
 permissions, resources, scopes, service accounts, certificates, CA certificates, PGP keys, webhooks,
 OAuth2 clients, federation, notification rules, e-mail config, settings, SCIM tokens, reactors,
 WebAuthn policy, audit, privacy, organizations, tenants and platform.
