@@ -17,6 +17,8 @@ import kotlinx.serialization.Serializable
  * @property accessTokenLifetimeSecs the server's access_token_lifetime_secs field
  * @property adminNotificationsEnabled the server's admin_notifications_enabled field
  * @property defaultCertValidityDays the server's default_cert_validity_days field
+ * @property defaultLocale The tenant's fallback UI language. Not ordered, therefore not
+ *     validated against the baseline and never clamped — see &#91;`OidcPolicy`&#93;.
  * @property deletionGracePeriodDays the server's deletion_grace_period_days field
  * @property emailVerificationGracePeriodHours the server's
  *     email_verification_grace_period_hours field
@@ -39,6 +41,7 @@ import kotlinx.serialization.Serializable
  * @property requireLowercase the server's require_lowercase field
  * @property requireSymbols the server's require_symbols field
  * @property requireUppercase the server's require_uppercase field
+ * @property sensitiveScopesEnabled the server's sensitive_scopes_enabled field
  * @property webauthnUserVerification the server's webauthn_user_verification field
  */
 @Serializable
@@ -46,6 +49,7 @@ data class TenantSettingsOverride(
     @SerialName("access_token_lifetime_secs") val accessTokenLifetimeSecs: Long? = null,
     @SerialName("admin_notifications_enabled") val adminNotificationsEnabled: Boolean? = null,
     @SerialName("default_cert_validity_days") val defaultCertValidityDays: Int? = null,
+    @SerialName("default_locale") val defaultLocale: String? = null,
     @SerialName("deletion_grace_period_days") val deletionGracePeriodDays: Int? = null,
     @SerialName("email_verification_grace_period_hours") val emailVerificationGracePeriodHours: Int? = null,
     @SerialName("email_verification_required") val emailVerificationRequired: Boolean? = null,
@@ -67,5 +71,6 @@ data class TenantSettingsOverride(
     @SerialName("require_lowercase") val requireLowercase: Boolean? = null,
     @SerialName("require_symbols") val requireSymbols: Boolean? = null,
     @SerialName("require_uppercase") val requireUppercase: Boolean? = null,
+    @SerialName("sensitive_scopes_enabled") val sensitiveScopesEnabled: Boolean? = null,
     @SerialName("webauthn_user_verification") val webauthnUserVerification: String? = null,
 )

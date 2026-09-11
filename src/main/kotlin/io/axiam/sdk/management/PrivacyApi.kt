@@ -4,6 +4,8 @@
 package io.axiam.sdk.management
 
 import io.axiam.sdk.internal.ManagementTransport
+import io.axiam.sdk.management.models.ConsentView
+import io.axiam.sdk.management.models.GrantScopeConsent
 import java.util.UUID
 
 /**
@@ -94,6 +96,86 @@ class PrivacyApi internal constructor(
             method = "GET",
             pathTemplate = "/api/v1/auth/account/delete/cancel",
             path = path, query = query,
+        )
+    }
+
+    /**
+     * Art. 7(1) says a controller must be able to demonstrate that consent was given; Art.
+     * 15(1)(a) says the subject may see what is held about them. This endpoint is the second, and
+     * it is also the page the withdrawal control lives on.
+     *
+     * Issues `GET /api/v1/account/consents`.
+     *
+     * @return the server response
+     */
+    suspend fun listConsents(): List<ConsentView> {
+        val path = "/api/v1/account/consents"
+        val node = transport.send(
+            operation = "privacy.list_consents",
+            method = "GET",
+            pathTemplate = "/api/v1/account/consents",
+            path = path,
+        )
+        return ManagementSupport.decodeList("privacy.list_consents", ConsentView.serializer(), node)
+    }
+
+    /**
+     * What the SPA's consent screen calls when the end user says yes. Everything it accepts is
+     * checked against the registration rather than taken on trust, because a consent record is the
+     * thing UserInfo releases personal data on the strength of: * the scopes must be sensitive
+     * ones — nothing else belongs in this namespace, and a record naming `openid` would be a
+     * record that never matches and never expires; * the client must exist in the caller's tenant;
+     * * the client must have every named scope **registered**, so a consent cannot be recorded for
+     * a release the client could never have been authorised for; * the tenant switch must be on,
+     * so consent collected while the capability is off cannot sit waiting for somebody to turn it
+     * on. Idempotent: the `(tenant, user, type, version)` index makes a repeated grant the same
+     * grant, and a second call is answered `200` rather than a conflict. A consent screen the user
+     * double-submits has consented once.
+     *
+     * Issues `POST /api/v1/account/consents/oidc-scopes`.
+     *
+     * Not retried: §27.4 rule 8 makes every write on this surface single-shot, including the ones
+     * that look idempotent.
+     *
+     * @param body the request body
+     */
+    suspend fun grantScopeConsent(body: GrantScopeConsent) {
+        val path = "/api/v1/account/consents/oidc-scopes"
+        val payload = ManagementSupport.encodeBody("privacy.grant_scope_consent", GrantScopeConsent.serializer(), body)
+        transport.send(
+            operation = "privacy.grant_scope_consent",
+            method = "POST",
+            pathTemplate = "/api/v1/account/consents/oidc-scopes",
+            path = path, body = payload,
+        )
+    }
+
+    /**
+     * Art. 7(3): as easy to withdraw as to give. One call, no grace period, no confirmation step,
+     * and it takes effect on the **next UserInfo call with the token the relying party already
+     * holds** — not on the next token. That is the property T8.4 asserts, and it is why the
+     * release gate re-reads the record on every call rather than trusting the one taken at
+     * authorization. Withdraws every scope set consented to for this relying party, not one of
+     * them: a subject saying "stop giving my address to this app" does not mean "stop giving it
+     * under the two-scope record but carry on under the one-scope one". Answers `200` whether or
+     * not anything was there, and says how many records went. A subject who withdraws twice is not
+     * told off, and an attacker who guesses `client_id`s learns nothing from the status code —
+     * though they would have to be the subject to ask at all.
+     *
+     * Issues `DELETE /api/v1/account/consents/oidc-scopes/{client_id}`.
+     *
+     * Not retried: §27.4 rule 8 makes every write on this surface single-shot, including the ones
+     * that look idempotent.
+     *
+     * @param clientId the client id to address
+     */
+    suspend fun withdrawScopeConsent(clientId: UUID) {
+        val path = "/api/v1/account/consents/oidc-scopes/${clientId}"
+        transport.send(
+            operation = "privacy.withdraw_scope_consent",
+            method = "DELETE",
+            pathTemplate = "/api/v1/account/consents/oidc-scopes/{client_id}",
+            path = path,
         )
     }
 }

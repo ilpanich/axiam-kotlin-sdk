@@ -9,6 +9,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`OidcConfiguration.code_challenge_methods_supported` and
+  `token_endpoint_auth_signing_alg_values_supported`** (contract 1.42,
+  CONTRACT.md §21.5). Both are modelled `List<String>?` defaulting to `null`
+  even though `openapi.json` marks them **required**, and that is deliberate:
+  RFC 8414 §2 defines no default for either, so an absent
+  `code_challenge_methods_supported` does not mean `S256` — it means the
+  document said nothing. This struct must keep parsing a discovery document
+  from a non-AXIAM OP, and every neighbouring member is already nullable for
+  the same reason; making them required would reject documents this SDK
+  accepts today. `null` is "the document said nothing", `[]` is "the document
+  said none".
+
+  Informational only. §12.1 rule 5 pins `oidcBegin` to `S256` unconditionally,
+  and §21.5's standing rule is that an advertised capability is a statement
+  about the deployment, not an instruction to the client. The three other
+  members that became required in 1.41 — `acr_values_supported`,
+  `claims_parameter_supported`, `request_parameter_supported` — are **not**
+  added: this struct models a curated subset (it does not model
+  `dpop_signing_alg_values_supported` either), and widening it further would
+  be new surface rather than a re-sync.
+
+- **`OidcParParams.dpopJkt`** (RFC 9449 §10.1, contract 1.42) — an optional
+  `String` emitted in the `POST /oauth2/par` form only when set. Pushing the
+  thumbprint binds the eventual authorization code to that key at push time,
+  which closes §10's authorization-code-injection window.
+
+  **Caller-supplied.** This SDK implements the resource-server half of
+  §21.7.2: it verifies DPoP proofs and ships no proof generator, so it never
+  holds the client key whose thumbprint this is. No generator was added.
+
+  The other ten members `PushedAuthorizationRequest` gained upstream are
+  deliberately **not** added. Nine of them (`acr_values`, `claims`,
+  `claims_locales`, `display`, `id_token_hint`, `login_hint`, `max_age`,
+  `prompt`, `ui_locales`) are 1.41 additive optional surface — a feature, not
+  a re-sync. The tenth is `request_uri`, and that one is a refusal: RFC 9126
+  §2.1 makes it the one authorization parameter a client MUST NOT push, and
+  upstream modelled it *so the server can refuse it*. A client that can send
+  it is a client that can build the chained-request attack.
+
 - **RFC 8705 §5 `mtls_endpoint_aliases` (SDK contract 1.40, CONTRACT.md §21.3
   rule 2).** `OidcConfiguration` gains an optional `mtls_endpoint_aliases`
   property (the new `MtlsEndpointAliases` data class), and the §12 helpers now
@@ -32,15 +71,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Re-vendored `CONTRACT.md`, `openapi.json` and `management-registry.json` from
-  `ilpanich/axiam` at SDK contract 1.40. The registry's 155 operations are
-  unchanged, so the generated §27 surface is unchanged; `openapi.json` gained
-  the `MtlsEndpointAliases` schema and one optional property on
+  `ilpanich/axiam` at SDK contract 1.40. `openapi.json` gained the
+  `MtlsEndpointAliases` schema and one optional property on
   `OidcDiscoveryDocument`.
 
   Additive and server-side: no deployment publishes `mtls_endpoint_aliases`
   until an operator sets `AXIAM__AUTH__OAUTH2_MTLS_BASE_URL`, so every existing
   consumer keeps working unchanged against every existing deployment. No public
   API was removed or renamed.
+
+- **Re-vendored again at SDK contract 1.42**, from `ilpanich/axiam@cdedf33`.
+  This absorbs **two** revisions, 1.40 → 1.42. `proto/` is byte-identical
+  upstream and was not touched.
+
+  The §27 registry grows from **155 to 158 operations** across the same 24
+  namespaces: `privacy.list_consents`, `privacy.grant_scope_consent` and
+  `privacy.withdraw_scope_consent` (`/api/v1/account/consents` and the two
+  `oidc-scopes` paths). Six schemas are new (`Address`,
+  `AuthnRequestParamsMode`, `ConsentView`, `GrantScopeConsent`, `OidcPolicy`,
+  `UserInfoPostForm`) and twelve changed; everything reachable from the
+  registry came out of `scripts/gen_management.py` rather than by hand —
+  `ClientAuthMethod` gains `client_secret_basic`, the three OAuth2-client
+  models gain `authn_request_params` and `browser_sso`, `SecuritySettings`
+  gains a required `oidc` policy, and `SetOrgSettings` /
+  `TenantSettingsOverride` gain `default_locale` and
+  `sensitive_scopes_enabled`.
+
+  `Address` and the `User` / `UpdateUser` additions reach no generated model
+  because neither schema is referenced by any path in `openapi.json` — they
+  are server-internal domain types, and the §27 user surface is
+  `UserResponse` / `UpdateUserRequest`.
+
+  The README's contract-conformance statement now names **contract 1.42** and
+  the §27 operation count is corrected to 158 (it still said 147).
+
+### Fixed
+
+- **`tenant_id` is REPLACED on a discovered endpoint, never appended**
+  (contract 1.42). The server's discovery document now publishes the tenant
+  inside the endpoints it advertises — `tenant_scoped()` appends
+  `?tenant_id=<uuid>` to the token, revocation, introspection,
+  device-authorization, PAR and end-session URLs whenever the discovery
+  request named a tenant or the deployment sets `oauth2_default_tenant_id`.
+  OkHttp's `HttpUrl.Builder.addQueryParameter` **appends**, so this SDK was
+  producing `?tenant_id=A&tenant_id=B` — two values for the parameter that
+  selects a tenant, resolved by whichever end of the query string the server's
+  extractor reads.
+
+  `OidcSupport.endpointUrl` now calls `removeAllQueryParameters("tenant_id")`
+  before adding exactly one. Every *other* query parameter the endpoint
+  carried is still preserved: RFC 6749 §3.1/§3.2 require a client to retain
+  the endpoint's own query component, and only `tenant_id` is the SDK's to
+  own. The **resolved** value wins on a disagreement with the published one —
+  it is what this caller or session authenticated against (§12.3 rule 4), and
+  a deterministic mismatch is a better failure than one that depends on
+  parser order. `userinfo_endpoint` and `jwks_uri` are never tenant-scoped by
+  the server and this SDK never adds a tenant to either.
+
+- **`oidcPar` no longer strips the tenant out of the redirect URL.** The
+  §26.2 rule 2 construction cleared the discovered `authorization_endpoint`'s
+  query entirely before adding `client_id` and `request_uri`. As of contract
+  1.42 that query is where the server publishes `tenant_id`, and
+  `/oauth2/authorize` reads it — **only** when the request carries no
+  authenticated principal, which is exactly the browser being redirected
+  here. Stripping it turned a login page into a `401`.
+
+  The redirect now carries `tenant_id`, `client_id` and `request_uri`, and
+  nothing else. `tenant_id` is not one of the inline *authorization*
+  parameters rule 2 forbids beside a `request_uri`; it is the server's own
+  tenant-routing parameter, and it must be the **same** tenant the push used,
+  because the handle is consumed with `(tenant_id, client_id, request_uri)` —
+  a redirect naming a different tenant looks it up in a store that does not
+  hold it. So the resolved tenant is carried through, matching the push. Every
+  other pre-existing query parameter is still dropped.
+
+  Two existing `OidcParTest` assertions that pinned the redirect at exactly
+  `{client_id, request_uri}` are re-pointed at the new shape rather than
+  deleted: they encoded behaviour this change replaces, and the property they
+  protect — no inline authorization parameter beside a `request_uri` — is
+  still asserted.
+
 
 ## [1.0.0-beta12] - 2026-09-06
 

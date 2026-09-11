@@ -14,8 +14,10 @@ import kotlinx.serialization.Serializable
  * the properties you mean to change is the whole API — there is no builder because Kotlin does not
  * need one, and no way to accidentally send a field you did not name.
  *
+ * @property authnRequestParams the server's authn_request_params field
  * @property backchannelLogoutUri Pass an empty string to clear a previously registered URI —
  *     the one edit an operator makes when an RP is decommissioned.
+ * @property browserSso X7.3 — see &#91;`CreateOAuth2ClientRequest::browser_sso`&#93;.
  * @property dpopBoundAccessTokens the server's dpop_bound_access_tokens field
  * @property dpopRequireNonce the server's dpop_require_nonce field
  * @property grantTypes the server's grant_types field
@@ -40,7 +42,9 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class UpdateOAuth2ClientRequest(
+    @SerialName("authn_request_params") val authnRequestParams: AuthnRequestParamsMode? = null,
     @SerialName("backchannel_logout_uri") val backchannelLogoutUri: String? = null,
+    @SerialName("browser_sso") val browserSso: Boolean? = null,
     @SerialName("dpop_bound_access_tokens") val dpopBoundAccessTokens: Boolean? = null,
     @SerialName("dpop_require_nonce") val dpopRequireNonce: Boolean? = null,
     @SerialName("grant_types") val grantTypes: List<String>? = null,

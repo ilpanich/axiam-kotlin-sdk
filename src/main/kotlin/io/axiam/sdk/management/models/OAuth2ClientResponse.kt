@@ -13,6 +13,9 @@ import kotlinx.serialization.Serializable
 /**
  * OAuth2 client response -- omits client_secret_hash.
  *
+ * @property authnRequestParams X7.1 — echoed so an operator can audit which clients act on the
+ *     OIDC authentication-request parameters, from this endpoint rather than from the database.
+ * @property browserSso X7.3 — echoed for the same reason.
  * @property clientId the server's client_id field
  * @property createdAt the server's created_at field
  * @property dpopBoundAccessTokens the server's dpop_bound_access_tokens field
@@ -43,6 +46,8 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class OAuth2ClientResponse(
+    @SerialName("authn_request_params") val authnRequestParams: AuthnRequestParamsMode,
+    @SerialName("browser_sso") val browserSso: Boolean,
     @SerialName("client_id") val clientId: String,
     @SerialName("created_at") val createdAt: @Serializable(with = InstantSerializer::class) Instant,
     @SerialName("dpop_bound_access_tokens") val dpopBoundAccessTokens: Boolean,

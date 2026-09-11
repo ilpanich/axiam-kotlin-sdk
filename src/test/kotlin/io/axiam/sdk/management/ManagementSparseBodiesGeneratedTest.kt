@@ -5,6 +5,7 @@ package io.axiam.sdk.management
 
 import io.axiam.sdk.Sensitive
 import io.axiam.sdk.management.models.ApiProviderConfig
+import io.axiam.sdk.management.models.AuthnRequestParamsMode
 import io.axiam.sdk.management.models.ClientAuthMethod
 import io.axiam.sdk.management.models.ClientProfile
 import io.axiam.sdk.management.models.EmailConfigOverride
@@ -124,6 +125,10 @@ class ManagementSparseBodiesGeneratedTest {
             TenantSettingsOverride.serializer(), "default_cert_validity_days",
         )
         assertKeys(
+            TenantSettingsOverride(defaultLocale = "example"),
+            TenantSettingsOverride.serializer(), "default_locale",
+        )
+        assertKeys(
             TenantSettingsOverride(deletionGracePeriodDays = 1),
             TenantSettingsOverride.serializer(), "deletion_grace_period_days",
         )
@@ -208,6 +213,10 @@ class ManagementSparseBodiesGeneratedTest {
             TenantSettingsOverride.serializer(), "require_uppercase",
         )
         assertKeys(
+            TenantSettingsOverride(sensitiveScopesEnabled = true),
+            TenantSettingsOverride.serializer(), "sensitive_scopes_enabled",
+        )
+        assertKeys(
             TenantSettingsOverride(webauthnUserVerification = "example"),
             TenantSettingsOverride.serializer(), "webauthn_user_verification",
         )
@@ -216,6 +225,7 @@ class ManagementSparseBodiesGeneratedTest {
                 accessTokenLifetimeSecs = 1L,
                 adminNotificationsEnabled = true,
                 defaultCertValidityDays = 1,
+                defaultLocale = "example",
                 deletionGracePeriodDays = 1,
                 emailVerificationGracePeriodHours = 1,
                 emailVerificationRequired = true,
@@ -237,17 +247,19 @@ class ManagementSparseBodiesGeneratedTest {
                 requireLowercase = true,
                 requireSymbols = true,
                 requireUppercase = true,
+                sensitiveScopesEnabled = true,
                 webauthnUserVerification = "example",
             ),
             TenantSettingsOverride.serializer(),
             "access_token_lifetime_secs", "admin_notifications_enabled", "default_cert_validity_days",
-            "deletion_grace_period_days", "email_verification_grace_period_hours",
+            "default_locale", "deletion_grace_period_days", "email_verification_grace_period_hours",
             "email_verification_required", "hibp_check_enabled", "lockout_backoff_multiplier",
             "lockout_duration_secs", "max_cert_validity_days", "max_failed_login_attempts",
             "max_lockout_duration_secs", "mfa_challenge_lifetime_secs", "mfa_enforced",
             "min_length", "opaque_ksf", "opaque_mode", "opaque_suite", "password_history_count",
             "refresh_token_lifetime_secs", "require_digits", "require_lowercase",
-            "require_symbols", "require_uppercase", "webauthn_user_verification",
+            "require_symbols", "require_uppercase", "sensitive_scopes_enabled",
+            "webauthn_user_verification",
         )
         assertKeys(TenantSettingsOverride(), TenantSettingsOverride.serializer())
     }
@@ -479,8 +491,16 @@ class ManagementSparseBodiesGeneratedTest {
     @Test
     fun `updateOAuth2ClientRequest sends only what was set`() {
         assertKeys(
+            UpdateOAuth2ClientRequest(authnRequestParams = AuthnRequestParamsMode.IGNORE),
+            UpdateOAuth2ClientRequest.serializer(), "authn_request_params",
+        )
+        assertKeys(
             UpdateOAuth2ClientRequest(backchannelLogoutUri = "example"),
             UpdateOAuth2ClientRequest.serializer(), "backchannel_logout_uri",
+        )
+        assertKeys(
+            UpdateOAuth2ClientRequest(browserSso = true),
+            UpdateOAuth2ClientRequest.serializer(), "browser_sso",
         )
         assertKeys(
             UpdateOAuth2ClientRequest(dpopBoundAccessTokens = true),
@@ -552,7 +572,9 @@ class ManagementSparseBodiesGeneratedTest {
         )
         assertKeys(
             UpdateOAuth2ClientRequest(
+                authnRequestParams = AuthnRequestParamsMode.IGNORE,
                 backchannelLogoutUri = "example",
+                browserSso = true,
                 dpopBoundAccessTokens = true,
                 dpopRequireNonce = true,
                 grantTypes = emptyList(),
@@ -572,9 +594,10 @@ class ManagementSparseBodiesGeneratedTest {
                 tokenEndpointAuthMethod = ClientAuthMethod.CLIENT_SECRET_POST,
             ),
             UpdateOAuth2ClientRequest.serializer(),
-            "backchannel_logout_uri", "dpop_bound_access_tokens", "dpop_require_nonce",
-            "grant_types", "jwks", "jwks_uri", "name", "post_logout_redirect_uris",
-            "profile", "redirect_uris", "require_par", "scopes", "self_signed_tls_client_auth_thumbprints",
+            "authn_request_params", "backchannel_logout_uri", "browser_sso",
+            "dpop_bound_access_tokens", "dpop_require_nonce", "grant_types",
+            "jwks", "jwks_uri", "name", "post_logout_redirect_uris", "profile",
+            "redirect_uris", "require_par", "scopes", "self_signed_tls_client_auth_thumbprints",
             "tls_client_auth_san_dns", "tls_client_auth_san_uri", "tls_client_auth_subject_dn",
             "tls_client_certificate_bound_access_tokens", "token_endpoint_auth_method",
         )
