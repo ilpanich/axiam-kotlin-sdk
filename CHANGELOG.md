@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-beta13] - 2026-09-12
+
 ### Added
+
+- Prefer RFC 8705 §5 mtls_endpoint_aliases on mTLS calls
 
 - **`OidcConfiguration.code_challenge_methods_supported` and
   `token_endpoint_auth_signing_alg_values_supported`** (contract 1.42,
@@ -69,6 +73,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   including for a token minted at an alias endpoint.
 
 ### Changed
+
+- Re-sync to SDK contract 1.42 (1.40 → 1.42), fix tenant_id doubling and the stripped PAR tenant (#61)
 
 - Re-vendored `CONTRACT.md`, `openapi.json` and `management-registry.json` from
   `ilpanich/axiam` at SDK contract 1.40. `openapi.json` gained the
@@ -150,7 +156,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deleted: they encoded behaviour this change replaces, and the property they
   protect — no inline authorization parameter beside a `request_uri` — is
   still asserted.
-
 
 ## [1.0.0-beta12] - 2026-09-06
 
