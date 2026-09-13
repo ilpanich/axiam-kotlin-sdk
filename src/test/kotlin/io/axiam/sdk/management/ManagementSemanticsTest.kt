@@ -8,11 +8,15 @@ import io.axiam.sdk.errors.ConflictError
 import io.axiam.sdk.errors.NetworkError
 import io.axiam.sdk.errors.NotFoundError
 import io.axiam.sdk.errors.ValidationError
+import io.axiam.sdk.management.models.Certificate
+import io.axiam.sdk.management.models.CertificateType
 import io.axiam.sdk.management.models.CreatePermissionRequest
 import io.axiam.sdk.management.models.CreateRoleRequest
 import io.axiam.sdk.management.models.CreateScimTokenRequest
 import io.axiam.sdk.management.models.CreateUserRequest
+import io.axiam.sdk.management.models.GeneratedCertificate
 import io.axiam.sdk.management.models.SetMtlsTrustAnchor
+import io.axiam.sdk.management.models.SignCertificateCsrRequest
 import io.axiam.sdk.management.models.UpdateUserRequest
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.jsonPrimitive
@@ -525,6 +529,49 @@ class ManagementSemanticsTest : ManagementTestBase() {
         assertEquals("tok-abcdef", secret.expose(), "the caller must be able to read it exactly once")
         assertEquals("[SENSITIVE]", secret.toString())
         assertFalse(created.toString().contains("tok-abcdef"), "a data class toString must not leak it")
+    }
+
+    /**
+     * §27.5 (contract 1.45): `certificates.sign_csr` answers a plain
+     * [io.axiam.sdk.management.models.Certificate] — never
+     * [io.axiam.sdk.management.models.GeneratedCertificate], whose
+     * `private_key_pem` is mandatory and would always be absent here, since the
+     * key never left whoever built the CSR. Reflection over the *decoded
+     * type's* own declared fields is what proves the SDK cannot even represent
+     * a key on this call, rather than merely leaving one unset.
+     */
+    @Test
+    fun `sign_csr's certificate carries no private key field at all`() = runTest {
+        val body = """{"id":"$EXAMPLE_ID","tenant_id":"$TENANT_ID","issuer_ca_id":"$EXAMPLE_ID",""" +
+            """"subject":"CN=leaf-from-csr","public_cert_pem":"-----BEGIN CERTIFICATE-----\nMII\n""" +
+            """-----END CERTIFICATE-----","fingerprint":"aa:bb:cc","cert_type":"User",""" +
+            """"key_algorithm":"Ed25519","not_before":"2026-08-26T00:00:00Z",""" +
+            """"not_after":"2027-08-26T00:00:00Z","status":"Active","metadata":null,""" +
+            """"created_at":"2026-08-26T00:00:00Z"}"""
+        mount("POST", "/api/v1/certificates/sign-csr", 201, body)
+
+        val certificate = client.management().certificates().signCsr(
+            SignCertificateCsrRequest(
+                certType = CertificateType.USER,
+                csrPem = "-----BEGIN CERTIFICATE REQUEST-----\nMII\n-----END CERTIFICATE REQUEST-----",
+                issuerCaId = EXAMPLE_ID,
+                validityDays = 90,
+            ),
+        )
+
+        assertEquals("CN=leaf-from-csr", certificate.subject)
+        val fields = Certificate::class.java.declaredFields.map { it.name }
+        assertTrue(
+            fields.none { it.contains("privateKey", ignoreCase = true) },
+            "Certificate (sign_csr's response type) must carry no private-key field at all: $fields",
+        )
+        // The contrast case, so this is a real type distinction rather than an
+        // accidental omission on a model that never had the field to begin with.
+        val generatedFields = GeneratedCertificate::class.java.declaredFields.map { it.name }
+        assertTrue(
+            generatedFields.any { it.contains("privateKey", ignoreCase = true) },
+            "GeneratedCertificate (generate's response type) must still carry its mandatory key field",
+        )
     }
 
     /** §27.5: a supplied password is redacted locally but still reaches the wire. */
