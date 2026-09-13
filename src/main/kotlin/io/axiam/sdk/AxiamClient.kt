@@ -6,6 +6,7 @@ import io.axiam.sdk.errors.NetworkError
 import io.axiam.sdk.internal.AuthHeaderInterceptor
 import io.axiam.sdk.internal.JwksVerifier
 import io.axiam.sdk.internal.RefreshGuard
+import io.axiam.sdk.internal.RevocationFeed
 import io.axiam.sdk.internal.SessionState
 import io.axiam.sdk.internal.TlsFactory
 import io.axiam.sdk.oidc.AuthorizationRequest
@@ -111,6 +112,7 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
 
     /** CONTRACT.md §10.1 rule 5 — unset (the default) means "do not check". */
     private val expectedIssuer: String? = b.expectedIssuer
+    private val revocationFeed: RevocationFeed? = b.revocationFeed
 
     /** CONTRACT.md §10.1 rule 6 — unset (the default) means "do not check". */
     private val expectedAudience: String? = b.expectedAudience
@@ -1068,6 +1070,25 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
             expectedIssuer = expectedIssuer,
             expectedAudience = expectedAudience,
         )
+        // §10.4 (contract 1.44) — last, and only ever a rejection. Every rule
+        // above has already decided the token is valid; a feed that is unset or
+        // cannot be read, and a token with no session behind it, all change
+        // nothing here.
+        //
+        // The message names the session rather than the credential: "the
+        // session is gone" is not "this token was never valid", and a guard
+        // that conflated them would report an expired credential for a logout.
+        revocationFeed?.let { feed ->
+            val sid = try {
+                claims.getStringClaim("sid")
+            } catch (_: Exception) {
+                null
+            }
+            if (feed.isRevoked(sid)) {
+                throw AuthError("the session behind this token has been revoked")
+            }
+        }
+
         val sub = claims.subject ?: throw AuthError("token has no subject (sub) claim")
         val scope = try {
             claims.getStringClaim("scope")
@@ -2068,6 +2089,7 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
         internal var oidcClockSkewSec: Int? = null
         internal var expectedIssuer: String? = null
         internal var expectedAudience: String? = null
+        internal var revocationFeed: RevocationFeed? = null
 
         /**
          * CONTRACT.md §10.1 rule 5 — the `iss` the §10 guard
@@ -2077,6 +2099,23 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
          * different is rejected.
          */
         fun expectedIssuer(issuer: String) = apply { expectedIssuer = issuer }
+
+        /**
+         * CONTRACT.md §10.4 (contract 1.44) — the optional session-revocation
+         * feed the §10 guard ([AxiamClient.verifySession]) consults after every
+         * §10.1 rule has passed.
+         *
+         * **Unset by default**, and left unset this client behaves exactly as
+         * it did before 1.44: a revoked session's access token verifies locally
+         * until it expires, which is the §10.2 posture the feed narrows rather
+         * than replaces.
+         *
+         * It is never a control — it can only ever turn an accept into a
+         * reject, it is never consulted for a token that names no session, and
+         * a feed that cannot be read denies nothing. Share one instance across
+         * the guards that should poll once between them rather than once each.
+         */
+        fun revocationFeed(feed: RevocationFeed) = apply { revocationFeed = feed }
 
         /**
          * CONTRACT.md §10.1 rule 6 — an audience the §10 guard
