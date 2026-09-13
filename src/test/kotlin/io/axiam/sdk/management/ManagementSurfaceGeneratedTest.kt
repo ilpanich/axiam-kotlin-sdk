@@ -88,6 +88,7 @@ import io.axiam.sdk.management.models.Scope
 import io.axiam.sdk.management.models.SecuritySettings
 import io.axiam.sdk.management.models.ServiceAccountCreatedResponse
 import io.axiam.sdk.management.models.ServiceAccountResponse
+import io.axiam.sdk.management.models.SessionResponse
 import io.axiam.sdk.management.models.SetMtlsTrustAnchor
 import io.axiam.sdk.management.models.SetOrgEmailConfig
 import io.axiam.sdk.management.models.SetOrgSettings
@@ -308,6 +309,16 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
         val result = client.management().users().listRoles(userId = EXAMPLE_ID)
         val item = Json.parseToJsonElement(body).jsonArray.first().toString()
         assertDecodedEveryField(result.first(), RoleAssignment.serializer(), item)
+    }
+
+    /** Exercises users.list_sessions. */
+    @Test
+    fun `users list_sessions`() = runTest {
+        val body = "[{\"amr\": [], \"authenticated_at\": \"example\", \"created_at\": \"example\", \"expires_at\": \"example\", \"id\": \"11111111-1111-4111-8111-111111111111\", \"refresh_replay_grace_accepted\": 1, \"refresh_replay_refused\": 1, \"refresh_replay_verdict\": \"example\"}]"
+        mount("GET", "/api/v1/users/$EXAMPLE_ID/sessions", 200, body)
+        val result = client.management().users().listSessions(userId = EXAMPLE_ID)
+        val item = Json.parseToJsonElement(body).jsonArray.first().toString()
+        assertDecodedEveryField(result.first(), SessionResponse.serializer(), item)
     }
 
     /** Exercises groups.list. */
@@ -1868,6 +1879,7 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
             "users.list",
             "users.list_mfa_methods",
             "users.list_roles",
+            "users.list_sessions",
             "users.reset_mfa",
             "users.unlock",
             "users.update",
@@ -1880,7 +1892,7 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
             "webhooks.list",
             "webhooks.update",
         )
-        assertEquals(158, exercised.size,
+        assertEquals(159, exercised.size,
             "the generated surface must reach every operation the registry declares")
         assertEquals(expectedSurface(), exercised,
             "the generated surface and the registry must name the same operations")

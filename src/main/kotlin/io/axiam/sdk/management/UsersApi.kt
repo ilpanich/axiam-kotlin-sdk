@@ -7,6 +7,7 @@ import io.axiam.sdk.internal.ManagementTransport
 import io.axiam.sdk.management.models.CreateUserRequest
 import io.axiam.sdk.management.models.MfaMethodResponse
 import io.axiam.sdk.management.models.RoleAssignment
+import io.axiam.sdk.management.models.SessionResponse
 import io.axiam.sdk.management.models.UpdateUserRequest
 import io.axiam.sdk.management.models.UserResponse
 import java.util.UUID
@@ -244,5 +245,24 @@ class UsersApi internal constructor(
             path = path,
         )
         return ManagementSupport.decodeList("users.list_roles", RoleAssignment.serializer(), node)
+    }
+
+    /**
+     * List the sessions a user currently holds, with the T-254 refresh-replay marker on each.
+     *
+     * Issues `GET /api/v1/users/{user_id}/sessions`.
+     *
+     * @param userId the user id to address
+     * @return the server response
+     */
+    suspend fun listSessions(userId: UUID): List<SessionResponse> {
+        val path = "/api/v1/users/${userId}/sessions"
+        val node = transport.send(
+            operation = "users.list_sessions",
+            method = "GET",
+            pathTemplate = "/api/v1/users/{user_id}/sessions",
+            path = path,
+        )
+        return ManagementSupport.decodeList("users.list_sessions", SessionResponse.serializer(), node)
     }
 }

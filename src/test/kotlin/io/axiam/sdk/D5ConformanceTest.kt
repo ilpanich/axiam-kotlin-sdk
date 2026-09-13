@@ -160,6 +160,60 @@ class D5ConformanceTest {
     }
 
     // -----------------------------------------------------------------------
+    // §16 — AXIAM T-262: the contended-write answer
+    // -----------------------------------------------------------------------
+    //
+    // Since 2026-09-12 a write that loses an optimistic-concurrency race in the
+    // datastore answers `503 write_contention` with `Retry-After: 1` instead of
+    // `500 internal_error`. Nothing in this SDK changes: §16.3 already retries
+    // `5xx` on an eligible operation and §16.1 already treats the header as a
+    // floor. That is exactly why the behaviour is pinned here — §16.7 exists
+    // because two SDKs once shipped a retry helper that was exported,
+    // unit-tested and green while no production path called it. Only a request
+    // count taken on the wire distinguishes the two.
+
+    /** The server's real answer for a write that lost the race. */
+    private fun enqueueContendedWrite(times: Int = 1) = repeat(times) {
+        server.enqueue(
+            MockResponse().setResponseCode(503)
+                .setHeader("Content-Type", "application/json")
+                .setHeader("Retry-After", "1")
+                .setBody(
+                    """{"error":"write_contention",""" +
+                        """"message":"the datastore is busy; retry this request"}""",
+                ),
+        )
+    }
+
+    @Test
+    fun `the contended-write answer is retried and the success returned`() = runBlocking {
+        enqueueContendedWrite()
+        enqueueAllow()
+        client().use {
+            assertTrue(
+                it.checkAccess("read", "r-1").allowed,
+                "a 503 with Retry-After is transient and is retried",
+            )
+        }
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun `a non-idempotent call makes exactly one attempt against the same 503`() {
+        // The half that catches a retry wired at the transport layer instead of
+        // at the operation layer (§16.7). login changes state and consumes a
+        // credential, so a silent retry would replay a spent one and turn a
+        // recoverable blip into a hard failure the caller cannot interpret.
+        enqueueContendedWrite(times = 3)
+        client().use {
+            assertThrows(NetworkError::class.java) {
+                runBlocking { it.login("someone@example.test", "password") }
+            }
+        }
+        assertEquals(1, server.requestCount)
+    }
+
+    // -----------------------------------------------------------------------
     // §17 — decision memo
     // -----------------------------------------------------------------------
 
