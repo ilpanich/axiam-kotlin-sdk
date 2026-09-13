@@ -2,6 +2,7 @@ package io.axiam.sdk
 
 import io.axiam.sdk.errors.AuthError
 import io.axiam.sdk.errors.AuthzError
+import io.axiam.sdk.errors.NetworkError
 import io.axiam.sdk.webauthn.WebauthnFailure
 import io.axiam.sdk.webauthn.WebauthnWorkspace
 import kotlinx.coroutines.runBlocking
@@ -14,6 +15,7 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -54,6 +56,7 @@ class WebauthnTest {
         const val CHALLENGE_TOKEN = "challenge-token-fixture-do-not-log"
         const val ACCESS_TOKEN = "access-token-fixture-do-not-log"
         const val REFRESH_TOKEN = "refresh-token-fixture-do-not-log"
+        const val SETUP_TOKEN = "setup-token-fixture-do-not-log"
 
         /**
          * Deliberately "unusual but valid": every optional field populated, so
@@ -530,5 +533,243 @@ class WebauthnTest {
         // And the one that must not accuse the user: it also covers a silent
         // timeout, which the spec refuses to distinguish.
         assertTrue(WebauthnFailure.CANCELLED.message.contains("cancelled or timed out"))
+    }
+
+    // -----------------------------------------------------------------------
+    // §24.1 (contract 1.45) — setup/register/* takes no session at all
+    //
+    // The WebAuthn twin of mfa_setup_enroll / mfa_setup_confirm (§25.1,
+    // §25.2): a setup token is the only credential, and — unlike every other
+    // call in this file — the SDK must actively withhold its own session
+    // credentials from these two even when a session is configured.
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `setup register start authenticates with the setup token alone`() = runBlocking {
+        TestSupport.clientFor(server).use { client ->
+            server.enqueue(challengeResponse(CREATION_CHALLENGE))
+
+            val challenge = client.webauthnSetupRegisterStart(Sensitive.of(SETUP_TOKEN))
+
+            assertEquals(Json.parseToJsonElement(CREATION_CHALLENGE), challenge.challenge)
+            val request = server.takeRequest()
+            assertEquals("/api/v1/auth/webauthn/setup/register/start", request.path)
+            assertEquals(
+                SETUP_TOKEN,
+                Json.parseToJsonElement(request.body.readUtf8()).jsonObject["setup_token"]!!
+                    .jsonPrimitive.content,
+            )
+            // §5 rule 2 admits no exceptions, session or none.
+            assertEquals(TestSupport.TENANT_ID, request.getHeader("X-Tenant-ID"))
+        }
+    }
+
+    @Test
+    fun `setup register finish adopts credentials exactly as mfaSetupConfirm does`() = runBlocking {
+        TestSupport.clientFor(server).use { client ->
+            server.enqueue(TestSupport.loginOkResponse())
+
+            val result = client.webauthnSetupRegisterFinish(
+                Sensitive.of(SETUP_TOKEN), Sensitive.of(STATE_TOKEN), "Alice's key", REGISTRATION_RESPONSE,
+            )
+
+            // §25.2 rule 2 / §24.3: this IS the completion of the interrupted
+            // login, adopted exactly as mfaSetupConfirm's is — not handed back
+            // for the caller to install.
+            assertFalse(result.mfaRequired)
+            assertFalse(result.mfaSetupRequired)
+            assertNotNull(result.user)
+            assertEquals("user-1", result.user!!.userId)
+
+            val request = server.takeRequest()
+            assertEquals("/api/v1/auth/webauthn/setup/register/finish", request.path)
+            val body = request.body.readUtf8()
+            assertTrue(body.contains(REGISTRATION_RESPONSE), "the authenticator response was re-encoded: $body")
+            val parsed = Json.parseToJsonElement(body).jsonObject
+            assertEquals(SETUP_TOKEN, parsed["setup_token"]!!.jsonPrimitive.content)
+            assertEquals(STATE_TOKEN, parsed["state_token"]!!.jsonPrimitive.content)
+            assertEquals("Alice's key", parsed["credential_name"]!!.jsonPrimitive.content)
+
+            // A cookie-jar SDK captures the CSRF token on adoption, and a
+            // state-changing call right after carries it (§24.3 rule 2, §24.8).
+            server.enqueue(TestSupport.json(200, """{"allowed":true}"""))
+            assertTrue(client.can("read", "documents/1"))
+            assertEquals("csrf-abc", server.takeRequest().getHeader("X-CSRF-Token"))
+        }
+    }
+
+    @Test
+    fun `setup register calls carry no session credential even when one is configured`() = runBlocking {
+        TestSupport.clientFor(server).use { client ->
+            signIn(client)
+
+            server.enqueue(challengeResponse(CREATION_CHALLENGE))
+            client.webauthnSetupRegisterStart(Sensitive.of(SETUP_TOKEN))
+            val startRequest = server.takeRequest()
+            assertNull(
+                startRequest.getHeader("Authorization"),
+                "the already-signed-in session's bearer token must not ride along",
+            )
+            assertTrue(
+                startRequest.getHeader("Cookie").isNullOrBlank(),
+                "the already-signed-in session's cookies must not ride along: " +
+                    startRequest.getHeader("Cookie"),
+            )
+
+            server.enqueue(TestSupport.loginOkResponse())
+            client.webauthnSetupRegisterFinish(
+                Sensitive.of(SETUP_TOKEN), Sensitive.of(STATE_TOKEN), "Alice's key", REGISTRATION_RESPONSE,
+            )
+            val finishRequest = server.takeRequest()
+            assertNull(
+                finishRequest.getHeader("Authorization"),
+                "the already-signed-in session's bearer token must not ride along",
+            )
+            assertTrue(
+                finishRequest.getHeader("Cookie").isNullOrBlank(),
+                "the already-signed-in session's cookies must not ride along: " +
+                    finishRequest.getHeader("Cookie"),
+            )
+        }
+    }
+
+    @Test
+    fun `setup register start refuses an account that already has a factor`() = runBlocking {
+        TestSupport.clientFor(server).use { client ->
+            server.enqueue(TestSupport.json(400, """{"message":"account already has an MFA factor"}"""))
+
+            // Same answer mfa_setup_enroll gives for the same reason (§24.1):
+            // a setup token adds the first factor, never a second.
+            assertThrows(NetworkError::class.java) {
+                runBlocking { client.webauthnSetupRegisterStart(Sensitive.of(SETUP_TOKEN)) }
+            }
+        }
+        Unit
+    }
+
+    @Test
+    fun `setup register start rejects an expired or wrong-purpose token`() = runBlocking {
+        TestSupport.clientFor(server).use { client ->
+            server.enqueue(TestSupport.json(401, """{"message":"setup token expired"}"""))
+
+            assertThrows(AuthError::class.java) {
+                runBlocking { client.webauthnSetupRegisterStart(Sensitive.of(SETUP_TOKEN)) }
+            }
+        }
+        Unit
+    }
+
+    @Test
+    fun `setup register finish rejects an expired or wrong-purpose token`() = runBlocking {
+        TestSupport.clientFor(server).use { client ->
+            server.enqueue(TestSupport.json(401, """{"message":"not a setup token"}"""))
+
+            assertThrows(AuthError::class.java) {
+                runBlocking {
+                    client.webauthnSetupRegisterFinish(
+                        Sensitive.of(SETUP_TOKEN), Sensitive.of(STATE_TOKEN), "key", REGISTRATION_RESPONSE,
+                    )
+                }
+            }
+        }
+        Unit
+    }
+
+    @Test
+    fun `the attestation policy message survives on setup register finish`() = runBlocking {
+        TestSupport.clientFor(server).use { client ->
+            server.enqueue(
+                TestSupport.json(403, """{"message":"this security key is not FIDO certified"}"""),
+            )
+
+            val error = assertThrows(AuthzError::class.java) {
+                runBlocking {
+                    client.webauthnSetupRegisterFinish(
+                        Sensitive.of(SETUP_TOKEN), Sensitive.of(STATE_TOKEN), "key", REGISTRATION_RESPONSE,
+                    )
+                }
+            }
+            // §24.4 rule 1, extended to setup/register/finish: this is the
+            // only way whoever holds the key learns a different one would work.
+            assertTrue(
+                error.message!!.contains("FIDO certified"),
+                "the attestation policy message was lost: ${error.message}",
+            )
+        }
+    }
+
+    @Test
+    fun `the attestation policy message survives on setup register start`() = runBlocking {
+        TestSupport.clientFor(server).use { client ->
+            server.enqueue(
+                TestSupport.json(403, """{"message":"this tenant excludes synced passkeys"}"""),
+            )
+
+            val error = assertThrows(AuthzError::class.java) {
+                runBlocking { client.webauthnSetupRegisterStart(Sensitive.of(SETUP_TOKEN)) }
+            }
+            assertTrue(
+                error.message!!.contains("synced passkeys"),
+                "the attestation policy message was lost: ${error.message}",
+            )
+        }
+    }
+
+    @Test
+    fun `the 503 from setup register start is not retried`() = runBlocking {
+        TestSupport.clientFor(server).use { client ->
+            val before = server.requestCount
+            server.enqueue(TestSupport.json(503, """{"message":"FIDO metadata unavailable"}"""))
+
+            assertThrows(RuntimeException::class.java) {
+                runBlocking { client.webauthnSetupRegisterStart(Sensitive.of(SETUP_TOKEN)) }
+            }
+
+            assertEquals(1, server.requestCount - before, "the 503 must not be retried")
+        }
+    }
+
+    @Test
+    fun `no fixture token appears in a rendered setup register value`() = runBlocking {
+        TestSupport.clientFor(server).use { client ->
+            server.enqueue(challengeResponse(CREATION_CHALLENGE))
+            val challenge = client.webauthnSetupRegisterStart(Sensitive.of(SETUP_TOKEN))
+            assertEquals("[SENSITIVE]", challenge.stateToken.toString())
+            assertFalse(challenge.toString().contains(SETUP_TOKEN))
+            assertFalse(challenge.toString().contains(STATE_TOKEN))
+
+            server.enqueue(TestSupport.loginOkResponse())
+            val result = client.webauthnSetupRegisterFinish(
+                Sensitive.of(SETUP_TOKEN), Sensitive.of(STATE_TOKEN), "key", REGISTRATION_RESPONSE,
+            )
+            assertFalse(result.toString().contains(SETUP_TOKEN))
+        }
+    }
+
+    @Test
+    fun `the setup and state tokens are never parsed`() = runBlocking {
+        TestSupport.clientFor(server).use { client ->
+            // Neither is a JWT, base64, or three dot-separated parts. If
+            // anything decoded either, this round trip would not survive.
+            val nonsenseSetup = "-----definitely not a jwt (setup)-----"
+            val nonsenseState = "-----definitely not a jwt (state)-----"
+            server.enqueue(
+                TestSupport.json(
+                    200,
+                    """{"challenge":$CREATION_CHALLENGE,"state_token":"$nonsenseState"}""",
+                ),
+            )
+            val challenge = client.webauthnSetupRegisterStart(Sensitive.of(nonsenseSetup))
+            server.takeRequest()
+            assertEquals(nonsenseState, challenge.stateToken.expose())
+
+            server.enqueue(TestSupport.loginOkResponse())
+            client.webauthnSetupRegisterFinish(
+                Sensitive.of(nonsenseSetup), challenge.stateToken, "key", REGISTRATION_RESPONSE,
+            )
+            val body = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject
+            assertEquals(nonsenseSetup, body["setup_token"]!!.jsonPrimitive.content)
+            assertEquals(nonsenseState, body["state_token"]!!.jsonPrimitive.content)
+        }
     }
 }

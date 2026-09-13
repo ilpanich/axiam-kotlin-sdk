@@ -24,7 +24,7 @@ Source: [ilpanich/axiam-kotlin-sdk](https://github.com/ilpanich/axiam-kotlin-sdk
 
 ## Contract conformance
 
-This SDK conforms to **contract 1.42**: CONTRACT.md §1–§7, §9–§13 and §12.7, §14, §15, §17, §19,
+This SDK conforms to **contract 1.45**: CONTRACT.md §1–§7, §9–§13 and §12.7, §14, §15, §17, §19,
 §20, §21, §22, §23, §24, §25, §26, §27 (including §6.1 mTLS). §12 is implemented in full at its
 1.38 shape: all **thirteen** operations, including the four public "Sign in with X" entry points,
 as `suspend` functions on the same `AxiamClient`.
@@ -33,7 +33,7 @@ as `suspend` functions on the same `AxiamClient`.
 because they landed after this SDK already stated its coverage: widening the range silently would
 turn a statement that was true when written into a different claim without anyone editing it.
 
-**§27 is the Management API** — all 158 operations across 24 namespaces, with the §27.6 declarative
+**§27 is the Management API** — all 160 operations across 24 namespaces, with the §27.6 declarative
 layer. See [Management API](#management-api-27) below.
 
 **§24.6b — the linked-API ceremony helper — is deliberately absent, and this is not a capability
@@ -1195,7 +1195,8 @@ as a wrong password on that machine only.
 
 ## WebAuthn / passkeys (`io.axiam.sdk.webauthn`, §24)
 
-Six wire operations, two ceremonies, and one thing this SDK deliberately does not do.
+Eight wire operations, two ceremonies (plus the setup-token twin below), and one thing this SDK
+deliberately does not do.
 
 ```kotlin
 // Enrolment — requires a session (§24.1), refused client-side without one.
@@ -1254,6 +1255,27 @@ val credential = CredentialManager.create(context).getCredential(
 ).credential as PublicKeyCredential
 
 client.webauthnDiscoverableFinish(signIn.stateToken, credential.authenticationResponseJson)
+
+// Forced first-login enrolment (§25.2, contract 1.45) — a passkey or security
+// key instead of TOTP, from the SAME setup_token a 403 mfaSetupRequired login
+// handed back. No session either side: setupToken is the only credential, and
+// the SDK will not attach one of its own even if this client also happens to
+// hold a signed-in session.
+val setup = client.webauthnSetupRegisterStart(setupToken)
+
+val enrolled = CredentialManager.create(context).createCredential(
+    context,
+    CreatePublicKeyCredentialRequest(requestJson = setup.requestJson),
+) as CreatePublicKeyCredentialResponse
+
+val loginResult = client.webauthnSetupRegisterFinish(
+    setupToken,
+    setup.stateToken,
+    credentialName = "Pixel 9",
+    response = enrolled.registrationResponseJson,
+)
+// loginResult.user is set: this call completed the interrupted login, exactly
+// as mfaSetupConfirm(setupToken, code) does for TOTP.
 ```
 
 `requestJson` is the inner options object — the `publicKey` wrapper belongs to the DOM's
@@ -1262,6 +1284,25 @@ nothing is re-encoded, and the SDK links no Android class.
 
 Passing something that is not JSON, or is not a JSON object, raises `AuthError` client-side with no
 wire call: the SDK will not POST a body it already knows the server cannot verify.
+
+### Forced first-login enrolment takes no session at all (§24.1, contract 1.45)
+
+`webauthnSetupRegisterStart`/`Finish` is the WebAuthn twin of `mfaSetupEnroll`/`mfaSetupConfirm`
+(§25.1, §25.2): reached from the **same** `result.setupToken` a `login()` answering
+`mfaSetupRequired` hands back, when the tenant lets a new user choose a passkey or security key
+instead of a TOTP app. Unlike every other call in this section, this pair:
+
+- raises **no** client-side session guard — there is no session yet, so there is nothing to guard;
+- and, unlike `webauthnRegisterStart`/`Finish`, **withholds this client's own session credentials**
+  even when one happens to be configured. The setup token in the body is the only credential either
+  call accepts; a second one riding along on the same cookie-jar-backed client would invite a server
+  that changes its mind about which to trust.
+
+`webauthnSetupRegisterFinish` adopts credentials exactly as `mfaSetupConfirm` does — it *is* the
+completion of the login the forced enrolment interrupted, cookies and all (§24.3, §25.2 rule 2). What
+may register does not differ from the profile-page ceremony: the tenant's attestation and
+user-verification policies are read from the token's own tenant, so a `403` from either call is that
+policy speaking, surfaced verbatim exactly as `register/finish`'s is (§24.4 rule 1).
 
 ### The two authentication ceremonies are different flows (§24.2)
 
@@ -1345,6 +1386,10 @@ login (§25.2 rule 2). `mfaEnroll`/`mfaConfirm` are the voluntary pair, from ins
 session, and they do **not** clear the §17 decision memo — the subject has not changed, and
 discarding a warm memo on an unrelated profile action costs a round trip on every check that
 follows.
+
+The same `setupToken` also unlocks a **second** pair: `webauthnSetupRegisterStart`/`Finish` enrols a
+passkey or security key as the first factor instead of TOTP, adopting credentials the same way — see
+[Forced first-login enrolment takes no session at all](#forced-first-login-enrolment-takes-no-session-at-all-241-contract-145).
 
 Both halves of an `MfaEnrollment` are `Sensitive`, and the second one matters: the `otpauth://` URI
 *contains* the secret (§25.3). Wrapping the bare secret and then logging the URI leaks the same
@@ -1510,7 +1555,7 @@ Worked end to end in [`examples/par-login`](examples/par-login) (`./gradlew runP
 
 ## Management API (§27)
 
-The administrative surface: 158 operations across 24 namespaces — users, groups, roles,
+The administrative surface: 160 operations across 24 namespaces — users, groups, roles,
 permissions, resources, scopes, service accounts, certificates, CA certificates, PGP keys, webhooks,
 OAuth2 clients, federation, notification rules, e-mail config, settings, SCIM tokens, reactors,
 WebAuthn policy, audit, privacy, organizations, tenants and platform.

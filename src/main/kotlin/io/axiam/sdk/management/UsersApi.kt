@@ -181,8 +181,13 @@ class UsersApi internal constructor(
     }
 
     /**
-     * Reset MFA for a user — disables MFA, clears the secret, and revokes all existing sessions.
-     * Requires admin access (caller must be in the same tenant).
+     * Reset MFA for a user — evicts **every** factor: the WebAuthn credentials as well as the TOTP
+     * secret, clears `mfa_enabled`, and revokes all existing sessions (T-34). Requires
+     * `users:admin` (caller must be in the same tenant), or that the caller is the target. A
+     * caller resetting their **own** account is refused with `403 mfa_enforced` where their
+     * tenant's effective policy enforces MFA (D-1, T-267): the reset is otherwise the one
+     * self-service path below the floor an administrator set. `users:admin` is unaffected — an
+     * administrator resetting a locked-out user is what the endpoint exists for.
      *
      * Issues `POST /api/v1/users/{user_id}/reset-mfa`.
      *

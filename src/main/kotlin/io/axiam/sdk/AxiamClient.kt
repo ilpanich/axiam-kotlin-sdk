@@ -5,6 +5,7 @@ import io.axiam.sdk.errors.ErrorMapper
 import io.axiam.sdk.errors.NetworkError
 import io.axiam.sdk.internal.AuthHeaderInterceptor
 import io.axiam.sdk.internal.JwksVerifier
+import io.axiam.sdk.internal.NoSessionCredentialsNetworkInterceptor
 import io.axiam.sdk.internal.RefreshGuard
 import io.axiam.sdk.internal.RevocationFeed
 import io.axiam.sdk.internal.SessionState
@@ -175,6 +176,11 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
             .readTimeout(b.readTimeout)
             .writeTimeout(b.writeTimeout)
             .addInterceptor(AuthHeaderInterceptor(session))
+            // §24.1 (contract 1.45): the `Cookie` half of the setup/register/*
+            // credential suppression has to run after BridgeInterceptor has
+            // applied the jar, so it is a network interceptor rather than
+            // living beside the rest of AuthHeaderInterceptor's logic.
+            .addNetworkInterceptor(NoSessionCredentialsNetworkInterceptor())
             .build()
         session.attachHttpClient(httpClient)
 
@@ -1436,6 +1442,80 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
     }
 
     /**
+     * `POST /api/v1/auth/webauthn/setup/register/start` (CONTRACT.md §24.1,
+     * contract 1.45) — begin enrolling a passkey or security key as the
+     * **first** factor, during a forced first-login enrolment.
+     *
+     * The WebAuthn twin of [mfaSetupEnroll]: reached when [login] answers
+     * [LoginResult.mfaSetupRequired] and this runtime can perform a ceremony.
+     * There is no session — [setupToken] is the only credential — so, unlike
+     * [webauthnRegisterStart], this raises no client-side session guard and
+     * attaches **none** of this client's own session credentials, even when
+     * one is configured (§24.1: "an SDK MUST NOT attach its session
+     * credential to these two"). What may register does not differ from the
+     * profile-page ceremony: the tenant's attestation and user-verification
+     * policies are read from the token's own tenant, so a `403` here is that
+     * policy speaking, exactly as it does from `register/finish` (§24.4
+     * rule 1) — surfaced verbatim for the same reason.
+     */
+    suspend fun webauthnSetupRegisterStart(setupToken: Sensitive<String>): WebauthnChallenge {
+        ensureOpen()
+        val body = buildJsonObject { put("setup_token", setupToken.expose()) }
+        postJsonCredentialFree(WEBAUTHN_SETUP_REGISTER_START_PATH, body).use { http ->
+            if (http.code != 200) {
+                throw setupRegisterError(http, "webauthnSetupRegisterStart")
+            }
+            val wire = readJson(http)
+            return WebauthnChallenge(
+                challenge = wire["challenge"]?.jsonObject ?: JsonObject(emptyMap()),
+                stateToken = Sensitive.of(wire.str("state_token")),
+            )
+        }
+    }
+
+    /**
+     * `POST /api/v1/auth/webauthn/setup/register/finish` (CONTRACT.md §24.1,
+     * §25.2 rule 2, contract 1.45) — complete the registration and, with it,
+     * the login the forced enrolment interrupted.
+     *
+     * Adopts credentials **exactly as [mfaSetupConfirm] does** — both are the
+     * completion of the same interrupted login, and both answer the same
+     * `LoginSuccessResponse` (§24.3's five adoption rules, applied verbatim;
+     * §17 decision memo cleared). [response] reaches the wire byte for byte,
+     * as [webauthnRegisterFinish]'s does (§24.6a rule 2, §24.0).
+     */
+    suspend fun webauthnSetupRegisterFinish(
+        setupToken: Sensitive<String>,
+        stateToken: Sensitive<String>,
+        credentialName: String,
+        response: String,
+    ): LoginResult {
+        ensureOpen()
+        onCredentialChange()
+        val body = webauthnFinishBody(
+            stateToken,
+            response,
+            "webauthnSetupRegisterFinish",
+            extraFields = mapOf(
+                "setup_token" to setupToken.expose(),
+                "credential_name" to credentialName,
+            ),
+        )
+        postRawJsonCredentialFree(WEBAUTHN_SETUP_REGISTER_FINISH_PATH, body).use { http ->
+            if (http.code != 200) {
+                throw setupRegisterError(http, "webauthnSetupRegisterFinish")
+            }
+            val (organizationLevel, scope) = loginScopeOf(http)
+            return LoginResult(
+                mfaRequired = false,
+                user = buildUser(),
+                organizationLevel = organizationLevel,
+                scope = scope,
+            )
+        }
+    }
+
+    /**
      * `POST /api/v1/auth/webauthn/authenticate/start` (CONTRACT.md §24.1) —
      * begin the **second-factor** ceremony.
      *
@@ -1605,6 +1685,27 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
      */
     private fun registerFinishError(http: Response): Throwable {
         var message = "webauthnRegisterFinish failed"
+        if (http.code == 403) {
+            val policy = runCatching {
+                Json.parseToJsonElement(http.peekBody(MAX_POLICY_PEEK_BYTES).string())
+                    .jsonObject["message"]?.jsonPrimitive?.contentOrNull
+            }.getOrNull()
+            if (!policy.isNullOrEmpty()) message = "$message: $policy"
+        }
+        return ErrorMapper.fromHttpStatus(http.code, message, http)
+    }
+
+    /**
+     * §24.4 rule 1, extended by contract 1.45 to the `setup/register/{start,finish}` pair:
+     * a `403` from either is the tenant's attestation policy speaking (`start`
+     * can refuse outright when the policy excludes every kind this runtime
+     * offers; `finish` refuses the ceremony just completed), and the server's
+     * message is the only thing whoever holds the key can act on. Shares
+     * [registerFinishError]'s peek-only redaction discipline rather than its
+     * hardcoded operation name, since two operations call this one.
+     */
+    private fun setupRegisterError(http: Response, operation: String): Throwable {
+        var message = "$operation failed"
         if (http.code == 403) {
             val policy = runCatching {
                 Json.parseToJsonElement(http.peekBody(MAX_POLICY_PEEK_BYTES).string())
@@ -1972,6 +2073,27 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
     }
 
     /**
+     * As [postJson], but marks the request so [AuthHeaderInterceptor] attaches
+     * neither the bearer token nor the shared cookie jar's cookies, even when
+     * this client has a session — CONTRACT.md §24.1's `setup/register/{start,finish}` pair
+     * (contract 1.45), whose only credential is the setup token in the body.
+     */
+    private suspend fun postJsonCredentialFree(path: String, body: JsonObject): Response =
+        withContext(Dispatchers.IO) {
+            val payload = Json.encodeToString(JsonObject.serializer(), body).toRequestBody(JSON_MEDIA)
+            val request = Request.Builder()
+                .url(baseUrl + path)
+                .header(AuthHeaderInterceptor.NO_SESSION_CREDENTIALS_HEADER, "1")
+                .post(payload)
+                .build()
+            try {
+                httpClient.newCall(request).execute()
+            } catch (e: IOException) {
+                throw NetworkError("request failed: ${e.message}", e)
+            }
+        }
+
+    /**
      * The §5.2 flag and the §5.2.2/§5.2.3 scope, read off a completed login
      * response in one pass.
      *
@@ -2056,6 +2178,21 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
             throw NetworkError("request failed: ${e.message}", e)
         }
     }
+
+    /** As [postRawJson], with the same credential suppression as [postJsonCredentialFree]. */
+    private suspend fun postRawJsonCredentialFree(path: String, body: String): Response =
+        withContext(Dispatchers.IO) {
+            val request = Request.Builder()
+                .url(baseUrl + path)
+                .header(AuthHeaderInterceptor.NO_SESSION_CREDENTIALS_HEADER, "1")
+                .post(body.toRequestBody(JSON_MEDIA))
+                .build()
+            try {
+                httpClient.newCall(request).execute()
+            } catch (e: IOException) {
+                throw NetworkError("request failed: ${e.message}", e)
+            }
+        }
 
     private fun readJson(response: Response): JsonObject {
         val text = response.body?.string()
@@ -2283,6 +2420,10 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
             "/api/v1/auth/webauthn/authenticate/discoverable/start"
         private const val WEBAUTHN_DISCOVERABLE_FINISH_PATH =
             "/api/v1/auth/webauthn/authenticate/discoverable/finish"
+        private const val WEBAUTHN_SETUP_REGISTER_START_PATH =
+            "/api/v1/auth/webauthn/setup/register/start"
+        private const val WEBAUTHN_SETUP_REGISTER_FINISH_PATH =
+            "/api/v1/auth/webauthn/setup/register/finish"
 
         private const val MFA_ENROLL_PATH = "/api/v1/auth/mfa/enroll"
         private const val MFA_CONFIRM_PATH = "/api/v1/auth/mfa/confirm"

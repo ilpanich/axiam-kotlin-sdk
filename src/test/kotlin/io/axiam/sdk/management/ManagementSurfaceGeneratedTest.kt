@@ -93,6 +93,7 @@ import io.axiam.sdk.management.models.SetMtlsTrustAnchor
 import io.axiam.sdk.management.models.SetOrgEmailConfig
 import io.axiam.sdk.management.models.SetOrgSettings
 import io.axiam.sdk.management.models.SignAuditBatchRequest
+import io.axiam.sdk.management.models.SignCertificateCsrRequest
 import io.axiam.sdk.management.models.SignIntermediateCsrRequest
 import io.axiam.sdk.management.models.SignedAuditBatch
 import io.axiam.sdk.management.models.Tenant
@@ -847,6 +848,15 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
         mount("POST", "/api/v1/certificates", 201, body)
         val result = client.management().certificates().generate(body = CreateCertificateRequest(certType = CertificateType.USER, issuerCaId = EXAMPLE_ID, keyAlgorithm = KeyAlgorithm.RSA4096, subject = "example", validityDays = 1))
         assertDecodedEveryField(result, GeneratedCertificate.serializer(), body)
+    }
+
+    /** Exercises certificates.sign_csr. */
+    @Test
+    fun `certificates sign_csr`() = runTest {
+        val body = "{\"cert_type\": \"User\", \"created_at\": \"2026-08-26T00:00:00Z\", \"fingerprint\": \"example\", \"id\": \"11111111-1111-4111-8111-111111111111\", \"issuer_ca_id\": \"11111111-1111-4111-8111-111111111111\", \"key_algorithm\": \"Rsa4096\", \"metadata\": null, \"not_after\": \"2026-08-26T00:00:00Z\", \"not_before\": \"2026-08-26T00:00:00Z\", \"public_cert_pem\": \"example\", \"status\": \"Active\", \"subject\": \"example\", \"tenant_id\": \"11111111-1111-4111-8111-111111111111\"}"
+        mount("POST", "/api/v1/certificates/sign-csr", 201, body)
+        val result = client.management().certificates().signCsr(body = SignCertificateCsrRequest(certType = CertificateType.USER, csrPem = "example", issuerCaId = EXAMPLE_ID, validityDays = 1))
+        assertDecodedEveryField(result, Certificate.serializer(), body)
     }
 
     /** Exercises certificates.get. */
@@ -1748,6 +1758,7 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
             "certificates.get",
             "certificates.list",
             "certificates.revoke",
+            "certificates.sign_csr",
             "email_config.delete_org",
             "email_config.delete_tenant",
             "email_config.get_org",
@@ -1892,7 +1903,7 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
             "webhooks.list",
             "webhooks.update",
         )
-        assertEquals(159, exercised.size,
+        assertEquals(160, exercised.size,
             "the generated surface must reach every operation the registry declares")
         assertEquals(expectedSurface(), exercised,
             "the generated surface and the registry must name the same operations")
