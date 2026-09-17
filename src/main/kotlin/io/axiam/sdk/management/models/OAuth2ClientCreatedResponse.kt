@@ -16,8 +16,13 @@ import kotlinx.serialization.Serializable
  * Response for client creation -- includes the one-time plaintext secret.
  *
  * @property clientId the server's client_id field
- * @property clientSecret the server's client_secret field -- SECRET: redacted from toString
- *     and from every rendering except the one request body it is sent in
+ * @property clientSecret The plaintext client secret, shown exactly once. T21.2 — **absent**
+ *     for a client registered with `token_endpoint_auth_method: none`. A public client is created
+ *     with no secret, so there is nothing to show; the member is omitted rather than sent as `""`,
+ *     which an operator (or an SDK) would reasonably read as a secret that happens to be empty.
+ *     Every confidential registration — that is, every registration that existed before T21.2 —
+ *     carries it exactly as before. -- SECRET: redacted from toString and from every rendering
+ *     except the one request body it is sent in
  * @property createdAt the server's created_at field
  * @property grantTypes the server's grant_types field
  * @property id the server's id field
@@ -30,7 +35,7 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class OAuth2ClientCreatedResponse(
     @SerialName("client_id") val clientId: String,
-    @SerialName("client_secret") val clientSecret: @Contextual Sensitive<String>,
+    @SerialName("client_secret") val clientSecret: @Contextual Sensitive<String>? = null,
     @SerialName("created_at") val createdAt: @Serializable(with = InstantSerializer::class) Instant,
     @SerialName("grant_types") val grantTypes: List<String>,
     @SerialName("id") val id: @Serializable(with = UuidSerializer::class) UUID,

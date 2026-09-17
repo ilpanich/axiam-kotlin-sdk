@@ -24,14 +24,20 @@ Source: [ilpanich/axiam-kotlin-sdk](https://github.com/ilpanich/axiam-kotlin-sdk
 
 ## Contract conformance
 
-This SDK conforms to **contract 1.46**: CONTRACT.md §1–§7, §9–§13 and §12.7, §14, §15, §17, §19,
-§20, §21, §22, §23, §24, §25, §26, §27 (including §6.1 mTLS). §12 is implemented in full at its
+This SDK conforms to **contract 1.48**: CONTRACT.md §1–§7, §9–§13 and §12.7, §14, §15, §17, §19,
+§20, §21, §22, §23, §24, §25, §26, §27, §28 (including §6.1 mTLS). §12 is implemented in full at its
 1.38 shape: all **thirteen** operations, including the four public "Sign in with X" entry points,
 as `suspend` functions on the same `AxiamClient`.
 
-§12.7, §14, §15, §20, §22, §23, §24, §25, §26 and §27 are named rather than folded into the range
-because they landed after this SDK already stated its coverage: widening the range silently would
-turn a statement that was true when written into a different claim without anyone editing it.
+§12.7, §14, §15, §20, §22, §23, §24, §25, §26, §27 and §28 are named rather than folded into the
+range because they landed after this SDK already stated its coverage: widening the range silently
+would turn a statement that was true when written into a different claim without anyone editing it.
+
+**§28 (MCP resource-server helpers) is vendored ahead of `axiam` `main`.** `CONTRACT.md`,
+`openapi.json` and `proto/` are re-synced from the `axiam` repository's
+`claude_dev/mcp-authorization-server-plan.md` branch, where contract 1.48 lands before the phase
+that carries it merges to `main`. See [MCP resource-server helpers](#mcp-resource-server-helpers-ioaxiamsdkmcp-28-opt-in)
+below.
 
 **§27 is the Management API** — all 160 operations across 24 namespaces, with the §27.6 declarative
 layer. See [Management API](#management-api-27) below.
@@ -65,8 +71,9 @@ default tenant.
   §12 OIDC/SSO relying-party helpers (see "OIDC / SSO relying-party helpers" below), and the
   §13 webhook-signature verifier (see "Webhook signature verification" below), the §24 WebAuthn
   relying-party layer with its §24.6a JSON bridge, the §25 account-lifecycle and MFA-enrolment
-  operations, and §26 Pushed Authorization Requests. Plus, on the AMQP side, the §22 reactor
-  runtime (see "Reactors" below) and the §8 v2 / §8b primitives it carries.
+  operations, §26 Pushed Authorization Requests, and the §28 MCP resource-server helpers (see
+  "MCP resource-server helpers" below). Plus, on the AMQP side, the §22 reactor runtime (see
+  "Reactors" below) and the §8 v2 / §8b primitives it carries.
 - **Deferred follow-ups (not in v1):** the gRPC transport — including the gRPC-only
   `getUserInfo` operation (CONTRACT §1.1, contract 1.3) — and §8's `AuthzRequest` /
   `AuditEventMessage` consumers (async authorization and audit ingestion). The contract does not
@@ -727,6 +734,101 @@ See [`examples/logout/LogoutExample.kt`](examples/logout/LogoutExample.kt).
 end, which is why the contract forbids collapsing them into a bare `false`. `ReasonCode` holds the
 three defined values as constants rather than an enum, so an unrecognised code is surfaced verbatim
 and never changes `allowed`; `null` means the server did not send one.
+
+## MCP resource-server helpers (`io.axiam.sdk.mcp`, §28, opt-in)
+
+The resource-server half of the Model Context Protocol authorization handshake: publish the
+RFC 9728 protected-resource metadata document that tells an MCP client which authorization server
+guards this resource, and answer its first, credential-less request with a `WWW-Authenticate`
+challenge that names the document. AXIAM is the authorization server and implements none of
+this — an MCP server built with this SDK is the resource server, and `io.axiam.sdk.mcp` plus the
+`AxiamAuthentication` plugin option below are the whole of its REST-surface side. Nothing here
+performs network I/O: the document and the challenge are pure local computation, and neither is
+ever consulted when deciding whether a request is authorized — that stays §10.1's and §11's
+decision, unchanged.
+
+**Off by default, and additive when off.** With `AxiamAuthConfig.resourceMetadataUrl` unset, the
+Ktor plugin and the §11 helpers behave byte-for-byte as they always have — no header, no status
+change, no exempted path.
+
+```kotlin
+import io.axiam.sdk.mcp.Mcp
+
+val metadata = Mcp.protectedResourceMetadata(
+    resource = "https://mcp.example.com/mcp",
+    authorizationServers = listOf("https://axiam.example.com"),
+    scopesSupported = listOf("mcp:read", "mcp:tools"),
+)
+
+metadata.metadataPath // "/.well-known/oauth-protected-resource/mcp"
+metadata.metadataUrl  // "https://mcp.example.com/.well-known/oauth-protected-resource/mcp"
+```
+
+Validation happens at construction and it refuses rather than repairs — a `resource` with a query
+or fragment, an `http` scheme off loopback, a duplicate authorization server or scope, all throw
+`ValidationError` (CONTRACT.md §2's existing taxonomy; §28 adds no new type) before any route
+exists. `bearerChallenge`'s `error` parameter is a `BearerChallengeError` enum of exactly RFC
+6750 §3.1's three codes, so an invalid one — `invalid_grant`, say — is unrepresentable rather than
+a runtime refusal.
+
+**Wiring it into Ktor** touches the same two collaborators every other §10/§11 route already uses:
+
+```kotlin
+import io.axiam.sdk.ktor.*
+
+val guardClient = AxiamClient.builder(baseUrl, tenantId)
+    .expectedAudience(metadata.document.resource)   // §28.5 rule 2: mandatory once resourceMetadataUrl is set
+    .build()
+
+install(AxiamAuthentication) {
+    client = guardClient
+    resourceMetadataUrl = metadata.metadataUrl
+}
+
+routing {
+    serveProtectedResourceMetadata(metadata, metadata.metadataUrl, guardClient.expectedAudience())
+    get("/documents/{id}") {
+        val user = call.requireAccess("documents:read", call.parameters["id"]!!, scope = "mcp:tools") ?: return@get
+        call.respondText("hello ${user.userId}")
+    }
+}
+```
+
+- **`AxiamAuthentication`** validates the §28 configuration once, at install time — refusing if
+  `resourceMetadataUrl` is set without `client.expectedAudience()` — and from then on every 401 it
+  emits (a missing credential, or a presented-and-rejected one, including a wrong `aud`) carries the
+  matching challenge. It also exempts the one `GET`/`HEAD` of the metadata document's own path from
+  its credential check, so `serveProtectedResourceMetadata` can answer it unauthenticated regardless
+  of registration order.
+- **`requireAuth`/`requireAccess`** carry the same challenge on their own 401s, and `requireAccess`
+  additionally emits `insufficient_scope` on a 403 — but *only* when the route named a `scope` and
+  the decision's `reasonCode` is `ReasonCode.NO_GRANT`; a `denied_by_rule` denial, an absent/unknown
+  reason code, `requireRole`, and a `requireAccess` call with no `scope` argument all stay
+  header-free. Where a `UmaChallenger` (§20.3) is also configured and mints a ticket, that ticket
+  wins — a working ticket beats a hint pointing at a document to go discover one from.
+- **`serveProtectedResourceMetadata`** is the `Route` extension registering the one `GET` route at
+  the derived (never chosen) path, `200`, unauthenticated, identical for every caller, with
+  `Cache-Control: public, max-age=3600` and `Access-Control-Allow-Origin: *`. Passing it the paired
+  guard's `resourceMetadataUrl`/`expectedAudience`, as above, applies §28.5 rule 3's cross-check at
+  registration time; omit both where the guard lives in a different process.
+
+**Spring Boot reuses the Java SDK — no parallel Kotlin implementation.** `io.axiam.sdk.mcp.Mcp`
+(the framework-independent document/challenge builder), `AxiamAuthenticationFilter`,
+`AxiamMcpAuthenticationEntryPoint`, `AxiamAuthorizationInterceptor` and
+`AxiamProtectedResourceMetadataController` all already carry §28 support in
+`io.github.ilpanich:axiam-sdk` (the Java SDK's Spring MVC surface, which this SDK's own README
+already points Spring Boot users at for §10/§11). A Kotlin Spring Boot application configures §28
+exactly as a Java one does — see that SDK's README for the full three-collaborator wiring — with
+nothing Kotlin-specific to add or divergent to learn. This SDK's own contribution is REST-surface
+only: the Ktor plugin, the route, and `io.axiam.sdk.mcp.Mcp` itself, which the Java collaborators do
+**not** depend on (they use the Java SDK's own `io.axiam.sdk.mcp.Mcp`, a separate class in a
+separate artifact of the same name and shape).
+
+**gRPC and AMQP are out of scope for this SDK**, per this README's [Scope of this SDK
+(v1)](#scope-of-this-sdk-v1) section — §28.5 rule 8 makes attaching the challenge to a gRPC
+`UNAUTHENTICATED` trailer optional (MAY) for an SDK whose guard covers gRPC, and forbids an AMQP
+equivalent outright ("there is no client waiting on a response to re-authorize with"). Kotlin
+implements neither transport's inbound guard, so neither clause applies here.
 
 ## Webhook signature verification (§13)
 

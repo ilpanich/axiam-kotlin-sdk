@@ -1077,7 +1077,7 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
     /** Exercises oauth2_clients.list. */
     @Test
     fun `oauth2_clients list`() = runTest {
-        val body = "{\"items\": [{\"authn_request_params\": \"ignore\", \"browser_sso\": true, \"client_id\": \"example\", \"created_at\": \"2026-08-26T00:00:00Z\", \"dpop_bound_access_tokens\": true, \"dpop_require_nonce\": true, \"grant_types\": [], \"id\": \"11111111-1111-4111-8111-111111111111\", \"name\": \"example\", \"profile\": \"standard\", \"redirect_uris\": [], \"require_par\": true, \"scopes\": [], \"self_signed_tls_client_auth_thumbprints\": [], \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"tls_client_certificate_bound_access_tokens\": true, \"token_endpoint_auth_method\": \"client_secret_post\", \"updated_at\": \"2026-08-26T00:00:00Z\"}], \"total\": 1, \"offset\": 0, \"limit\": 200}"
+        val body = "{\"items\": [{\"allowed_resources\": [], \"authn_request_params\": \"ignore\", \"browser_sso\": true, \"client_id\": \"example\", \"created_at\": \"2026-08-26T00:00:00Z\", \"dpop_bound_access_tokens\": true, \"dpop_require_nonce\": true, \"grant_types\": [], \"id\": \"11111111-1111-4111-8111-111111111111\", \"managed_by\": \"admin\", \"name\": \"example\", \"profile\": \"standard\", \"redirect_uris\": [], \"require_par\": true, \"scopes\": [], \"self_signed_tls_client_auth_thumbprints\": [], \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"tls_client_certificate_bound_access_tokens\": true, \"token_endpoint_auth_method\": \"client_secret_post\", \"updated_at\": \"2026-08-26T00:00:00Z\"}], \"total\": 1, \"offset\": 0, \"limit\": 200}"
         mount("GET", "/api/v1/oauth2-clients", 200, body)
         val result = client.management().oauth2Clients().list(page = PageRequest.of(50))
         val item = (Json.parseToJsonElement(body) as JsonObject)["items"]!!.jsonArray.first().toString()
@@ -1089,7 +1089,7 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
     /** Exercises oauth2_clients.create. */
     @Test
     fun `oauth2_clients create`() = runTest {
-        val body = "{\"client_id\": \"example\", \"client_secret\": \"example\", \"created_at\": \"2026-08-26T00:00:00Z\", \"grant_types\": [], \"id\": \"11111111-1111-4111-8111-111111111111\", \"name\": \"example\", \"redirect_uris\": [], \"scopes\": [], \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"updated_at\": \"2026-08-26T00:00:00Z\"}"
+        val body = "{\"client_id\": \"example\", \"created_at\": \"2026-08-26T00:00:00Z\", \"grant_types\": [], \"id\": \"11111111-1111-4111-8111-111111111111\", \"name\": \"example\", \"redirect_uris\": [], \"scopes\": [], \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"updated_at\": \"2026-08-26T00:00:00Z\"}"
         mount("POST", "/api/v1/oauth2-clients", 201, body)
         val result = client.management().oauth2Clients().create(body = CreateOAuth2ClientRequest(grantTypes = emptyList(), name = "example", redirectUris = emptyList(), scopes = emptyList()))
         assertDecodedEveryField(result, OAuth2ClientCreatedResponse.serializer(), body)
@@ -1098,7 +1098,7 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
     /** Exercises oauth2_clients.get. */
     @Test
     fun `oauth2_clients get`() = runTest {
-        val body = "{\"authn_request_params\": \"ignore\", \"browser_sso\": true, \"client_id\": \"example\", \"created_at\": \"2026-08-26T00:00:00Z\", \"dpop_bound_access_tokens\": true, \"dpop_require_nonce\": true, \"grant_types\": [], \"id\": \"11111111-1111-4111-8111-111111111111\", \"name\": \"example\", \"profile\": \"standard\", \"redirect_uris\": [], \"require_par\": true, \"scopes\": [], \"self_signed_tls_client_auth_thumbprints\": [], \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"tls_client_certificate_bound_access_tokens\": true, \"token_endpoint_auth_method\": \"client_secret_post\", \"updated_at\": \"2026-08-26T00:00:00Z\"}"
+        val body = "{\"allowed_resources\": [], \"authn_request_params\": \"ignore\", \"browser_sso\": true, \"client_id\": \"example\", \"created_at\": \"2026-08-26T00:00:00Z\", \"dpop_bound_access_tokens\": true, \"dpop_require_nonce\": true, \"grant_types\": [], \"id\": \"11111111-1111-4111-8111-111111111111\", \"managed_by\": \"admin\", \"name\": \"example\", \"profile\": \"standard\", \"redirect_uris\": [], \"require_par\": true, \"scopes\": [], \"self_signed_tls_client_auth_thumbprints\": [], \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"tls_client_certificate_bound_access_tokens\": true, \"token_endpoint_auth_method\": \"client_secret_post\", \"updated_at\": \"2026-08-26T00:00:00Z\"}"
         mount("GET", "/api/v1/oauth2-clients/$EXAMPLE_ID", 200, body)
         val result = client.management().oauth2Clients().get(id = EXAMPLE_ID)
         assertDecodedEveryField(result, OAuth2ClientResponse.serializer(), body)
@@ -1107,7 +1107,7 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
     /** Exercises oauth2_clients.update. */
     @Test
     fun `oauth2_clients update`() = runTest {
-        val body = "{\"authn_request_params\": \"ignore\", \"browser_sso\": true, \"client_id\": \"example\", \"created_at\": \"2026-08-26T00:00:00Z\", \"dpop_bound_access_tokens\": true, \"dpop_require_nonce\": true, \"grant_types\": [], \"id\": \"11111111-1111-4111-8111-111111111111\", \"name\": \"example\", \"profile\": \"standard\", \"redirect_uris\": [], \"require_par\": true, \"scopes\": [], \"self_signed_tls_client_auth_thumbprints\": [], \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"tls_client_certificate_bound_access_tokens\": true, \"token_endpoint_auth_method\": \"client_secret_post\", \"updated_at\": \"2026-08-26T00:00:00Z\"}"
+        val body = "{\"allowed_resources\": [], \"authn_request_params\": \"ignore\", \"browser_sso\": true, \"client_id\": \"example\", \"created_at\": \"2026-08-26T00:00:00Z\", \"dpop_bound_access_tokens\": true, \"dpop_require_nonce\": true, \"grant_types\": [], \"id\": \"11111111-1111-4111-8111-111111111111\", \"managed_by\": \"admin\", \"name\": \"example\", \"profile\": \"standard\", \"redirect_uris\": [], \"require_par\": true, \"scopes\": [], \"self_signed_tls_client_auth_thumbprints\": [], \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"tls_client_certificate_bound_access_tokens\": true, \"token_endpoint_auth_method\": \"client_secret_post\", \"updated_at\": \"2026-08-26T00:00:00Z\"}"
         mount("PUT", "/api/v1/oauth2-clients/$EXAMPLE_ID", 200, body)
         val result = client.management().oauth2Clients().update(id = EXAMPLE_ID, body = UpdateOAuth2ClientRequest())
         assertDecodedEveryField(result, OAuth2ClientResponse.serializer(), body)

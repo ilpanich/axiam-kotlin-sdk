@@ -214,6 +214,17 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
     fun tenantId(): String = tenantId
 
     /**
+     * This client's configured §10.1 row 6 expected audience ([Builder.expectedAudience]),
+     * or `null` when unset.
+     *
+     * Exposed so a §28 guard can read the client's own already-configured
+     * value rather than needing a second audience option — CONTRACT.md §28.5
+     * rule 2 forbids adding one, since "expected audience" is this exact
+     * setting under whatever name the SDK already gives it.
+     */
+    fun expectedAudience(): String? = expectedAudience
+
+    /**
      * The CONTRACT.md §27 management API, acting as this client's session.
      *
      * A view over the client, not a connection: building one performs no I/O

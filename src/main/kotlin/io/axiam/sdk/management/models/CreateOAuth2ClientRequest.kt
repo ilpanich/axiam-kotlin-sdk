@@ -9,6 +9,14 @@ import kotlinx.serialization.Serializable
 /**
  * The CreateOAuth2ClientRequest schema from the server's OpenAPI document.
  *
+ * @property allowedResources T21.3 / RFC 8707 — the target services this client may name in a
+ *     `resource` parameter, at `/oauth2/authorize`, `/oauth2/par`, `/oauth2/device_authorization`
+ *     and `/oauth2/token`. Each entry must be an absolute URI without a fragment (RFC 8707 §2).
+ *     Entries are stored in their RFC 3986 §6.2.2 normalised form, which is what the read-back
+ *     shows and what every comparison uses; matching is by equivalence and **never by prefix**.
+ *     Empty (the default) means the client may name no resource, so every token it obtains carries
+ *     `axiam:user` or `axiam:m2m` exactly as before RFC 8707 support existed. This is also the
+ *     list the RFC 8693 token exchange consults for its `audience`/`resource` target.
  * @property authnRequestParams X7.1 — whether this client's authorization requests may carry
  *     the OpenID Connect authentication-request parameters (`prompt`, `max_age`, `acr_values`,
  *     `claims`, `id_token_hint`, `login_hint`, `display`, `ui_locales`, `claims_locales`).
@@ -51,9 +59,12 @@ import kotlinx.serialization.Serializable
  *     (`tls_client_certificate_bound_access_tokens` or `dpop_bound_access_tokens`). See the FAPI
  *     operator guide.
  * @property redirectUris Allowed redirect URIs (must be HTTPS, except localhost for dev).
- *     SEC-089: this list doubles as the token-exchange audience allow-list — adding a URI here
- *     also authorises it as a token audience for this client, so review additions on
- *     exchange-capable clients with that in mind (see `docs/api/token-exchange.md#audience`).
+ *     SEC-089 / T21.3: this list **also** authorises token-exchange audiences, and that coupling
+ *     is now deprecated — `allowed_resources` is the field that means "audiences this client may
+ *     address". The redirect-URI branch survives one release so that no deployment's working
+ *     exchange breaks on upgrade, and it logs a deprecation warning when it is the branch that
+ *     matched. Register exchange targets in `allowed_resources` (see
+ *     `docs/api/token-exchange.md#audience`).
  * @property requirePar B5 — require this client to push its authorization parameters to
  *     `/oauth2/par` (RFC 9126) rather than sending them through the browser.
  * @property scopes Scopes the client may request.
@@ -72,6 +83,7 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class CreateOAuth2ClientRequest(
+    @SerialName("allowed_resources") val allowedResources: List<String>? = null,
     @SerialName("authn_request_params") val authnRequestParams: AuthnRequestParamsMode? = null,
     @SerialName("backchannel_logout_uri") val backchannelLogoutUri: String? = null,
     @SerialName("browser_sso") val browserSso: Boolean? = null,

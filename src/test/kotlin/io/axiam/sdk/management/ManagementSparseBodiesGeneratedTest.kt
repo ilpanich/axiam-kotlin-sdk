@@ -121,6 +121,22 @@ class ManagementSparseBodiesGeneratedTest {
             TenantSettingsOverride.serializer(), "admin_notifications_enabled",
         )
         assertKeys(
+            TenantSettingsOverride(dcrAllowedRedirectHosts = emptyList()),
+            TenantSettingsOverride.serializer(), "dcr_allowed_redirect_hosts",
+        )
+        assertKeys(
+            TenantSettingsOverride(dcrAllowedScopes = emptyList()),
+            TenantSettingsOverride.serializer(), "dcr_allowed_scopes",
+        )
+        assertKeys(
+            TenantSettingsOverride(dcrMaxClients = 1),
+            TenantSettingsOverride.serializer(), "dcr_max_clients",
+        )
+        assertKeys(
+            TenantSettingsOverride(dcrUnusedClientTtlDays = 1),
+            TenantSettingsOverride.serializer(), "dcr_unused_client_ttl_days",
+        )
+        assertKeys(
             TenantSettingsOverride(defaultCertValidityDays = 1),
             TenantSettingsOverride.serializer(), "default_cert_validity_days",
         )
@@ -133,12 +149,20 @@ class ManagementSparseBodiesGeneratedTest {
             TenantSettingsOverride.serializer(), "deletion_grace_period_days",
         )
         assertKeys(
+            TenantSettingsOverride(dynamicRegistration = "example"),
+            TenantSettingsOverride.serializer(), "dynamic_registration",
+        )
+        assertKeys(
             TenantSettingsOverride(emailVerificationGracePeriodHours = 1),
             TenantSettingsOverride.serializer(), "email_verification_grace_period_hours",
         )
         assertKeys(
             TenantSettingsOverride(emailVerificationRequired = true),
             TenantSettingsOverride.serializer(), "email_verification_required",
+        )
+        assertKeys(
+            TenantSettingsOverride(externalClientAllowedResources = emptyList()),
+            TenantSettingsOverride.serializer(), "external_client_allowed_resources",
         )
         assertKeys(
             TenantSettingsOverride(hibpCheckEnabled = true),
@@ -224,11 +248,17 @@ class ManagementSparseBodiesGeneratedTest {
             TenantSettingsOverride(
                 accessTokenLifetimeSecs = 1L,
                 adminNotificationsEnabled = true,
+                dcrAllowedRedirectHosts = emptyList(),
+                dcrAllowedScopes = emptyList(),
+                dcrMaxClients = 1,
+                dcrUnusedClientTtlDays = 1,
                 defaultCertValidityDays = 1,
                 defaultLocale = "example",
                 deletionGracePeriodDays = 1,
+                dynamicRegistration = "example",
                 emailVerificationGracePeriodHours = 1,
                 emailVerificationRequired = true,
+                externalClientAllowedResources = emptyList(),
                 hibpCheckEnabled = true,
                 lockoutBackoffMultiplier = 1.0,
                 lockoutDurationSecs = 1L,
@@ -251,15 +281,17 @@ class ManagementSparseBodiesGeneratedTest {
                 webauthnUserVerification = "example",
             ),
             TenantSettingsOverride.serializer(),
-            "access_token_lifetime_secs", "admin_notifications_enabled", "default_cert_validity_days",
-            "default_locale", "deletion_grace_period_days", "email_verification_grace_period_hours",
-            "email_verification_required", "hibp_check_enabled", "lockout_backoff_multiplier",
-            "lockout_duration_secs", "max_cert_validity_days", "max_failed_login_attempts",
-            "max_lockout_duration_secs", "mfa_challenge_lifetime_secs", "mfa_enforced",
-            "min_length", "opaque_ksf", "opaque_mode", "opaque_suite", "password_history_count",
-            "refresh_token_lifetime_secs", "require_digits", "require_lowercase",
-            "require_symbols", "require_uppercase", "sensitive_scopes_enabled",
-            "webauthn_user_verification",
+            "access_token_lifetime_secs", "admin_notifications_enabled", "dcr_allowed_redirect_hosts",
+            "dcr_allowed_scopes", "dcr_max_clients", "dcr_unused_client_ttl_days",
+            "default_cert_validity_days", "default_locale", "deletion_grace_period_days",
+            "dynamic_registration", "email_verification_grace_period_hours",
+            "email_verification_required", "external_client_allowed_resources",
+            "hibp_check_enabled", "lockout_backoff_multiplier", "lockout_duration_secs",
+            "max_cert_validity_days", "max_failed_login_attempts", "max_lockout_duration_secs",
+            "mfa_challenge_lifetime_secs", "mfa_enforced", "min_length", "opaque_ksf",
+            "opaque_mode", "opaque_suite", "password_history_count", "refresh_token_lifetime_secs",
+            "require_digits", "require_lowercase", "require_symbols", "require_uppercase",
+            "sensitive_scopes_enabled", "webauthn_user_verification",
         )
         assertKeys(TenantSettingsOverride(), TenantSettingsOverride.serializer())
     }
@@ -491,6 +523,10 @@ class ManagementSparseBodiesGeneratedTest {
     @Test
     fun `updateOAuth2ClientRequest sends only what was set`() {
         assertKeys(
+            UpdateOAuth2ClientRequest(allowedResources = emptyList()),
+            UpdateOAuth2ClientRequest.serializer(), "allowed_resources",
+        )
+        assertKeys(
             UpdateOAuth2ClientRequest(authnRequestParams = AuthnRequestParamsMode.IGNORE),
             UpdateOAuth2ClientRequest.serializer(), "authn_request_params",
         )
@@ -572,6 +608,7 @@ class ManagementSparseBodiesGeneratedTest {
         )
         assertKeys(
             UpdateOAuth2ClientRequest(
+                allowedResources = emptyList(),
                 authnRequestParams = AuthnRequestParamsMode.IGNORE,
                 backchannelLogoutUri = "example",
                 browserSso = true,
@@ -594,10 +631,10 @@ class ManagementSparseBodiesGeneratedTest {
                 tokenEndpointAuthMethod = ClientAuthMethod.CLIENT_SECRET_POST,
             ),
             UpdateOAuth2ClientRequest.serializer(),
-            "authn_request_params", "backchannel_logout_uri", "browser_sso",
-            "dpop_bound_access_tokens", "dpop_require_nonce", "grant_types",
-            "jwks", "jwks_uri", "name", "post_logout_redirect_uris", "profile",
-            "redirect_uris", "require_par", "scopes", "self_signed_tls_client_auth_thumbprints",
+            "allowed_resources", "authn_request_params", "backchannel_logout_uri",
+            "browser_sso", "dpop_bound_access_tokens", "dpop_require_nonce",
+            "grant_types", "jwks", "jwks_uri", "name", "post_logout_redirect_uris",
+            "profile", "redirect_uris", "require_par", "scopes", "self_signed_tls_client_auth_thumbprints",
             "tls_client_auth_san_dns", "tls_client_auth_san_uri", "tls_client_auth_subject_dn",
             "tls_client_certificate_bound_access_tokens", "token_endpoint_auth_method",
         )
