@@ -57,6 +57,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   becomes nullable (absent for a public-client registration, present exactly as before for every
   confidential one). `python3 scripts/gen_management.py` regenerated the affected files
   mechanically from the re-vendored `openapi.json`; nothing here was hand-edited.
+  **Superseded in part by F-28-01 below**: re-syncing from a phase branch is what
+  contract 1.49 now forbids, and both artefacts are re-synced once, from `main`, after
+  Phase 21 lands.
+
+### Deferred
+
+- **F-28-01 — the vendored `openapi.json` and `CONTRACT.md` re-sync.** This repository's
+  copies were re-synced above from a **phase branch**, which kept moving afterwards; they
+  match neither `ilpanich/axiam`'s current tree nor the four SDK repositories that declined
+  the `openapi.json` re-sync. Across the eleven SDKs the T21.9 T9d cross-SDK review found
+  five distinct byte-states of `CONTRACT.md` and two of `openapi.json`, all calling
+  themselves contract 1.48 (CONTRACT.md §28.11 row R-1). Contract **1.49** states the rule
+  that was missing: a vendored artefact is re-synced from a **merged** `main`, never a phase
+  branch. Both artefacts are therefore re-synced here **once**, as F-28-01, after AXIAM
+  Phase 21 lands on `main`, together with a regeneration of the §27 management surface in
+  the same commit. F-28-01 is recorded identically in all eleven SDK repositories so that it
+  cannot be lost.
+
+  Two smaller notes from the review, neither of which changes any code or any claim this
+  SDK makes about itself. This port's pull-request description cites the Java port as
+  `ilpanich/axiam-java-sdk` PR **#123**; it is PR **#98**. Nothing in this repository
+  repeats the wrong number — the README's Spring Boot pointer names the Java classes
+  (`Mcp`, `AxiamAuthenticationFilter`'s three-argument overload,
+  `AxiamMcpAuthenticationEntryPoint`, `AxiamAuthorizationInterceptor`,
+  `AxiamProtectedResourceMetadataController`) rather than a PR, and all five exist and are
+  correctly described. And this port's `BearerChallengeError` enum, which discharges §28.9
+  test 2's `invalid_grant` vector structurally because the value is unrepresentable, is
+  conformant: contract 1.49's §28.4 and §28.9 test 2 now state that the typing is the SDK's
+  own choice and that a comment naming the vector at the test site is the required artefact
+  where it cannot be written — which `McpTest` already carries.
 
 ## [1.0.0-beta15] - 2026-09-15
 
