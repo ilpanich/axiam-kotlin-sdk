@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **MCP resource-server helpers (`io.axiam.sdk.mcp`, CONTRACT.md §28, contract 1.48) — opt-in and
+  off by default.** The resource-server half of the Model Context Protocol authorization handshake:
+  `Mcp.protectedResourceMetadata` builds and validates the RFC 9728 protected-resource metadata
+  document an MCP server publishes about itself, and `Mcp.bearerChallenge` builds the
+  `WWW-Authenticate` value that starts a client's discovery. Neither performs network I/O, so §16's
+  retry policy and §9's single-flight refresh do not apply, and neither is ever consulted when
+  deciding whether a request is authorized — that stays §10.1's and §11's decision, unchanged.
+  `BearerChallengeError` is an enum of exactly RFC 6750 §3.1's three codes, so an invalid one is
+  unrepresentable rather than a runtime refusal.
+
+  `AxiamAuthConfig.resourceMetadataUrl` (new, `null` by default) is the one middleware option: set
+  it and `AxiamAuthentication` validates the configuration at install time — refusing unless
+  `AxiamClient.expectedAudience()` is also set (§28.5 rule 2 forbids a second audience option) — then
+  carries the matching `WWW-Authenticate` challenge on every 401 it and the §11 helpers
+  (`requireAuth`, `requireAccess`) emit, and on a `requireAccess` 403 whose route named a `scope` and
+  whose decision's `reasonCode` is `no_grant` (never on `denied_by_rule`, an absent/unknown reason
+  code, `requireRole`, or a scope-less `requireAccess`). A successfully-minted UMA (§20.3) ticket
+  wins over the §28 hint where both apply. The plugin also exempts the metadata document's own
+  `GET`/`HEAD` path from its credential check, so `io.axiam.sdk.ktor.serveProtectedResourceMetadata`
+  — a new `Route` extension registering the document at its derived (never chosen) path, `200`,
+  unauthenticated, `Cache-Control: public, max-age=3600`, `Access-Control-Allow-Origin: *` — answers
+  it regardless of registration order. `AxiamClient` gains a public `expectedAudience()` accessor for
+  this wiring.
+
+  With `resourceMetadataUrl` unset, every response is byte-for-byte what it was before §28
+  existed — asserted by a regression test that checks the header's absence explicitly rather than the
+  response status.
+
+  **Spring Boot reuses the Java SDK's own `io.axiam.sdk.mcp.Mcp` and its `io.axiam.sdk.spring`
+  collaborators** (`AxiamAuthenticationFilter`, `AxiamMcpAuthenticationEntryPoint`,
+  `AxiamAuthorizationInterceptor`, `AxiamProtectedResourceMetadataController`) rather than a parallel
+  Kotlin implementation — this SDK's own §28 surface is REST/Ktor only.
+
+  Neither gRPC nor AMQP is affected: this SDK implements neither transport's inbound guard, so
+  §28.5 rule 8's optional gRPC `www-authenticate` trailer and its AMQP prohibition both have nothing
+  to attach to or forbid here.
+
+  `CONTRACT.md`, `openapi.json` and `proto/` re-vendored from the `axiam` repository's
+  `claude_dev/mcp-authorization-server-plan.md` branch (contract 1.48) — ahead of `axiam` `main`
+  until that phase lands. `proto/` is byte-identical to the previous vendored copy.
+
+  **Picked up incidentally: contract 1.47's `none` client auth method.** This SDK's previous
+  `CONTRACT.md` predated 1.47 (public-client OAuth2 registration, `token_endpoint_auth_method:
+  none`), so re-vendoring past it to reach 1.48 regenerated the §27 management surface with it —
+  `ClientAuthMethod` gains a `NONE` constant, and `OAuth2ClientCreatedResponse.clientSecret`
+  becomes nullable (absent for a public-client registration, present exactly as before for every
+  confidential one). `python3 scripts/gen_management.py` regenerated the affected files
+  mechanically from the re-vendored `openapi.json`; nothing here was hand-edited.
+
 ## [1.0.0-beta15] - 2026-09-15
 
 ### Added

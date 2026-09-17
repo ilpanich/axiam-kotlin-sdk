@@ -13,6 +13,9 @@ import kotlinx.serialization.Serializable
 /**
  * OAuth2 client response -- omits client_secret_hash.
  *
+ * @property allowedResources T21.3 — echoed in its stored, normalised form, so an operator
+ *     auditing which audiences a client may mint tokens for reads the strings the server actually
+ *     compares rather than the ones they typed.
  * @property authnRequestParams X7.1 — echoed so an operator can audit which clients act on the
  *     OIDC authentication-request parameters, from this endpoint rather than from the database.
  * @property browserSso X7.3 — echoed for the same reason.
@@ -26,6 +29,18 @@ import kotlinx.serialization.Serializable
  *     document itself is public key material, so returning it leaks nothing; a `jwks_uri` is
  *     likewise public by construction.
  * @property jwksUri the server's jwks_uri field
+ * @property lastAuthorizedAt T21.4 — when this client was last issued an authorization code,
+ *     for the sweeper that deletes self-registered clients nobody uses. Always absent for an
+ *     `admin` client: the stamp is written only for a non-`admin` one, so that an administrator's
+ *     client takes exactly the path it took before T21.4 (I1). `null` on a self-registered client
+ *     means it has never been authorized, and the sweeper reads `created_at` instead.
+ * @property managedBy T21.4 / D5 — who created this registration: `admin`, `dcr` or `cimd`.
+ *     Echoed because an operator auditing a tenant needs to answer "which of these did we create?"
+ *     from this endpoint rather than from the database, and because three behaviours hang off it:
+ *     a non-`admin` client may never carry the FAPI profile, is always consent-gated, and is the
+ *     only kind the unused-client sweeper touches. Read-only. There is no corresponding member on
+ *     the update DTO: a registration's provenance is a fact about how it came to exist, and a
+ *     field that could be edited to `admin` would be a field that launders one.
  * @property name the server's name field
  * @property profile X5.1 — the registered posture and mTLS credentials. Read-back matters: an
  *     operator auditing which clients are financial-grade should be able to answer it from this
@@ -46,6 +61,7 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class OAuth2ClientResponse(
+    @SerialName("allowed_resources") val allowedResources: List<String>,
     @SerialName("authn_request_params") val authnRequestParams: AuthnRequestParamsMode,
     @SerialName("browser_sso") val browserSso: Boolean,
     @SerialName("client_id") val clientId: String,
@@ -56,6 +72,8 @@ data class OAuth2ClientResponse(
     @SerialName("id") val id: @Serializable(with = UuidSerializer::class) UUID,
     @SerialName("jwks") val jwks: String? = null,
     @SerialName("jwks_uri") val jwksUri: String? = null,
+    @SerialName("last_authorized_at") val lastAuthorizedAt: @Serializable(with = InstantSerializer::class) Instant? = null,
+    @SerialName("managed_by") val managedBy: ManagedBy,
     @SerialName("name") val name: String,
     @SerialName("profile") val profile: ClientProfile,
     @SerialName("redirect_uris") val redirectUris: List<String>,

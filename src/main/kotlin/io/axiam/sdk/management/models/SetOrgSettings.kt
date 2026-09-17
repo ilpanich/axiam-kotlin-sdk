@@ -16,12 +16,19 @@ import kotlinx.serialization.Serializable
  *
  * @property accessTokenLifetimeSecs the server's access_token_lifetime_secs field
  * @property adminNotificationsEnabled the server's admin_notifications_enabled field
+ * @property dcrAllowedRedirectHosts the server's dcr_allowed_redirect_hosts field
+ * @property dcrAllowedScopes the server's dcr_allowed_scopes field
+ * @property dcrMaxClients the server's dcr_max_clients field
+ * @property dcrUnusedClientTtlDays the server's dcr_unused_client_ttl_days field
  * @property defaultCertValidityDays the server's default_cert_validity_days field
  * @property defaultLocale the server's default_locale field
  * @property deletionGracePeriodDays the server's deletion_grace_period_days field
+ * @property dynamicRegistration the server's dynamic_registration field
  * @property emailVerificationGracePeriodHours the server's
  *     email_verification_grace_period_hours field
  * @property emailVerificationRequired the server's email_verification_required field
+ * @property externalClientAllowedResources the server's external_client_allowed_resources
+ *     field
  * @property hibpCheckEnabled the server's hibp_check_enabled field
  * @property lockoutBackoffMultiplier the server's lockout_backoff_multiplier field
  * @property lockoutDurationSecs the server's lockout_duration_secs field
@@ -47,11 +54,17 @@ import kotlinx.serialization.Serializable
 data class SetOrgSettings(
     @SerialName("access_token_lifetime_secs") val accessTokenLifetimeSecs: Long,
     @SerialName("admin_notifications_enabled") val adminNotificationsEnabled: Boolean,
+    @SerialName("dcr_allowed_redirect_hosts") val dcrAllowedRedirectHosts: List<String>? = null,
+    @SerialName("dcr_allowed_scopes") val dcrAllowedScopes: List<String>? = null,
+    @SerialName("dcr_max_clients") val dcrMaxClients: Int? = null,
+    @SerialName("dcr_unused_client_ttl_days") val dcrUnusedClientTtlDays: Int? = null,
     @SerialName("default_cert_validity_days") val defaultCertValidityDays: Int,
     @SerialName("default_locale") val defaultLocale: String? = null,
     @SerialName("deletion_grace_period_days") val deletionGracePeriodDays: Int? = null,
+    @SerialName("dynamic_registration") val dynamicRegistration: String? = null,
     @SerialName("email_verification_grace_period_hours") val emailVerificationGracePeriodHours: Int,
     @SerialName("email_verification_required") val emailVerificationRequired: Boolean,
+    @SerialName("external_client_allowed_resources") val externalClientAllowedResources: List<String>? = null,
     @SerialName("hibp_check_enabled") val hibpCheckEnabled: Boolean,
     @SerialName("lockout_backoff_multiplier") val lockoutBackoffMultiplier: Double,
     @SerialName("lockout_duration_secs") val lockoutDurationSecs: Long,

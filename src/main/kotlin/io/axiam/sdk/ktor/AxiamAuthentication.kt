@@ -9,6 +9,11 @@ import io.axiam.sdk.errors.AuthError
 import io.axiam.sdk.errors.AuthzError
 import io.axiam.sdk.errors.AxiamException
 import io.axiam.sdk.errors.NetworkError
+import io.axiam.sdk.mcp.McpGuardChallenges
+import io.axiam.sdk.mcp.challengeFor401
+import io.axiam.sdk.mcp.challengeFor403
+import io.axiam.sdk.mcp.isMetadataDocumentRequest
+import io.axiam.sdk.mcp.mcpGuardChallenges
 import io.axiam.sdk.oidc.RequestedPermission
 import io.axiam.sdk.oidc.umaChallengeHeader
 import io.ktor.http.ContentType
@@ -17,6 +22,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.createApplicationPlugin
 import io.ktor.server.request.httpMethod
+import io.ktor.server.request.path
 import io.ktor.server.response.respondText
 import io.ktor.util.AttributeKey
 import kotlinx.coroutines.Dispatchers
@@ -55,6 +61,19 @@ import java.util.UUID
  * rejection so a handler can `?: return@get`.
  *
  * Spring Boot users reuse the Java SDK's `AxiamAuthorizationInterceptor` instead.
+ *
+ * ### MCP resource-server helpers (§28, opt-in)
+ *
+ * Setting [AxiamAuthConfig.resourceMetadataUrl] turns on CONTRACT.md §28: every
+ * 401 this plugin and the §11 helpers below emit gains a `WWW-Authenticate`
+ * challenge, and the one `GET`/`HEAD` of that URL's path is exempted from this
+ * plugin's own credential check (§28.3 rule 2) so
+ * `io.axiam.sdk.ktor.serveProtectedResourceMetadata` can answer it
+ * unauthenticated. The configured [AxiamClient]'s own [AxiamClient.expectedAudience]
+ * becomes mandatory once the option is set — refused at install time, naming
+ * both — because §28 adds no second audience option. Left unset (the
+ * default), this plugin's behaviour is byte-for-byte what it was before §28
+ * existed.
  */
 val AxiamAuthentication = createApplicationPlugin(
     name = "AxiamAuthentication",
@@ -64,9 +83,24 @@ val AxiamAuthentication = createApplicationPlugin(
         "AxiamAuthentication requires an AxiamClient (config.client = ...)"
     }
     val challenger = pluginConfig.umaChallenge
+    val mcpChallenges = mcpGuardChallenges(
+        pluginConfig.resourceMetadataUrl,
+        client.expectedAudience(),
+        "AxiamAuthentication",
+    )
     onCall { call ->
         call.attributes.put(CLIENT_KEY, client)
         challenger?.let { call.attributes.put(CHALLENGER_KEY, it) }
+        mcpChallenges?.let { call.attributes.put(MCP_CHALLENGES_KEY, it) }
+
+        // §28.3 rule 2: the metadata document MUST answer without a
+        // credential, and this plugin runs globally — so the exemption is
+        // here, explicit, and derived from the one path `resourceMetadataUrl`
+        // names. A no-op when §28 is off (`mcpChallenges` is `null`).
+        if (isMetadataDocumentRequest(mcpChallenges, call.request.httpMethod.value, call.request.path())) {
+            return@onCall
+        }
+
         val token = extractToken(call)
         if (token != null) {
             try {
@@ -80,6 +114,9 @@ val AxiamAuthentication = createApplicationPlugin(
                 //
                 // Only a *presented* token reaches this branch; a call with no
                 // token never enters it, so public routes are unaffected.
+                mcpChallenges?.let {
+                    call.response.headers.append(HttpHeaders.WWWAuthenticate, challengeFor401(it, credentialPresented = true))
+                }
                 call.respondError(
                     HttpStatusCode.Unauthorized,
                     "authentication_failed",
@@ -103,11 +140,26 @@ class AxiamAuthConfig {
      * opt-in and why a minting failure still denies plainly.
      */
     var umaChallenge: UmaChallenger? = null
+
+    /**
+     * CONTRACT.md §28.5's option, off (`null`) by default. Setting it is what
+     * turns §28 on: feed it `ProtectedResourceMetadata.metadataUrl`, the value
+     * [io.axiam.sdk.mcp.Mcp.protectedResourceMetadata] derived, rather than
+     * retyping the string — retyping is how the two come to disagree.
+     *
+     * Requires [client] to be built with `AxiamClient.Builder.expectedAudience(...)`
+     * set to the same document's `resource`; [install] refuses the
+     * configuration otherwise, naming both options (§28.5 rule 2).
+     */
+    var resourceMetadataUrl: String? = null
 }
 
 private val USER_KEY = AttributeKey<AxiamUser>("AxiamUser")
 private val CLIENT_KEY = AttributeKey<AxiamClient>("AxiamClient")
 private val CHALLENGER_KEY = AttributeKey<UmaChallenger>("AxiamUmaChallenger")
+private val MCP_CHALLENGES_KEY = AttributeKey<McpGuardChallenges>("AxiamMcpGuardChallenges")
+
+private fun ApplicationCall.mcpChallenges(): McpGuardChallenges? = attributes.getOrNull(MCP_CHALLENGES_KEY)
 
 /** The authenticated [AxiamUser] injected by [AxiamAuthentication], or `null`. */
 val ApplicationCall.axiamUser: AxiamUser?
@@ -132,6 +184,13 @@ private fun extractToken(call: ApplicationCall): String? {
 suspend fun ApplicationCall.requireAuth(): AxiamUser? {
     val user = axiamUser
     if (user == null) {
+        // Only a call with NO token reaches here: the plugin's own onCall
+        // already rejected a presented-but-invalid one with 401 before any
+        // route handler ran (§15.3.3), so this is always §28.4's first
+        // vector — no `error` parameter, never `invalid_token`.
+        mcpChallenges()?.let {
+            response.headers.append(HttpHeaders.WWWAuthenticate, challengeFor401(it, credentialPresented = false))
+        }
         respondError(HttpStatusCode.Unauthorized, "authentication_failed", "authentication required")
         return null
     }
@@ -171,17 +230,26 @@ suspend fun ApplicationCall.requireAccess(
         if (result.allowed) {
             user
         } else {
-            denied(action, resourceId)
+            denied(action, resourceId, scope, result.reasonCode)
             null
         }
     } catch (_: AuthzError) {
-        denied(action, resourceId)
+        // No `reason_code` reaches this branch — §11 rule 9 requires an
+        // absent/unrecognised one to leave the outcome header-free (§28.5
+        // rule 5), so this denial never carries a challenge.
+        denied(action, resourceId, scope, reasonCode = null)
         null
     } catch (_: NetworkError) {
         // §11.2.5: fail closed on transport failure — never a silent allow.
         respondError(HttpStatusCode.ServiceUnavailable, "authz_unavailable", "authorization service unavailable")
         null
     } catch (_: AuthError) {
+        // A credential was presented (requireAuth already succeeded above),
+        // so — as for the plugin's own onCall rejection — this is §28.4's
+        // `invalid_token` vector.
+        mcpChallenges()?.let {
+            response.headers.append(HttpHeaders.WWWAuthenticate, challengeFor401(it, credentialPresented = true))
+        }
         respondError(HttpStatusCode.Unauthorized, "authentication_failed", "authentication required")
         null
     }
@@ -216,12 +284,18 @@ suspend fun ApplicationCall.enforce(vararg annotations: Annotation): AxiamUser? 
 }
 
 /**
- * The single deny path for a resource check: a 403, carrying a
- * `WWW-Authenticate: UMA` challenge when — and only when — a [UmaChallenger]
- * was configured on the plugin.
+ * The single deny path for a resource check: a 403, carrying one
+ * `WWW-Authenticate` challenge when eligible — a UMA ticket (§20.3) when a
+ * [UmaChallenger] is configured and minting succeeds, else the §28
+ * `insufficient_scope` hint (§28.5 rule 5) when [scope] was named and
+ * [reasonCode] is `no_grant`. A successfully-minted UMA ticket wins when
+ * both apply: it is a working ticket the caller can act on immediately,
+ * where §28's hint only points at a document to go discover one from.
  */
-private suspend fun ApplicationCall.denied(action: String, resourceId: String) {
-    umaChallengeHeaderOrNull(action, resourceId)?.let {
+private suspend fun ApplicationCall.denied(action: String, resourceId: String, scope: String?, reasonCode: String?) {
+    val header = umaChallengeHeaderOrNull(action, resourceId)
+        ?: challengeFor403(mcpChallenges(), reasonCode, scope)
+    header?.let {
         // Set before responding: `respondText` commits the status line.
         response.headers.append(HttpHeaders.WWWAuthenticate, it)
     }

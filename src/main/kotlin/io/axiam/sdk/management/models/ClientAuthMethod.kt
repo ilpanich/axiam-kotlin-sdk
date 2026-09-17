@@ -13,10 +13,14 @@ import kotlinx.serialization.encoding.Encoder
 
 /**
  * How a client proves its identity at the token endpoint (RFC 8705 §2, OIDC Core §9 naming). Only
- * the methods AXIAM actually implements are representable. There is deliberately no `none`
- * variant: every AXIAM client is confidential today (see `handle_authorization_code`), and adding
- * a public-client value here before the rest of the server understands one would let an operator
- * register a client whose authentication is silently skipped.
+ * the methods AXIAM actually implements are representable. `None` — the public-client value — was
+ * deliberately absent until T21.2: adding it before the rest of the server understood one would
+ * have let an operator register a client whose authentication is silently skipped. The server
+ * understands one now (`token.rs`'s `authenticate_client_credential` has an arm that accepts *no*
+ * credential and refuses a presented one, the authorization endpoint derives its PKCE requirement
+ * from this enum, and the admin API refuses the method alongside any grant or binding that
+ * contradicts it), so the variant exists — and only that arm may ever treat a missing credential
+ * as success.
  *
  * Each constant carries the spelling the server uses on the wire, so the Kotlin name can follow
  * Kotlin's conventions without changing what is sent.
@@ -38,6 +42,8 @@ enum class ClientAuthMethod(val wire: String) {
     SELF_SIGNED_TLS_CLIENT_AUTH("self_signed_tls_client_auth"),
 
     PRIVATE_KEY_JWT("private_key_jwt"),
+
+    NONE("none"),
 
     /** A value this SDK's copy of the spec does not list; see the type's doc. */
     UNKNOWN("");
