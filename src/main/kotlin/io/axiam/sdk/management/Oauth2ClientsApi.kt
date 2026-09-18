@@ -5,8 +5,11 @@ package io.axiam.sdk.management
 
 import io.axiam.sdk.internal.ManagementTransport
 import io.axiam.sdk.management.models.CreateOAuth2ClientRequest
+import io.axiam.sdk.management.models.CreateRegistrationTokenRequest
+import io.axiam.sdk.management.models.CreateRegistrationTokenResponse
 import io.axiam.sdk.management.models.OAuth2ClientCreatedResponse
 import io.axiam.sdk.management.models.OAuth2ClientResponse
+import io.axiam.sdk.management.models.RegistrationTokenResponse
 import io.axiam.sdk.management.models.UpdateOAuth2ClientRequest
 import java.util.UUID
 
@@ -133,5 +136,51 @@ class Oauth2ClientsApi internal constructor(
             pathTemplate = "/api/v1/oauth2-clients/{id}",
             path = path,
         )
+    }
+
+    /**
+     * Mints the single-use credential RFC 7591 §1.2's protected registration profile requires.
+     * Gated on `oauth2_clients:create` rather than a permission of its own: a token minted here
+     * authorises exactly one registration, and a registration is strictly less than what that
+     * permission already confers (an administrator holding it can create any client directly, with
+     * any scopes, any audiences and any profile). A separate permission would suggest this is the
+     * more dangerous of the two, which it is not.
+     *
+     * Issues `POST /api/v1/oauth2-clients/registration-tokens`.
+     *
+     * Not retried: §27.4 rule 8 makes every write on this surface single-shot, including the ones
+     * that look idempotent.
+     *
+     * @param body the request body
+     * @return the server response
+     */
+    suspend fun createRegistrationToken(body: CreateRegistrationTokenRequest): CreateRegistrationTokenResponse {
+        val path = "/api/v1/oauth2-clients/registration-tokens"
+        val payload = ManagementSupport.encodeBody("oauth2_clients.create_registration_token", CreateRegistrationTokenRequest.serializer(), body)
+        val node = transport.send(
+            operation = "oauth2_clients.create_registration_token",
+            method = "POST",
+            pathTemplate = "/api/v1/oauth2-clients/registration-tokens",
+            path = path, body = payload,
+        )
+        return ManagementSupport.decode("oauth2_clients.create_registration_token", CreateRegistrationTokenResponse.serializer(), node)
+    }
+
+    /**
+     * Metadata only — the handle is not stored, so it cannot be listed.
+     *
+     * Issues `GET /api/v1/oauth2-clients/registration-tokens`.
+     *
+     * @return the server response
+     */
+    suspend fun listRegistrationTokens(): List<RegistrationTokenResponse> {
+        val path = "/api/v1/oauth2-clients/registration-tokens"
+        val node = transport.send(
+            operation = "oauth2_clients.list_registration_tokens",
+            method = "GET",
+            pathTemplate = "/api/v1/oauth2-clients/registration-tokens",
+            path = path,
+        )
+        return ManagementSupport.decodeList("oauth2_clients.list_registration_tokens", RegistrationTokenResponse.serializer(), node)
     }
 }

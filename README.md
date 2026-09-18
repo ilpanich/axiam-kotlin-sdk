@@ -24,7 +24,7 @@ Source: [ilpanich/axiam-kotlin-sdk](https://github.com/ilpanich/axiam-kotlin-sdk
 
 ## Contract conformance
 
-This SDK conforms to **contract 1.48**: CONTRACT.md §1–§7, §9–§13 and §12.7, §14, §15, §17, §19,
+This SDK conforms to **contract 1.49**: CONTRACT.md §1–§7, §9–§13 and §12.7, §14, §15, §17, §19,
 §20, §21, §22, §23, §24, §25, §26, §27, §28 (including §6.1 mTLS). §12 is implemented in full at its
 1.38 shape: all **thirteen** operations, including the four public "Sign in with X" entry points,
 as `suspend` functions on the same `AxiamClient`.
@@ -39,7 +39,7 @@ would turn a statement that was true when written into a different claim without
 that carries it merges to `main`. See [MCP resource-server helpers](#mcp-resource-server-helpers-ioaxiamsdkmcp-28-opt-in)
 below.
 
-**§27 is the Management API** — all 160 operations across 24 namespaces, with the §27.6 declarative
+**§27 is the Management API** — all 162 operations across 24 namespaces, with the §27.6 declarative
 layer. See [Management API](#management-api-27) below.
 
 **§24.6b — the linked-API ceremony helper — is deliberately absent, and this is not a capability
@@ -1657,7 +1657,7 @@ Worked end to end in [`examples/par-login`](examples/par-login) (`./gradlew runP
 
 ## Management API (§27)
 
-The administrative surface: 160 operations across 24 namespaces — users, groups, roles,
+The administrative surface: 162 operations across 24 namespaces — users, groups, roles,
 permissions, resources, scopes, service accounts, certificates, CA certificates, PGP keys, webhooks,
 OAuth2 clients, federation, notification rules, e-mail config, settings, SCIM tokens, reactors,
 WebAuthn policy, audit, privacy, organizations, tenants and platform.

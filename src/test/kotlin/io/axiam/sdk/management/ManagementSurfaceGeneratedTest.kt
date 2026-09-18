@@ -27,6 +27,8 @@ import io.axiam.sdk.management.models.CreateOAuth2ClientRequest
 import io.axiam.sdk.management.models.CreatePermissionRequest
 import io.axiam.sdk.management.models.CreatePgpKeyRequest
 import io.axiam.sdk.management.models.CreateReactorRequest
+import io.axiam.sdk.management.models.CreateRegistrationTokenRequest
+import io.axiam.sdk.management.models.CreateRegistrationTokenResponse
 import io.axiam.sdk.management.models.CreateResourceRequest
 import io.axiam.sdk.management.models.CreateRoleRequest
 import io.axiam.sdk.management.models.CreateScimTokenRequest
@@ -75,6 +77,7 @@ import io.axiam.sdk.management.models.ReactorEventDescriptor
 import io.axiam.sdk.management.models.ReactorMode
 import io.axiam.sdk.management.models.ReactorResponse
 import io.axiam.sdk.management.models.ReadyResponse
+import io.axiam.sdk.management.models.RegistrationTokenResponse
 import io.axiam.sdk.management.models.ResolvedPermissionGrant
 import io.axiam.sdk.management.models.Resource
 import io.axiam.sdk.management.models.Role
@@ -1121,6 +1124,25 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
         client.management().oauth2Clients().delete(id = EXAMPLE_ID)
     }
 
+    /** Exercises oauth2_clients.create_registration_token. */
+    @Test
+    fun `oauth2_clients create_registration_token`() = runTest {
+        val body = "{\"initial_access_token\": \"example\", \"token\": {\"created_at\": \"2026-08-26T00:00:00Z\", \"created_by\": \"11111111-1111-4111-8111-111111111111\", \"expires_at\": \"2026-08-26T00:00:00Z\", \"id\": \"11111111-1111-4111-8111-111111111111\", \"name\": \"example\", \"tenant_id\": \"11111111-1111-4111-8111-111111111111\"}}"
+        mount("POST", "/api/v1/oauth2-clients/registration-tokens", 201, body)
+        val result = client.management().oauth2Clients().createRegistrationToken(body = CreateRegistrationTokenRequest(name = "example"))
+        assertDecodedEveryField(result, CreateRegistrationTokenResponse.serializer(), body)
+    }
+
+    /** Exercises oauth2_clients.list_registration_tokens. */
+    @Test
+    fun `oauth2_clients list_registration_tokens`() = runTest {
+        val body = "[{\"created_at\": \"2026-08-26T00:00:00Z\", \"created_by\": \"11111111-1111-4111-8111-111111111111\", \"expires_at\": \"2026-08-26T00:00:00Z\", \"id\": \"11111111-1111-4111-8111-111111111111\", \"name\": \"example\", \"tenant_id\": \"11111111-1111-4111-8111-111111111111\"}]"
+        mount("GET", "/api/v1/oauth2-clients/registration-tokens", 200, body)
+        val result = client.management().oauth2Clients().listRegistrationTokens()
+        val item = Json.parseToJsonElement(body).jsonArray.first().toString()
+        assertDecodedEveryField(result.first(), RegistrationTokenResponse.serializer(), item)
+    }
+
     /** Exercises federation.list_configs. */
     @Test
     fun `federation list_configs`() = runTest {
@@ -1794,9 +1816,11 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
             "notification_rules.list",
             "notification_rules.update",
             "oauth2_clients.create",
+            "oauth2_clients.create_registration_token",
             "oauth2_clients.delete",
             "oauth2_clients.get",
             "oauth2_clients.list",
+            "oauth2_clients.list_registration_tokens",
             "oauth2_clients.update",
             "organizations.get",
             "organizations.list",
@@ -1903,7 +1927,7 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
             "webhooks.list",
             "webhooks.update",
         )
-        assertEquals(160, exercised.size,
+        assertEquals(162, exercised.size,
             "the generated surface must reach every operation the registry declares")
         assertEquals(expectedSurface(), exercised,
             "the generated surface and the registry must name the same operations")

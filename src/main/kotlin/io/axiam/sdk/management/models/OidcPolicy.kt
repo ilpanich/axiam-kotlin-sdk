@@ -32,6 +32,10 @@ import kotlinx.serialization.Serializable
  * groups and is checked on the resolved policy rather than on either input: see
  * &#91;`validate_dcr_policy`&#93;.
  *
+ * @property cimd T21.5 — whether a URL-shaped `client_id` is resolved by fetching the document
+ *     it names, and on what terms. See &#91;`CimdPolicy`&#93;; off unless somebody turns it on
+ *     (I1). Nested, and therefore inherited or overridden **whole**: the fields are terms of one
+ *     decision, and a half-merged posture is one neither the organization nor the tenant wrote.
  * @property dcrAllowedRedirectHosts T21.4 — hosts a self-registered client's `redirect_uris`
  *     may point at, as globs (`*.example.com`, or `*` for any). The loopback hosts (`127.0.0.1`,
  *     `&#91;::1&#93;`, `localhost`) are always allowed whatever this says, because RFC 8252 §7.3
@@ -42,11 +46,23 @@ import kotlinx.serialization.Serializable
  *     list means a self-registered client gets no scopes at all, which is the honest default for a
  *     tenant that has turned registration on without deciding what it grants. May not contain
  *     `address` or `phone` — see this module's &#91;`sensitive_scope_in_dcr_list`&#93;.
- * @property dcrMaxClients T21.4 — how many `managed_by: dcr` clients this tenant may hold. See
- *     &#91;`DEFAULT_DCR_MAX_CLIENTS`&#93;.
- * @property dcrUnusedClientTtlDays T21.4 — how long a `managed_by: dcr` client survives
- *     without being authorized. See &#91;`DEFAULT_DCR_UNUSED_CLIENT_TTL_DAYS`&#93;. `0` disables
- *     the sweep for this tenant, which an operator who prunes out of band may legitimately want.
+ * @property dcrMaxClients T21.4 — how many externally registered clients this tenant may hold.
+ *     See &#91;`DEFAULT_DCR_MAX_CLIENTS`&#93;. **Counted once per mechanism, against the same
+ *     number** (T21.8): `managed_by: dcr` rows and `managed_by: cimd` rows each have this many. So
+ *     a tenant running both cannot have shadow rows materialised from documents exhaust the
+ *     allowance for self-registration, or the reverse. The CIMD count is checked *before* the
+ *     document is fetched, so a tenant at its ceiling is not an outbound amplifier either. It
+ *     keeps its `dcr_` name because dynamic registration defined it, on the same precedent as
+ *     &#91;`Self::dcr_allowed_scopes`&#93;.
+ * @property dcrUnusedClientTtlDays T21.4 — how long an externally registered client survives
+ *     without being used. See &#91;`DEFAULT_DCR_UNUSED_CLIENT_TTL_DAYS`&#93;. `0` disables the
+ *     sweep for this tenant, which an operator who prunes out of band may legitimately want. **Two
+ *     sweeps read it, over different clocks** (T21.8). A `managed_by: dcr` row is measured from
+ *     its last authorization, falling back to when it was registered. A `managed_by: cimd` row is
+ *     measured from the last time its document was *presented*, which every authorize, token and
+ *     PAR request moves — so a document in daily use is never swept however old its registration
+ *     is, and one nobody has presented since the window is, and re-materialises on the next
+ *     request if it is still published. Like the ceiling, it keeps its `dcr_` name.
  * @property defaultLocale The BCP 47 tag the sign-in page falls back to when the relying
  *     party's `ui_locales` selects nothing (W5's chain, plan §4.6). `None` means "no tenant
  *     preference", which lands on the deployment default (`en`) — the behaviour every deployment
@@ -80,6 +96,7 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class OidcPolicy(
+    @SerialName("cimd") val cimd: CimdPolicy? = null,
     @SerialName("dcr_allowed_redirect_hosts") val dcrAllowedRedirectHosts: List<String>? = null,
     @SerialName("dcr_allowed_scopes") val dcrAllowedScopes: List<String>? = null,
     @SerialName("dcr_max_clients") val dcrMaxClients: Int? = null,

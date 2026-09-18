@@ -61,22 +61,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   contract 1.49 now forbids, and both artefacts are re-synced once, from `main`, after
   Phase 21 lands.
 
-### Deferred
+### Changed
 
-- **F-28-01 — the vendored `openapi.json` and `CONTRACT.md` re-sync.** This repository's
-  copies were re-synced above from a **phase branch**, which kept moving afterwards; they
-  match neither `ilpanich/axiam`'s current tree nor the four SDK repositories that declined
-  the `openapi.json` re-sync. Across the eleven SDKs the T21.9 T9d cross-SDK review found
-  five distinct byte-states of `CONTRACT.md` and two of `openapi.json`, all calling
-  themselves contract 1.48 (CONTRACT.md §28.11 row R-1). Contract **1.49** states the rule
-  that was missing: a vendored artefact is re-synced from a **merged** `main`, never a phase
-  branch. Both artefacts are therefore re-synced here **once**, as F-28-01, after AXIAM
-  Phase 21 lands on `main`, together with a regeneration of the §27 management surface in
-  the same commit. F-28-01 is recorded identically in all eleven SDK repositories so that it
-  cannot be lost.
+- **F-28-01 — `CONTRACT.md`, `openapi.json` and `management-registry.json` re-synced from
+  `ilpanich/axiam` `main` @ `e4c62180e`, with the §27 management surface regenerated in the
+  same commit.** This resolves the F-28-01 follow-up previously recorded under *Deferred*: the
+  copies re-synced above came from a **phase branch** (CONTRACT.md §28.11 row R-1), and
+  contract 1.49 requires a vendored artefact to be re-synced from a **merged** `main`, never a
+  phase branch. The three artefacts are now byte-identical to that commit:
 
-  Two smaller notes from the review, neither of which changes any code or any claim this
-  SDK makes about itself. This port's pull-request description cites the Java port as
+  | Artefact | Git blob |
+  |----------|----------|
+  | `CONTRACT.md` (contract **1.49**) | `2493348c32852fd1972696d3c1672021cb8f878c` |
+  | `openapi.json` | `b75e30eaa3597d2e1063bb50e7c0e469634ba60b` |
+  | `management-registry.json` | `4619f441aac0b1f4ed18da7ad45178ca14a3f449` |
+
+  `proto/` was already byte-identical to `main` and is untouched. Contract 1.49 is clarifying
+  only, so no hand-written SDK behaviour changes with it; the README's conformance statement
+  now names *contract 1.49*, and its two §27 operation counts read 162.
+
+  `python3 scripts/gen_management.py` regenerated the §27 surface from the new registry; the
+  operation count moves **160 → 162** across the same 24 namespaces:
+
+  - `ManagementApi.oauth2Clients()` gains `createRegistrationToken`
+    (`POST /api/v1/oauth2-clients/registration-tokens`, 201 →
+    `CreateRegistrationTokenResponse`) and `listRegistrationTokens` (`GET` on the same path →
+    `List<RegistrationTokenResponse>`) — the T21.4 initial-access-token routes for RFC 7591
+    dynamic client registration, already present in the previously vendored `openapi.json`
+    but absent from the previously vendored registry.
+  - New model `CimdPolicy` (T21.5 client ID metadata documents), and a `cimd: CimdPolicy? =
+    null` property on `OidcPolicy`, `SetOrgSettings` and `TenantSettingsOverride`.
+  - The `dcrMaxClients` / `dcrUnusedClientTtlDays` KDoc carries the T21.8 wording (each
+    counted and swept once per mechanism, `dcr` and `cimd`).
+  - `ManagementSurfaceGeneratedTest` and `ManagementSparseBodiesGeneratedTest` regenerated
+    with the surface; nothing was hand-edited.
+
+- Two smaller notes from the T21.9 T9d cross-SDK review, neither of which changes any code or
+  any claim this SDK makes about itself. This port's pull-request description cites the Java port as
   `ilpanich/axiam-java-sdk` PR **#123**; it is PR **#98**. Nothing in this repository
   repeats the wrong number — the README's Spring Boot pointer names the Java classes
   (`Mcp`, `AxiamAuthenticationFilter`'s three-argument overload,

@@ -16,6 +16,9 @@ import kotlinx.serialization.Serializable
  *
  * @property accessTokenLifetimeSecs the server's access_token_lifetime_secs field
  * @property adminNotificationsEnabled the server's admin_notifications_enabled field
+ * @property cimd T21.5 — defaulted, so an API client written before this task lands on
+ *     `enabled: false`, which is what every deployment did before client ID metadata documents
+ *     existed (I1).
  * @property dcrAllowedRedirectHosts the server's dcr_allowed_redirect_hosts field
  * @property dcrAllowedScopes the server's dcr_allowed_scopes field
  * @property dcrMaxClients the server's dcr_max_clients field
@@ -54,6 +57,7 @@ import kotlinx.serialization.Serializable
 data class SetOrgSettings(
     @SerialName("access_token_lifetime_secs") val accessTokenLifetimeSecs: Long,
     @SerialName("admin_notifications_enabled") val adminNotificationsEnabled: Boolean,
+    @SerialName("cimd") val cimd: CimdPolicy? = null,
     @SerialName("dcr_allowed_redirect_hosts") val dcrAllowedRedirectHosts: List<String>? = null,
     @SerialName("dcr_allowed_scopes") val dcrAllowedScopes: List<String>? = null,
     @SerialName("dcr_max_clients") val dcrMaxClients: Int? = null,

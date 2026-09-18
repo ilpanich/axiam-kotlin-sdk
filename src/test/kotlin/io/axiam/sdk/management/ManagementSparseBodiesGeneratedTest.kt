@@ -6,6 +6,7 @@ package io.axiam.sdk.management
 import io.axiam.sdk.Sensitive
 import io.axiam.sdk.management.models.ApiProviderConfig
 import io.axiam.sdk.management.models.AuthnRequestParamsMode
+import io.axiam.sdk.management.models.CimdPolicy
 import io.axiam.sdk.management.models.ClientAuthMethod
 import io.axiam.sdk.management.models.ClientProfile
 import io.axiam.sdk.management.models.EmailConfigOverride
@@ -72,6 +73,65 @@ class ManagementSparseBodiesGeneratedTest {
         assertKeys(ApiProviderConfig(), ApiProviderConfig.serializer())
     }
 
+    /** §27.4 rule 5 for CimdPolicy: each property sets exactly its own key. */
+    @Test
+    fun `cimdPolicy sends only what was set`() {
+        assertKeys(
+            CimdPolicy(allowHttp = true),
+            CimdPolicy.serializer(), "allow_http",
+        )
+        assertKeys(
+            CimdPolicy(confidentialOnly = true),
+            CimdPolicy.serializer(), "confidential_only",
+        )
+        assertKeys(
+            CimdPolicy(enabled = true),
+            CimdPolicy.serializer(), "enabled",
+        )
+        assertKeys(
+            CimdPolicy(maxCacheSecs = 1L),
+            CimdPolicy.serializer(), "max_cache_secs",
+        )
+        assertKeys(
+            CimdPolicy(maxMetadataBytes = 1L),
+            CimdPolicy.serializer(), "max_metadata_bytes",
+        )
+        assertKeys(
+            CimdPolicy(minCacheSecs = 1L),
+            CimdPolicy.serializer(), "min_cache_secs",
+        )
+        assertKeys(
+            CimdPolicy(restrictSameDomain = true),
+            CimdPolicy.serializer(), "restrict_same_domain",
+        )
+        assertKeys(
+            CimdPolicy(trustedClientIdDomains = emptyList()),
+            CimdPolicy.serializer(), "trusted_client_id_domains",
+        )
+        assertKeys(
+            CimdPolicy(trustedRedirectDomains = emptyList()),
+            CimdPolicy.serializer(), "trusted_redirect_domains",
+        )
+        assertKeys(
+            CimdPolicy(
+                allowHttp = true,
+                confidentialOnly = true,
+                enabled = true,
+                maxCacheSecs = 1L,
+                maxMetadataBytes = 1L,
+                minCacheSecs = 1L,
+                restrictSameDomain = true,
+                trustedClientIdDomains = emptyList(),
+                trustedRedirectDomains = emptyList(),
+            ),
+            CimdPolicy.serializer(),
+            "allow_http", "confidential_only", "enabled", "max_cache_secs",
+            "max_metadata_bytes", "min_cache_secs", "restrict_same_domain",
+            "trusted_client_id_domains", "trusted_redirect_domains",
+        )
+        assertKeys(CimdPolicy(), CimdPolicy.serializer())
+    }
+
     /** §27.4 rule 5 for EmailConfigOverride: each property sets exactly its own key. */
     @Test
     fun `emailConfigOverride sends only what was set`() {
@@ -119,6 +179,10 @@ class ManagementSparseBodiesGeneratedTest {
         assertKeys(
             TenantSettingsOverride(adminNotificationsEnabled = true),
             TenantSettingsOverride.serializer(), "admin_notifications_enabled",
+        )
+        assertKeys(
+            TenantSettingsOverride(cimd = CimdPolicy()),
+            TenantSettingsOverride.serializer(), "cimd",
         )
         assertKeys(
             TenantSettingsOverride(dcrAllowedRedirectHosts = emptyList()),
@@ -248,6 +312,7 @@ class ManagementSparseBodiesGeneratedTest {
             TenantSettingsOverride(
                 accessTokenLifetimeSecs = 1L,
                 adminNotificationsEnabled = true,
+                cimd = CimdPolicy(),
                 dcrAllowedRedirectHosts = emptyList(),
                 dcrAllowedScopes = emptyList(),
                 dcrMaxClients = 1,
@@ -281,10 +346,10 @@ class ManagementSparseBodiesGeneratedTest {
                 webauthnUserVerification = "example",
             ),
             TenantSettingsOverride.serializer(),
-            "access_token_lifetime_secs", "admin_notifications_enabled", "dcr_allowed_redirect_hosts",
-            "dcr_allowed_scopes", "dcr_max_clients", "dcr_unused_client_ttl_days",
-            "default_cert_validity_days", "default_locale", "deletion_grace_period_days",
-            "dynamic_registration", "email_verification_grace_period_hours",
+            "access_token_lifetime_secs", "admin_notifications_enabled", "cimd",
+            "dcr_allowed_redirect_hosts", "dcr_allowed_scopes", "dcr_max_clients",
+            "dcr_unused_client_ttl_days", "default_cert_validity_days", "default_locale",
+            "deletion_grace_period_days", "dynamic_registration", "email_verification_grace_period_hours",
             "email_verification_required", "external_client_allowed_resources",
             "hibp_check_enabled", "lockout_backoff_multiplier", "lockout_duration_secs",
             "max_cert_validity_days", "max_failed_login_attempts", "max_lockout_duration_secs",
@@ -962,7 +1027,7 @@ class ManagementSparseBodiesGeneratedTest {
     fun `every sparse body is covered`() {
         val cases = ManagementSparseBodiesGeneratedTest::class.java
             .declaredMethods.count { it.name.endsWith("sends only what was set") }
-        assertEquals(18, cases,
+        assertEquals(19, cases,
             "one case per sparse body the schema closure declares")
     }
 
