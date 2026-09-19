@@ -7,51 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Breaking
-
-- **`CreateRegistrationTokenResponse.initialAccessToken` is now `Sensitive<String>`, not `String`
-  (CONTRACT.md §27.5, contract 1.50, security fix).** The RFC 7591 §1.2 initial access token
-  returned by `ManagementApi.oauth2Clients.createRegistrationToken(...)` is a plaintext one-time
-  credential — shown once, never retrievable — but contract 1.49's `management-registry.json`
-  published `sensitive_response_fields: []` for that operation, so the generated data class carried
-  it as a bare `String` and it appeared verbatim in the class's `toString()` rendering. That is
-  exactly the leak §7 rule 1 and §27.5 exist to prevent. Contract 1.50 adds the
-  `(CreateRegistrationTokenResponse, initial_access_token)` pair to the registry's curated table,
-  which now names **fifteen** operations rather than fourteen.
-
-  | | Before (1.49) | After (1.50) |
-  |---|---|---|
-  | Property type | `val initialAccessToken: String` | `val initialAccessToken: @Contextual Sensitive<String>` |
-  | `toString()` | prints the token | prints the redacted placeholder |
-
-  **Migration.** Reading the value now takes the explicit §7 rule 3 reveal:
-
-  ```kotlin
-  // before
-  val token = response.initialAccessToken
-  // after
-  val token = response.initialAccessToken.expose()
-  ```
-
-  No plain-string accessor is kept alongside it: contract 1.50 forbids one, since the plain
-  accessor is precisely the leak. The wire shape is unchanged — `openapi.json` and `proto/` do not
-  move — so only source compatibility breaks, and only for a caller that reads this one field.
-
-  Vendored from `ilpanich/axiam` `main` @ `da94e1d04` (merge of #480, the contract-1.50 change; the
-  1.49 merged-`main`-only rule holds):
-
-  | Artefact | Git blob |
-  |----------|----------|
-  | `CONTRACT.md` (contract **1.50**) | `28c163e32d253edca01f3040540e01212c5460f2` |
-  | `management-registry.json` | `aab87fd799101457ebd92223643cb2ad10a6bbe7` |
-  | `openapi.json` (unchanged) | `b75e30eaa3597d2e1063bb50e7c0e469634ba60b` |
-
-  `proto/` was already byte-identical to that commit and is untouched. `scripts/gen_management.py`
-  regenerated the §27 surface in the same commit; the operation count stays **162** across the same
-  24 namespaces, and this one property's type is the only generated movement. The README's
-  conformance statement now names *contract 1.50*.
+## [1.0.0-beta16] - 2026-09-19
 
 ### Added
+
+- §28 MCP resource-server helpers (Ktor plugin + route)
 
 - **MCP resource-server helpers (`io.axiam.sdk.mcp`, CONTRACT.md §28, contract 1.48) — opt-in and
   off by default.** The resource-server half of the Model Context Protocol authorization handshake:
@@ -107,6 +67,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Re-sync CONTRACT.md 1.50 and management-registry.json from axiam main @ da94e1d04
+
+- F-28-01 — re-sync CONTRACT.md 1.49, openapi.json and management-registry.json from axiam main @ e4c62180e
+
+- Record F-28-01 and two review notes (T21.9 T9d)
+
 - **F-28-01 — `CONTRACT.md`, `openapi.json` and `management-registry.json` re-synced from
   `ilpanich/axiam` `main` @ `e4c62180e`, with the §27 management surface regenerated in the
   same commit.** This resolves the F-28-01 follow-up previously recorded under *Deferred*: the
@@ -152,6 +118,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   conformant: contract 1.49's §28.4 and §28.9 test 2 now state that the typing is the SDK's
   own choice and that a comment naming the vector at the test site is the required artefact
   where it cannot be written — which `McpTest` already carries.
+
+### Breaking
+
+- **`CreateRegistrationTokenResponse.initialAccessToken` is now `Sensitive<String>`, not `String`
+  (CONTRACT.md §27.5, contract 1.50, security fix).** The RFC 7591 §1.2 initial access token
+  returned by `ManagementApi.oauth2Clients.createRegistrationToken(...)` is a plaintext one-time
+  credential — shown once, never retrievable — but contract 1.49's `management-registry.json`
+  published `sensitive_response_fields: []` for that operation, so the generated data class carried
+  it as a bare `String` and it appeared verbatim in the class's `toString()` rendering. That is
+  exactly the leak §7 rule 1 and §27.5 exist to prevent. Contract 1.50 adds the
+  `(CreateRegistrationTokenResponse, initial_access_token)` pair to the registry's curated table,
+  which now names **fifteen** operations rather than fourteen.
+
+  | | Before (1.49) | After (1.50) |
+  |---|---|---|
+  | Property type | `val initialAccessToken: String` | `val initialAccessToken: @Contextual Sensitive<String>` |
+  | `toString()` | prints the token | prints the redacted placeholder |
+
+  **Migration.** Reading the value now takes the explicit §7 rule 3 reveal:
+
+  ```kotlin
+  // before
+  val token = response.initialAccessToken
+  // after
+  val token = response.initialAccessToken.expose()
+  ```
+
+  No plain-string accessor is kept alongside it: contract 1.50 forbids one, since the plain
+  accessor is precisely the leak. The wire shape is unchanged — `openapi.json` and `proto/` do not
+  move — so only source compatibility breaks, and only for a caller that reads this one field.
+
+  Vendored from `ilpanich/axiam` `main` @ `da94e1d04` (merge of #480, the contract-1.50 change; the
+  1.49 merged-`main`-only rule holds):
+
+  | Artefact | Git blob |
+  |----------|----------|
+  | `CONTRACT.md` (contract **1.50**) | `28c163e32d253edca01f3040540e01212c5460f2` |
+  | `management-registry.json` | `aab87fd799101457ebd92223643cb2ad10a6bbe7` |
+  | `openapi.json` (unchanged) | `b75e30eaa3597d2e1063bb50e7c0e469634ba60b` |
+
+  `proto/` was already byte-identical to that commit and is untouched. `scripts/gen_management.py`
+  regenerated the §27 surface in the same commit; the operation count stays **162** across the same
+  24 namespaces, and this one property's type is the only generated movement. The README's
+  conformance statement now names *contract 1.50*.
 
 ## [1.0.0-beta15] - 2026-09-15
 
