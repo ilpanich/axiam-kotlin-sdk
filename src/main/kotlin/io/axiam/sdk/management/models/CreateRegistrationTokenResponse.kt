@@ -3,6 +3,8 @@
 // `python3 scripts/gen_management.py`; CI verifies the committed output is current.
 package io.axiam.sdk.management.models
 
+import io.axiam.sdk.Sensitive
+import kotlinx.serialization.Contextual
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -10,11 +12,12 @@ import kotlinx.serialization.Serializable
  * The one response that carries the handle.
  *
  * @property initialAccessToken The plaintext handle, shown exactly once. Presented by the
- *     registering client as `Authorization: Bearer <this>`.
+ *     registering client as `Authorization: Bearer <this>`. -- SECRET: redacted from toString and
+ *     from every rendering except the one request body it is sent in
  * @property token The token's metadata.
  */
 @Serializable
 data class CreateRegistrationTokenResponse(
-    @SerialName("initial_access_token") val initialAccessToken: String,
+    @SerialName("initial_access_token") val initialAccessToken: @Contextual Sensitive<String>,
     @SerialName("token") val token: RegistrationTokenResponse,
 )
