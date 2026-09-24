@@ -47,6 +47,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [Manifest additions](README.md#manifest-additions-2761-contract-151) section. Tests:
   `ManifestAdditionsTest.kt` (14, against a stateful fake tenant).
 
+### Fixed
+
+- **The device credential now survives a later login (CONTRACT 1.52 N4.4, C-12).**
+  `onCredentialChange()` only ever cleared the §17 decision memo; nothing released
+  `SessionState.deviceToken`, so `AuthHeaderInterceptor` kept preferring an
+  `authenticateDevice()`-adopted bearer token — and kept withholding `Cookie` — after a later
+  `login`, `verifyMfa`, an OPAQUE finish, the MFA-setup and WebAuthn-setup completions, a plain
+  WebAuthn authentication, or an SSO/federation completion. A cookie session established after a
+  device login was silently shadowed by the stale device token on every following request.
+  `SessionState.clearDeviceToken()` is now called from each of those calls' own success path
+  (`loginScopeOf`, `webauthnFinish`, and the `onSessionEstablishedWithUnknownScope` federation
+  hook) — never proactively before the wire call, so a *refused* later call leaves a
+  previously-adopted device token exactly as it was. `refresh()` is unaffected: CONTRACT 1.52
+  N4.4 point 4 is explicit that refresh must not clear the device credential, and it does not.
+  Tests: `DeviceAuthTest.kt` — `a later login replaces the device credential`, `a webauthn
+  authentication also replaces the device credential`, and the I4 twin `a refused later login
+  leaves the device credential in place` (3 new; 12 total in the file).
+
 ### Breaking
 
 - **`AxiamClient.verifySession` now enforces CONTRACT.md §10.1 rule 9 (sender-constrained

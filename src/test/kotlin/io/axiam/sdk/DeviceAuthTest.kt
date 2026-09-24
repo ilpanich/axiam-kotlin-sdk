@@ -323,4 +323,115 @@ class DeviceAuthTest {
         )
         assertEquals(1, requestsTo("/api/v1/authz/check").size)
     }
+
+    // -------------------------------------------------------------------
+    // CONTRACT 1.52 N4.4 (C-12) — a later session-establishing call
+    // replaces the device credential.
+    // -------------------------------------------------------------------
+
+    /**
+     * A device credential is held until replaced (§6.1 rule 11 / N4.4 point
+     * 4): a `login()` after `authenticateDevice()` must be the credential
+     * every later request sends — the device bearer must stop riding, and
+     * the login's own cookie session must resume.
+     *
+     * Before the C-12 fix, `onCredentialChange()` cleared only the decision
+     * memo; nothing released `deviceToken`, so [AuthHeaderInterceptor] kept
+     * preferring the stale device bearer and stripping the fresh cookie.
+     */
+    @Test
+    fun `a later login replaces the device credential`() {
+        val deviceTok = deviceTokenJwt()
+        mountDeviceLogin(deviceTok)
+        val loginJwt = TestSupport.fakeJwt(sub = "user-1")
+        routes["POST /api/v1/auth/login"] = TestSupport.loginOkResponse(accessJwt = loginJwt)
+        mount("GET", "/api/v1/groups", 200, """{"items":[],"total":0,"offset":0,"limit":50}""")
+        val client = deviceClient()
+
+        runBlocking {
+            client.authenticateDevice()
+            client.login("u@example.com", "hunter2hunter2")
+            client.groups.list(PageRequest(limit = 50))
+        }
+
+        val sent = requestsTo("/api/v1/groups")[0]
+        assertEquals(
+            "Bearer $loginJwt",
+            header(sent, "authorization"),
+            "the login's cookie session must be the credential, not the stale device token",
+        )
+        assertTrue(
+            (header(sent, "cookie") ?: "").contains("axiam_access"),
+            "the cookie must no longer be withheld once the device token is released",
+        )
+    }
+
+    /**
+     * The I4 twin: a login that FAILS must leave a previously-adopted device
+     * token exactly as it was (N4.2's reasoning, applied to the SDK's own
+     * session-establishing calls generally) — the release happens only on
+     * `loginScopeOf`'s success path, never proactively before the wire call.
+     * This pins the pre-fix behaviour that must not change.
+     */
+    @Test
+    fun `a refused later login leaves the device credential in place`() {
+        val deviceTok = deviceTokenJwt()
+        mountDeviceLogin(deviceTok)
+        routes["POST /api/v1/auth/login"] = TestSupport.json(401, "invalid credentials")
+        mount("GET", "/api/v1/groups", 200, """{"items":[],"total":0,"offset":0,"limit":50}""")
+        val client = deviceClient()
+
+        runBlocking {
+            client.authenticateDevice()
+            assertThrows(AuthError::class.java) {
+                runBlocking { client.login("u@example.com", "wrong") }
+            }
+            client.groups.list(PageRequest(limit = 50))
+        }
+
+        val sent = requestsTo("/api/v1/groups")[0]
+        assertEquals("Bearer $deviceTok", header(sent, "authorization"))
+        assertFalse((header(sent, "cookie") ?: "").contains("axiam_access"))
+    }
+
+    /**
+     * A plain WebAuthn authentication is also a later session-establishing
+     * call (§6.1 rule 11 / N4.4 point 4) but does not go through
+     * `loginScopeOf` (it never reports `organization_level`) — a separate
+     * code path this fix touches, tested separately.
+     */
+    @Test
+    fun `a webauthn authentication also replaces the device credential`() {
+        val deviceTok = deviceTokenJwt()
+        mountDeviceLogin(deviceTok)
+        val webauthnJwt = TestSupport.fakeJwt(sub = "user-2")
+        routes["POST /api/v1/auth/webauthn/authenticate/discoverable/finish"] = okhttp3.mockwebserver.MockResponse()
+            .setResponseCode(200)
+            .addHeader("Content-Type", "application/json")
+            .addHeader("Set-Cookie", "axiam_access=$webauthnJwt; Path=/")
+            .addHeader("Set-Cookie", "axiam_refresh=refresh-cookie; Path=/")
+            .setBody(
+                """{"access_token":"wa-access","refresh_token":"wa-refresh",""" +
+                    """"session_id":"${UUID.randomUUID()}","expires_in":900}""",
+            )
+        mount("GET", "/api/v1/groups", 200, """{"items":[],"total":0,"offset":0,"limit":50}""")
+        val client = deviceClient()
+        val response = """
+            {"id":"bmV3LWNyZWQ","rawId":"bmV3LWNyZWQ",
+             "response":{"clientDataJSON":"eyJ0eXBlIjoid2ViYXV0aG4uZ2V0In0",
+                         "authenticatorData":"YXV0aC1kYXRh","signature":"c2ln",
+                         "userHandle":"dXNlci1oYW5kbGU"},
+             "type":"public-key","clientExtensionResults":{}}
+        """.trimIndent()
+
+        runBlocking {
+            client.authenticateDevice()
+            client.webauthnDiscoverableFinish(Sensitive.of("state-token"), response)
+            client.groups.list(PageRequest(limit = 50))
+        }
+
+        val sent = requestsTo("/api/v1/groups")[0]
+        assertEquals("Bearer $webauthnJwt", header(sent, "authorization"))
+        assertTrue((header(sent, "cookie") ?: "").contains("axiam_access"))
+    }
 }

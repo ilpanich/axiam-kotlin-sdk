@@ -69,6 +69,20 @@ class SessionState(
     /** The adopted device token, or `null` if none is active. */
     fun deviceToken(): String? = deviceToken.get()
 
+    /**
+     * Releases an adopted device token without touching anything else
+     * (CONTRACT.md §6.1 rule 11 / CONTRACT 1.52 N4.4, C-12).
+     *
+     * Called only from the success path of a later session-establishing
+     * call — `login`, `verifyMfa`, an OPAQUE finish, the MFA-setup and
+     * WebAuthn-setup completions, a plain WebAuthn authentication, or an SSO
+     * completion — never proactively before the wire call, so a *refused*
+     * one leaves a previously-adopted device token exactly as it was (N4.2).
+     * `refresh()` never calls this: N4.4 point 4 is explicit that refresh
+     * does not clear the device credential.
+     */
+    fun clearDeviceToken() = deviceToken.set(null)
+
     fun tenantId(): String = tenantId
     fun baseUrl(): String = baseUrl
     fun configuredOrgSlug(): String? = configuredOrgSlug
