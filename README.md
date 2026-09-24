@@ -1697,13 +1697,21 @@ acme.groups().list()                           // carries X-Axiam-Tenant: <acmeT
 val back = acme.clearActingTenant()            // another new handle, header removed
 ```
 
-Refused **client-side**, with zero wire calls, unless the session most recently established
-reported `organizationLevel = true` and named `tenantId` among its `reachableTenantIds` (§5.2.3
-rule 4) — a client that has not logged in, or logged in as an ordinary tenant principal, throws
-`AuthzError` rather than sending a header the server would 403 anyway. A client holding no such
-report at all (a WebAuthn login, which completes a session with no reach information) sends the
-header unconditionally and lets the server's own `403` answer, since there is nothing to check
-client-side.
+Refused **client-side** with `AuthzError` and zero wire calls when this client holds a login
+result that rules the tenant out: the session reported `organizationLevel = false`, or it
+reported `reachableTenantIds` and `tenantId` is not among them (§5.2.3 rule 4). A login result is
+held after `login`, `verifyMfa`, `loginOpaque`, `mfaSetupConfirm` and
+`webauthnSetupRegisterFinish`, whose responses all carry `LoginUserInfo`. A client holding **no**
+login result — one that has not logged in, or whose session came from a WebAuthn login, an
+SSO/federation completion, the device login, or an injected token — has nothing to check, so it
+sends the header and lets the server's own `403` answer.
+
+This differs from the Rust reference, which treats OPAQUE and the two setup completions as holding
+no login result. Their responses carry the same `LoginUserInfo` a password login does (the server
+builds OPAQUE's `200` with the password path's builder, though the spec leaves that body
+undocumented), so gating on it is tighter than gating on nothing; the TypeScript, Go, Python, C#
+and Java ports made the same choice. A login response that carries no `user` object at all is
+read as `organizationLevel = false`, the value §5.2 gives a server too old to report the field.
 
 **Every call that completes a NEW session resets this gate to unknown** — a fresh login has not
 yet said what it can reach — unless that call's own response reports `LoginUserInfo`: `refresh()`
