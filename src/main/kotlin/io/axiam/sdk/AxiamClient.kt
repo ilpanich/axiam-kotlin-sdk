@@ -1,6 +1,7 @@
 package io.axiam.sdk
 
 import io.axiam.sdk.errors.AuthError
+import io.axiam.sdk.errors.AuthzError
 import io.axiam.sdk.errors.ErrorMapper
 import io.axiam.sdk.errors.NetworkError
 import io.axiam.sdk.internal.AuthHeaderInterceptor
@@ -106,43 +107,59 @@ import kotlin.time.toKotlinDuration
  *
  * Conforms to CONTRACT.md §1–§7, §9–§11 (including §6.1 mTLS).
  */
-class AxiamClient private constructor(b: Builder) : AutoCloseable {
+class AxiamClient private constructor(
+    private val core: Core,
+    /**
+     * CONTRACT.md §5.2 rule 1 (contract 1.51) — the tenant THIS HANDLE acts on.
+     *
+     * `null` means no `X-Axiam-Tenant` is sent, and the principal acts on its
+     * own tenant. Held on the handle rather than on [core]: [actingTenant] and
+     * [clearActingTenant] each return a NEW `AxiamClient` sharing this same
+     * [core] — session, cookie jar, `httpClient`, refresh guard, telemetry,
+     * decision memo — so a provisioning task acting on tenant A and another
+     * acting on tenant B can share one session without either rewriting the
+     * other's header between the moment it decides and the moment it sends.
+     */
+    private val actingTenant: UUID?,
+) : AutoCloseable {
 
-    private val baseUrl: String = b.baseUrl.trimEnd('/')
-    private val tenantId: String = b.tenantId
+    /** The only construction path from a [Builder]: builds a fresh [Core]. */
+    internal constructor(b: Builder) : this(Core.build(b), b.actingTenant)
+
+    private val baseUrl: String get() = core.baseUrl
+    private val tenantId: String get() = core.tenantId
 
     /** CONTRACT.md §10.1 rule 5 — unset (the default) means "do not check". */
-    private val expectedIssuer: String? = b.expectedIssuer
-    private val revocationFeed: RevocationFeed? = b.revocationFeed
+    private val expectedIssuer: String? get() = core.expectedIssuer
+    private val revocationFeed: RevocationFeed? get() = core.revocationFeed
 
     /** CONTRACT.md §10.1 rule 6 — unset (the default) means "do not check". */
-    private val expectedAudience: String? = b.expectedAudience
+    private val expectedAudience: String? get() = core.expectedAudience
 
-    private val customCaPem: ByteArray? = b.customCaPem
-    private val httpClient: OkHttpClient
-    private val refreshGuard = RefreshGuard()
-    private val jwksVerifier = JwksVerifier(baseUrl)
-    private val session: SessionState
-    private val oidcSupport: OidcSupport
+    private val httpClient: OkHttpClient get() = core.httpClient
+    private val refreshGuard: RefreshGuard get() = core.refreshGuard
+    private val jwksVerifier: JwksVerifier get() = core.jwksVerifier
+    private val session: SessionState get() = core.session
+    private val oidcSupport: OidcSupport get() = core.oidcSupport
 
     /**
      * §16.1 disable switch. There is deliberately no field for the attempt cap,
      * base delay or delay cap: §16.1 forbids raising them, and eleven SDKs
      * agreeing on one table is the point.
      */
-    private val retryEnabled: Boolean = b.retryEnabled
+    private val retryEnabled: Boolean get() = core.retryEnabled
 
     /** §17 decision memo. Disabled unless the builder was given a TTL. */
-    private val decisionMemo = DecisionMemo(b.decisionMemoTtl.toKotlinDuration())
+    private val decisionMemo: DecisionMemo get() = core.decisionMemo
 
     /** §19 telemetry dispatcher. Inert unless a hook was installed. */
-    private val telemetry = TelemetryDispatcher(b.telemetryHook)
+    private val telemetry: TelemetryDispatcher get() = core.telemetry
 
     /** §16 jitter source, injectable for tests. */
-    private val jitter: () -> Double = b.jitterSource
+    private val jitter: () -> Double get() = core.jitter
 
     /** §18 shutdown flag, read on every operation. */
-    private val closed = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val closed: java.util.concurrent.atomic.AtomicBoolean get() = core.closed
 
     /**
      * CONTRACT.md §5.2.2 — the tenant the signed-in principal's record *lives* in,
@@ -152,66 +169,234 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
      * diverge for an organization-level principal that has selected another one.
      * Read by [opaqueEnrollmentForSelf], which must seal a §23 record against the
      * account's own tenant rather than whichever one this client is currently
-     * pointed at. `null` until a login completes. `@Volatile` because a client is
+     * pointed at. `null` until a login completes. Backed by an `AtomicReference`
+     * on [core] — shared by every handle over one session — because a client is
      * shared across coroutines and a stale read here would seal against the wrong
      * tenant — the whole failure this field exists to prevent.
      */
-    @Volatile
-    private var principalTenantId: UUID? = null
+    private var principalTenantId: UUID?
+        get() = core.principalTenantId.get()
+        set(value) { core.principalTenantId.set(value) }
 
-    init {
-        val cookieManager = CookieManager(null, CookiePolicy.ACCEPT_ALL)
-        session = SessionState(cookieManager, baseUrl, tenantId, b.orgSlug, b.orgId)
+    /**
+     * CONTRACT.md §5.2 rule 1 / §5.2.3 rule 4 (contract 1.51) — what the last
+     * completed login on this SESSION reported about the principal's reach,
+     * shared by every handle over it (an `AtomicReference` on [core], exactly
+     * like [principalTenantId]).
+     *
+     * `null` until a password or MFA login (or OPAQUE, or the forced MFA-setup
+     * completion — every path that reads a `user` object) reports one, and reset
+     * to `null` by [logout] and by every session-establishing call that does
+     * NOT report one (OPAQUE's `mode`-driven retry aside, WebAuthn's plain
+     * login). `null` is "nothing known" — it gates nothing, and [acting_tenant]
+     * sends the header and lets the server's `403` answer — never "not
+     * organization-level", which absence must not be read as (CONTRACT.md
+     * §5.2 rule 1: "a client holding no login result has nothing to gate on").
+     */
+    private var principalReachGate: PrincipalReachGate?
+        get() = core.principalReachGate.get()
+        set(value) { core.principalReachGate.set(value) }
 
-        val tls = TlsFactory.build(customCaPem, b.clientCertPem, b.clientKeyPem)
+    /**
+     * What a completed login reported about the signed-in principal's reach
+     * (CONTRACT.md §5.2 rule 1 / §5.2.3 rule 4) — the input to [acting_tenant]'s
+     * client-side gate.
+     *
+     * A dedicated type rather than reusing [PrincipalScope]: that one already
+     * means something else (§5.2.2's "where the principal lives", read off the
+     * SAME login response) and does not carry `organization_level`, which lives
+     * on [LoginResult] directly. Keeping the two separate is what lets each
+     * evolve on its own section of the contract.
+     */
+    private data class PrincipalReachGate(
+        val organizationLevel: Boolean,
+        val reachableTenantIds: List<UUID>?,
+    )
 
-        val base = b.overrideHttpClient?.newBuilder() ?: OkHttpClient.Builder()
-        httpClient = base
-            // §4: per-client cookie jar. §6/§6.1: strict TLS (+ optional customCa,
-            // + optional client identity) is ALWAYS re-applied — an override can
-            // never drop the jar or weaken verification.
-            .cookieJar(okhttp3.JavaNetCookieJar(cookieManager))
-            .sslSocketFactory(tls.sslContext.socketFactory, tls.trustManager)
-            .connectTimeout(b.connectTimeout)
-            .readTimeout(b.readTimeout)
-            .writeTimeout(b.writeTimeout)
-            .addInterceptor(AuthHeaderInterceptor(session))
-            // §24.1 (contract 1.45): the `Cookie` half of the setup/register/*
-            // credential suppression has to run after BridgeInterceptor has
-            // applied the jar, so it is a network interceptor rather than
-            // living beside the rest of AuthHeaderInterceptor's logic.
-            .addNetworkInterceptor(NoSessionCredentialsNetworkInterceptor())
-            .build()
-        session.attachHttpClient(httpClient)
+    /**
+     * Everything a session needs that is expensive to build and MUST be shared
+     * by every [AxiamClient] handle over it — the `httpClient` (its connection
+     * pool, TLS context and cookie jar), the [SessionState], the single-flight
+     * [RefreshGuard], the §17 [DecisionMemo], the §19 [TelemetryDispatcher] — so
+     * that [acting_tenant] and [clear_acting_tenant] can hand back a new handle
+     * that differs ONLY in [actingTenant] without rebuilding any of it, and so
+     * that mutable session-wide state ([principalTenantId], [principalReachGate])
+     * is visible to every handle rather than snapshotted per handle.
+     *
+     * Built exactly once per session, by [Core.build] from a [Builder] — never
+     * from [acting_tenant]/[clear_acting_tenant], which pass the SAME instance
+     * through.
+     */
+    private class Core(
+        val baseUrl: String,
+        val tenantId: String,
+        val expectedIssuer: String?,
+        val revocationFeed: RevocationFeed?,
+        val expectedAudience: String?,
+        val httpClient: OkHttpClient,
+        val refreshGuard: RefreshGuard,
+        val jwksVerifier: JwksVerifier,
+        val session: SessionState,
+        val oidcSupport: OidcSupport,
+        val retryEnabled: Boolean,
+        val decisionMemo: DecisionMemo,
+        val telemetry: TelemetryDispatcher,
+        val jitter: () -> Double,
+        val closed: java.util.concurrent.atomic.AtomicBoolean,
+        val principalTenantId: java.util.concurrent.atomic.AtomicReference<UUID?>,
+        val principalReachGate: java.util.concurrent.atomic.AtomicReference<PrincipalReachGate?>,
+    ) {
+        companion object {
+            /** The former `init {}` body: every one-time, session-wide construction step. */
+            fun build(b: Builder): Core {
+                val baseUrl = b.baseUrl.trimEnd('/')
+                val tenantId = b.tenantId
+                val cookieManager = CookieManager(null, CookiePolicy.ACCEPT_ALL)
+                val session = SessionState(cookieManager, baseUrl, tenantId, b.orgSlug, b.orgId)
 
-        // CONTRACT.md §12 — built on this SAME httpClient (§4 cookie jar, §6
-        // TLS, §5 tenant header via AuthHeaderInterceptor already installed
-        // above) and this SAME session (for org defaults / tenant_id
-        // resolution), never a forked transport.
-        oidcSupport = OidcSupport(
-            httpClient = httpClient,
-            baseUrl = baseUrl,
-            configuredTenantId = tenantId,
-            session = session,
-            oidcClientId = b.oidcClientId,
-            oidcClientSecret = b.oidcClientSecret,
-            discoveryTtlMs = b.oidcDiscoveryTtlMs,
-            clockSkewSecInput = b.oidcClockSkewSec,
-            // §6.1 is all-or-nothing: TlsFactory.build above has already
-            // refused a half-configured pair, so either half implies both.
-            presentsClientCertificate = b.clientCertPem != null,
-        )
+                val tls = TlsFactory.build(b.customCaPem, b.clientCertPem, b.clientKeyPem)
 
-        // §19.2 rule 6: a setting we lowered is reported, not swallowed. The
-        // memo TTL is the only clamped setting here — §16.1's table is not
-        // configurable, only switchable — so it is the only emitter.
-        decisionMemo.reportClamp(b.decisionMemoTtl.toKotlinDuration(), telemetry)
+                val base = b.overrideHttpClient?.newBuilder() ?: OkHttpClient.Builder()
+                val httpClient = base
+                    // §4: per-client cookie jar. §6/§6.1: strict TLS (+ optional customCa,
+                    // + optional client identity) is ALWAYS re-applied — an override can
+                    // never drop the jar or weaken verification.
+                    .cookieJar(okhttp3.JavaNetCookieJar(cookieManager))
+                    .sslSocketFactory(tls.sslContext.socketFactory, tls.trustManager)
+                    .connectTimeout(b.connectTimeout)
+                    .readTimeout(b.readTimeout)
+                    .writeTimeout(b.writeTimeout)
+                    .addInterceptor(AuthHeaderInterceptor(session))
+                    // §24.1 (contract 1.45): the `Cookie` half of the setup/register/*
+                    // credential suppression has to run after BridgeInterceptor has
+                    // applied the jar, so it is a network interceptor rather than
+                    // living beside the rest of AuthHeaderInterceptor's logic.
+                    .addNetworkInterceptor(NoSessionCredentialsNetworkInterceptor())
+                    .build()
+                session.attachHttpClient(httpClient)
+
+                // CONTRACT.md §12 — built on this SAME httpClient (§4 cookie jar, §6
+                // TLS, §5 tenant header via AuthHeaderInterceptor already installed
+                // above) and this SAME session (for org defaults / tenant_id
+                // resolution), never a forked transport.
+                val oidcSupport = OidcSupport(
+                    httpClient = httpClient,
+                    baseUrl = baseUrl,
+                    configuredTenantId = tenantId,
+                    session = session,
+                    oidcClientId = b.oidcClientId,
+                    oidcClientSecret = b.oidcClientSecret,
+                    discoveryTtlMs = b.oidcDiscoveryTtlMs,
+                    clockSkewSecInput = b.oidcClockSkewSec,
+                    // §6.1 is all-or-nothing: TlsFactory.build above has already
+                    // refused a half-configured pair, so either half implies both.
+                    presentsClientCertificate = b.clientCertPem != null,
+                )
+
+                val telemetry = TelemetryDispatcher(b.telemetryHook)
+                val decisionMemo = DecisionMemo(b.decisionMemoTtl.toKotlinDuration())
+                // §19.2 rule 6: a setting we lowered is reported, not swallowed. The
+                // memo TTL is the only clamped setting here — §16.1's table is not
+                // configurable, only switchable — so it is the only emitter.
+                decisionMemo.reportClamp(b.decisionMemoTtl.toKotlinDuration(), telemetry)
+
+                return Core(
+                    baseUrl = baseUrl,
+                    tenantId = tenantId,
+                    expectedIssuer = b.expectedIssuer,
+                    revocationFeed = b.revocationFeed,
+                    expectedAudience = b.expectedAudience,
+                    httpClient = httpClient,
+                    refreshGuard = RefreshGuard(),
+                    jwksVerifier = JwksVerifier(baseUrl),
+                    session = session,
+                    oidcSupport = oidcSupport,
+                    retryEnabled = b.retryEnabled,
+                    decisionMemo = decisionMemo,
+                    telemetry = telemetry,
+                    jitter = b.jitterSource,
+                    closed = java.util.concurrent.atomic.AtomicBoolean(false),
+                    principalTenantId = java.util.concurrent.atomic.AtomicReference(null),
+                    principalReachGate = java.util.concurrent.atomic.AtomicReference(null),
+                )
+            }
+        }
     }
 
     // ---- SDK-internal accessors (middleware/§10 seam) --------------------
 
     /** This client's configured tenant identifier (§5). */
     fun tenantId(): String = tenantId
+
+    /**
+     * The tenant this handle acts on, if any — CONTRACT.md §5.2 rule 1.
+     *
+     * `null` means no `X-Axiam-Tenant` is sent, and the principal acts on its
+     * own tenant.
+     */
+    fun actingTenantId(): UUID? = actingTenant
+
+    /**
+     * A handle to this client that acts on [tenantId] — CONTRACT.md §5.2 rule 1
+     * (contract 1.51).
+     *
+     * The returned handle shares everything with `this` — session, cookie jar,
+     * refresh guard, telemetry, decision memo — and differs only in the
+     * `X-Axiam-Tenant` it sends. `this` is unchanged, so two tasks can act on
+     * two tenants at once over one session. Call [clearActingTenant] (or simply
+     * keep using `this`) to act on the principal's own tenant again.
+     *
+     * Meaningful only for an **organization-level** principal; see
+     * [Builder.withActingTenant] for what the header does and does not reach
+     * (not `X-Tenant-ID`, not gRPC — this SDK ships none).
+     *
+     * @throws AuthzError, with **no** wire call, when this client holds a login
+     *   result that reported the principal's reach and that result says the
+     *   header would be refused: `organizationLevel: false` (an ordinary tenant
+     *   principal is a principal of one tenant, and the server answers `403` to
+     *   anything else), or [tenantId] outside a reported `reachableTenantIds`
+     *   (§5.2.3 rule 4). A client holding no such result — a service account
+     *   from client credentials or an injected token, or a session completed
+     *   without reporting the flag (OPAQUE, SSO, WebAuthn, the MFA setup; see
+     *   the CHANGELOG) — has nothing to gate on, so the handle is returned and
+     *   the server's `403` is the answer.
+     */
+    fun actingTenant(tenantId: UUID): AxiamClient {
+        principalReachGate?.let { gate ->
+            if (!gate.organizationLevel) {
+                throw AuthzError(
+                    "acting_tenant: the signed-in principal is not organization-level, so it " +
+                        "cannot act on another tenant — the server would answer 403 " +
+                        "(CONTRACT.md §5.2 rule 1)",
+                    resourceId = tenantId.toString(),
+                )
+            }
+            val reachable = gate.reachableTenantIds
+            if (reachable != null && tenantId !in reachable) {
+                throw AuthzError(
+                    "acting_tenant: the signed-in principal's roles do not reach this tenant — " +
+                        "it is not in reachableTenantIds, and the server refuses the header " +
+                        "with 403 (CONTRACT.md §5.2.3 rule 4)",
+                    resourceId = tenantId.toString(),
+                )
+            }
+        }
+        return AxiamClient(core, tenantId)
+    }
+
+    /**
+     * A handle to this client that sends **no** `X-Axiam-Tenant` — the clear
+     * form CONTRACT.md §5.2 rule 1 requires. The principal then acts on its own
+     * tenant. Everything else is shared with `this`, as for [actingTenant].
+     */
+    fun clearActingTenant(): AxiamClient = AxiamClient(core, null)
+
+    /**
+     * `X-Axiam-Tenant` when this handle acts on a tenant, nothing otherwise —
+     * CONTRACT.md §5.2 rule 1.
+     */
+    private fun Request.Builder.actingTenantHeader(): Request.Builder =
+        actingTenant?.let { header(ACTING_TENANT_HEADER, it.toString()) } ?: this
 
     /**
      * This client's configured §10.1 row 6 expected audience ([Builder.expectedAudience]),
@@ -242,6 +427,7 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
                 telemetry = telemetry,
                 retryEnabled = retryEnabled,
                 ensureOpen = ::ensureOpen,
+                actingTenant = actingTenant,
             ),
         )
 
@@ -638,7 +824,7 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
         onCredentialChange()
         val observed = session.cachedAccessToken()
             ?: throw AuthError("no access token to refresh — call login() first")
-        refreshGuard.refreshIfNeeded(observed) { session.doHttpRefresh() }
+        refreshGuard.refreshIfNeeded(observed) { session.doHttpRefresh(actingTenant) }
     }
 
     /** `POST /api/v1/auth/logout` (§1) and clears in-memory session state. */
@@ -657,6 +843,10 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
                 throw ErrorMapper.fromHttpStatus(response.code, "logout failed", response)
             }
             session.clear()
+            // §5.2 rule 1: forgets the previous principal's reach, so the
+            // next principal to sign in on this session is not refused (or
+            // wrongly allowed) on the strength of someone else's login.
+            principalReachGate = null
         }
     }
 
@@ -997,7 +1187,7 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
 
         // §17: consult the memo first. Disabled by default, in which case this
         // is one map lookup that always misses.
-        val key = DecisionMemo.key(subjectId, resourceId, action, scope)
+        val key = DecisionMemo.key(subjectId, resourceId, action, scope, actingTenant)
         decisionMemo.get(key)?.let { return it }
 
         val body = buildJsonObject {
@@ -1613,6 +1803,13 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
             if (http.code != 200) {
                 throw ErrorMapper.fromHttpStatus(http.code, "$operation failed", http)
             }
+            // §5.2 rule 1's "For C-12" answer 5: a plain WebAuthn login
+            // completes a session without reporting `organization_level`
+            // (unlike `login`/`verifyMfa`/OPAQUE/the MFA-setup completion,
+            // which all read a `user` object through `loginScopeOf`) — reset
+            // to "nothing known" rather than carry the PREVIOUS principal's
+            // gate into a session that may not be the same principal.
+            principalReachGate = null
             val wire = readJson(http)
             return WebauthnLoginResult(
                 accessToken = Sensitive.of(wire.str("access_token")),
@@ -2066,16 +2263,28 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
             val observed = session.cachedAccessToken()
             if (observed != null) {
                 first.close()
-                refreshGuard.refreshIfNeeded(observed) { session.doHttpRefresh() }
+                refreshGuard.refreshIfNeeded(observed) { session.doHttpRefresh(actingTenant) }
                 return postJson(path, body)
             }
         }
         return first
     }
 
+    /**
+     * Every REST request this client sends carries `X-Axiam-Tenant` when this
+     * handle acts on a tenant, nothing otherwise — CONTRACT.md §5.2 rule 1
+     * (contract 1.51). One central point rather than the login/refresh/
+     * logout/authz/management/account/webauthn call sites choosing separately,
+     * which is what [ACTING_TENANT_HEADER]'s own header-mechanics twin,
+     * `X-Tenant-ID` ([AuthHeaderInterceptor]), already does for every same-host
+     * request. §5.2.2 rule 4 requires this for the self-service endpoints
+     * ("send the header as normal; the server decides") and does not forbid it
+     * for login/refresh/logout, which have nothing to gate on before a session
+     * exists anyway.
+     */
     private suspend fun postJson(path: String, body: JsonObject): Response = withContext(Dispatchers.IO) {
         val payload = Json.encodeToString(JsonObject.serializer(), body).toRequestBody(JSON_MEDIA)
-        val request = Request.Builder().url(baseUrl + path).post(payload).build()
+        val request = Request.Builder().url(baseUrl + path).actingTenantHeader().post(payload).build()
         try {
             httpClient.newCall(request).execute()
         } catch (e: IOException) {
@@ -2095,6 +2304,7 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
             val request = Request.Builder()
                 .url(baseUrl + path)
                 .header(AuthHeaderInterceptor.NO_SESSION_CREDENTIALS_HEADER, "1")
+                .actingTenantHeader()
                 .post(payload)
                 .build()
             try {
@@ -2134,7 +2344,16 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
      */
     private fun loginScopeOf(response: Response): LoginScope {
         val user = readJson(response)["user"]?.jsonObject
-            ?: return LoginScope(false, null)
+            ?: run {
+                // §5.2 rule 1: `organizationLevel` is always answered (`false`
+                // against a server too old to report it), so the acting-tenant
+                // gate can always be set here too — it is not the "session
+                // completed with no user object" case rule 5 means (that is
+                // [webauthnFinish]'s plain login, which never reaches
+                // `loginScopeOf` at all).
+                principalReachGate = PrincipalReachGate(organizationLevel = false, reachableTenantIds = null)
+                return LoginScope(false, null)
+            }
 
         val organizationLevel =
             user["organization_level"]?.jsonPrimitive?.booleanOrNull ?: false
@@ -2148,6 +2367,11 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
         val reachable = (user["reachable_tenant_ids"] as? JsonArray)
             ?.mapNotNull { runCatching { UUID.fromString(it.jsonPrimitive.content) }.getOrNull() }
             ?.takeIf { it.isNotEmpty() }
+
+        // §5.2 rule 1: this client now holds a login result, so [actingTenant]
+        // gates on what it reported — set on every success, not only the
+        // branch below that also fills [PrincipalScope].
+        principalReachGate = PrincipalReachGate(organizationLevel, reachable)
 
         if (acting == null && principal == null && principalSlug == null &&
             orgId == null && reachable == null
@@ -2182,7 +2406,8 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
      * the wire unmodified (§24.0).
      */
     private suspend fun postRawJson(path: String, body: String): Response = withContext(Dispatchers.IO) {
-        val request = Request.Builder().url(baseUrl + path).post(body.toRequestBody(JSON_MEDIA)).build()
+        val request = Request.Builder().url(baseUrl + path).actingTenantHeader()
+            .post(body.toRequestBody(JSON_MEDIA)).build()
         try {
             httpClient.newCall(request).execute()
         } catch (e: IOException) {
@@ -2196,6 +2421,7 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
             val request = Request.Builder()
                 .url(baseUrl + path)
                 .header(AuthHeaderInterceptor.NO_SESSION_CREDENTIALS_HEADER, "1")
+                .actingTenantHeader()
                 .post(body.toRequestBody(JSON_MEDIA))
                 .build()
             try {
@@ -2238,6 +2464,40 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
         internal var expectedIssuer: String? = null
         internal var expectedAudience: String? = null
         internal var revocationFeed: RevocationFeed? = null
+        internal var actingTenant: UUID? = null
+
+        /**
+         * Act on another tenant of the caller's organization — CONTRACT.md §5.2
+         * rule 1 (contract 1.51).
+         *
+         * Every `/api/v1` request this client sends then carries
+         * `X-Axiam-Tenant: <id>`, which is how an **organization-level**
+         * principal (one whose record lives in its organization's reserved
+         * tenant) chooses the tenant it acts on without signing in again. It is
+         * meaningful for such a principal only: for an ordinary tenant principal
+         * the server answers `403`, and this is not a general "switch tenant"
+         * capability.
+         *
+         * **What it does not do.** It does not change [Builder]'s `tenantId`
+         * (§5 rule 2, sent as `X-Tenant-ID`) — the server does not read that
+         * header; routers and gateways do, and the two are different headers
+         * read by different mechanisms this SDK never couples. It does not reach
+         * gRPC — this SDK ships no gRPC transport, and REST is where §5.2 rule 1
+         * lives regardless.
+         *
+         * **Why a [UUID] and not a `String`.** The server silently ignores a
+         * value that does not parse as a UUID and answers for the caller's own
+         * tenant instead — succeeding, but about the wrong tenant. Taking a
+         * [UUID] makes that request impossible to express, which is the
+         * strongest form of the client-side refusal §5.2 rule 1 asks for.
+         *
+         * **No gating here.** A builder precedes the login that would reveal
+         * whether the principal is organization-level, and a service account
+         * never receives a login result at all — the server's `403` is the
+         * answer. The on-client form, [AxiamClient.actingTenant], DOES gate once
+         * a login result is held; see it for what.
+         */
+        fun withActingTenant(tenantId: UUID) = apply { actingTenant = tenantId }
 
         /**
          * CONTRACT.md §10.1 rule 5 — the `iss` the §10 guard
@@ -2409,6 +2669,14 @@ class AxiamClient private constructor(b: Builder) : AutoCloseable {
     }
 
     companion object {
+        /**
+         * The header an organization-level principal names its acting tenant in
+         * — CONTRACT.md §5.2 rule 1. Distinct from `X-Tenant-ID` (§5 rule 2,
+         * sent by [io.axiam.sdk.internal.AuthHeaderInterceptor] on every
+         * same-host request), which the server does not read.
+         */
+        const val ACTING_TENANT_HEADER: String = "X-Axiam-Tenant"
+
         private const val LOGIN_PATH = "/api/v1/auth/login"
         private const val MFA_VERIFY_PATH = "/api/v1/auth/mfa/verify"
         private const val OPAQUE_REGISTER_START_PATH = "/api/v1/auth/opaque/register/start"

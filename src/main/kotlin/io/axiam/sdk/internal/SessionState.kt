@@ -110,7 +110,7 @@ class SessionState(
      * special-cased by the header interceptor so this can never recursively
      * trigger a nested refresh.
      */
-    suspend fun doHttpRefresh(): TokenPair = withContext(Dispatchers.IO) {
+    suspend fun doHttpRefresh(actingTenant: UUID? = null): TokenPair = withContext(Dispatchers.IO) {
         val observed = cachedAccessToken()
             ?: throw AuthError("no access token to refresh — call login() first")
         val observedClaims = decodeUnverifiedClaims(observed)
@@ -127,10 +127,16 @@ class SessionState(
             put("tenant_id", tenantUuid.toString())
             put("org_id", orgUuid.toString())
         }
-        val request = Request.Builder()
+        val requestBuilder = Request.Builder()
             .url(baseUrl + REFRESH_PATH)
             .post(JSON.encodeToString(JsonObject.serializer(), body).toRequestBody(JSON_MEDIA))
-            .build()
+        // CONTRACT.md §5.2 rule 1 (contract 1.51): the acting tenant of whichever
+        // handle triggered this refresh — single-flight-shared, but the value is
+        // the CALLER's, passed in rather than read off shared state.
+        if (actingTenant != null) {
+            requestBuilder.header(io.axiam.sdk.AxiamClient.ACTING_TENANT_HEADER, actingTenant.toString())
+        }
+        val request = requestBuilder.build()
 
         val client = httpClient.get()
             ?: throw IllegalStateException("SessionState.attachHttpClient() was never called")

@@ -163,18 +163,27 @@ internal class DecisionMemo(
 
         /**
          * Builds the §17.1 rule 3 key: all four components, with absent
-         * distinguished from present.
+         * distinguished from present — plus the acting tenant (CONTRACT.md §5.2
+         * rule 1, contract 1.51), which changes the question. Handles sharing
+         * one memo over one session must not answer the same four components
+         * for one acting tenant with an entry stored while acting on another —
+         * the server can, and does, answer them differently.
+         *
+         * @param actingTenant this handle's [io.axiam.sdk.AxiamClient.actingTenantId],
+         *   or `null` for the principal's own tenant.
          */
         fun key(
             subjectId: String?,
             resourceId: String,
             action: String,
             scope: String?,
+            actingTenant: java.util.UUID? = null,
         ): String = buildString {
             append(subjectId ?: ABSENT).append(SEP)
             append(resourceId).append(SEP)
             append(action).append(SEP)
-            append(scope ?: ABSENT)
+            append(scope ?: ABSENT).append(SEP)
+            append(actingTenant ?: ABSENT)
         }
     }
 }
