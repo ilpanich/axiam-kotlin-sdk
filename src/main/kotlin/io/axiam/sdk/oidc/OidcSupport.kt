@@ -91,6 +91,19 @@ internal class OidcSupport(
      * than a per-call one.
      */
     private val presentsClientCertificate: Boolean = false,
+    /**
+     * CONTRACT.md §5.2 rule 1 (contract 1.51) — invoked exactly once after
+     * every SSO/federation completion that establishes a NEW session
+     * ([ssoComplete], [ssoCompleteOauth2], [ssoCompleteHandoff]; WebAuthn's
+     * own plain login has the equivalent call in `AxiamClient` directly),
+     * so the owning client's acting-tenant gate and §17 decision memo reset
+     * to "nothing known" rather than carry a PREVIOUS principal's login
+     * result into a session that reports none of its own (none of the three
+     * responses here carry `LoginUserInfo`/`organization_level`). Called
+     * only on a `200` — a failed completion leaves the gate exactly as it
+     * was, since no session changed.
+     */
+    private val onSessionEstablishedWithUnknownScope: () -> Unit = {},
 ) {
     private val discoveryTtlMs: Long = discoveryTtlMs.coerceAtLeast(MIN_DISCOVERY_TTL_MS)
     private val clockSkewSec: Int = OidcIdToken.resolveClockSkewSec(clockSkewSecInput)
@@ -725,6 +738,7 @@ internal class OidcSupport(
         val response = postJsonAbsolute(baseUrl + SSO_CALLBACK_PATH, body)
         response.use {
             if (it.code != 200) throw ErrorMapper.fromHttpStatus(it.code, "ssoComplete request failed", it)
+            onSessionEstablishedWithUnknownScope()
             val json = parseJsonObject(it)
             return SsoCompleteResult(
                 userId = json.str("user_id"),
@@ -907,6 +921,7 @@ internal class OidcSupport(
         val response = postJsonAbsolute(baseUrl + path, body)
         response.use {
             if (it.code != 200) throw ErrorMapper.fromHttpStatus(it.code, "$operation request failed", it)
+            onSessionEstablishedWithUnknownScope()
             val json = parseJsonObject(it)
             return SsoCompleteResult(
                 userId = json.str("user_id"),

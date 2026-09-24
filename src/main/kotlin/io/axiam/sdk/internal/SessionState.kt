@@ -47,6 +47,28 @@ class SessionState(
     private val csrf = AtomicReference<String?>(null)
     private val httpClient = AtomicReference<OkHttpClient?>(null)
 
+    /**
+     * CONTRACT.md §6.1 rule 6 (contract 1.51) — the mTLS device token adopted
+     * by [io.axiam.sdk.AxiamClient.authenticateDevice], if any.
+     *
+     * A bearer credential, never a cookie: [AuthHeaderInterceptor] sends it as
+     * `Authorization` and withholds `Cookie` entirely while it is set, so a
+     * device token can never ride next to a stale cookie session — the
+     * defect the TypeScript port's own device-auth test first caught (its
+     * mock intercepted above the layer where the cookie jar attaches
+     * cookies, so a "withholds the stale cookie" assertion passed even with
+     * the withholding removed; this SDK's test observes the header at the
+     * real OkHttp client instead). `null` means no device token is active,
+     * which is the default and what [cachedAccessToken] alone governs.
+     */
+    private val deviceToken = AtomicReference<String?>(null)
+
+    /** Adopts [token] as this session's bearer credential (§6.1 rule 6). */
+    fun adoptDeviceToken(token: String) = deviceToken.set(token)
+
+    /** The adopted device token, or `null` if none is active. */
+    fun deviceToken(): String? = deviceToken.get()
+
     fun tenantId(): String = tenantId
     fun baseUrl(): String = baseUrl
     fun configuredOrgSlug(): String? = configuredOrgSlug
@@ -81,7 +103,10 @@ class SessionState(
     }
 
     /** Resets locally-derived state after logout (the cookie jar is cleared by the server's Set-Cookie). */
-    fun clear() = csrf.set(null)
+    fun clear() {
+        csrf.set(null)
+        deviceToken.set(null)
+    }
 
     /**
      * Evicts the session cookies from the shared jar, in addition to [clear].

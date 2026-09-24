@@ -194,3 +194,30 @@ object ReasonCode {
      */
     const val DENIED_BY_RULE: String = "denied_by_rule"
 }
+
+/**
+ * Outcome of [AxiamClient.authenticateDevice] — CONTRACT.md §6.1 rules 6-10
+ * (contract 1.51), `POST /api/v1/auth/device`.
+ *
+ * There is deliberately no refresh token: a device re-authenticates by
+ * calling [AxiamClient.authenticateDevice] again, which costs one TLS
+ * handshake rather than a stored secret (§6.1 rule 6). The access token this
+ * carries is adopted as the client's credential exactly as [LoginResult]'s
+ * is, so every REST call after a successful [AxiamClient.authenticateDevice]
+ * uses it automatically — but it rides as a bearer credential, never in the
+ * cookie jar, and withholds any cookie a prior session left behind (see
+ * [AxiamClient.authenticateDevice]'s own doc for why).
+ *
+ * @property accessToken the service-account access token (`aud: axiam:m2m`).
+ *   `Sensitive` (§7). When AXIAM itself terminated the TLS handshake it is
+ *   bound to the presented certificate (`cnf.x5t#S256`, RFC 8705) — §10.1
+ *   rule 9 then applies to it wherever it is verified.
+ * @property tokenType always `"Bearer"` — including for a certificate-bound
+ *   token (§1.1.1 rule 5): boundness is never inferable from this field.
+ * @property expiresIn the access token's lifetime, in seconds (900 by default).
+ */
+data class DeviceAuthResult(
+    val accessToken: Sensitive<String>,
+    val tokenType: String,
+    val expiresIn: Long,
+)

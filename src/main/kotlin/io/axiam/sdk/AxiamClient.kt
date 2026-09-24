@@ -141,6 +141,7 @@ class AxiamClient private constructor(
     private val jwksVerifier: JwksVerifier get() = core.jwksVerifier
     private val session: SessionState get() = core.session
     private val oidcSupport: OidcSupport get() = core.oidcSupport
+    private val presentsClientCertificate: Boolean get() = core.presentsClientCertificate
 
     /**
      * §16.1 disable switch. There is deliberately no field for the attempt cap,
@@ -245,6 +246,13 @@ class AxiamClient private constructor(
         val closed: java.util.concurrent.atomic.AtomicBoolean,
         val principalTenantId: java.util.concurrent.atomic.AtomicReference<UUID?>,
         val principalReachGate: java.util.concurrent.atomic.AtomicReference<PrincipalReachGate?>,
+        /**
+         * CONTRACT.md §6.1 rule 7 — whether this session was built with a
+         * client identity certificate ([Builder.clientCertificate]). Gates
+         * [AxiamClient.authenticateDevice] client-side, with zero wire calls,
+         * on a client that has none.
+         */
+        val presentsClientCertificate: Boolean,
     ) {
         companion object {
             /** The former `init {}` body: every one-time, session-wide construction step. */
@@ -275,6 +283,18 @@ class AxiamClient private constructor(
                     .build()
                 session.attachHttpClient(httpClient)
 
+                val telemetry = TelemetryDispatcher(b.telemetryHook)
+                val decisionMemo = DecisionMemo(b.decisionMemoTtl.toKotlinDuration())
+                // §19.2 rule 6: a setting we lowered is reported, not swallowed. The
+                // memo TTL is the only clamped setting here — §16.1's table is not
+                // configurable, only switchable — so it is the only emitter.
+                decisionMemo.reportClamp(b.decisionMemoTtl.toKotlinDuration(), telemetry)
+                // Built before `oidcSupport` so its session-established callback can
+                // close over the SAME reference `Core` ends up holding, rather than a
+                // separate one `oidcSupport` could reset without effect.
+                val principalReachGateRef =
+                    java.util.concurrent.atomic.AtomicReference<PrincipalReachGate?>(null)
+
                 // CONTRACT.md §12 — built on this SAME httpClient (§4 cookie jar, §6
                 // TLS, §5 tenant header via AuthHeaderInterceptor already installed
                 // above) and this SAME session (for org defaults / tenant_id
@@ -291,14 +311,17 @@ class AxiamClient private constructor(
                     // §6.1 is all-or-nothing: TlsFactory.build above has already
                     // refused a half-configured pair, so either half implies both.
                     presentsClientCertificate = b.clientCertPem != null,
+                    // §5.2 rule 1 / "For C-12" answer 5: every SSO/federation
+                    // completion establishes a session with no LoginUserInfo to
+                    // read a reach from — reset the gate exactly as
+                    // webauthnFinish and authenticateDevice do, and drop
+                    // whatever the PREVIOUS principal had memoized (§17.1
+                    // rule 9's reasoning, applied here too).
+                    onSessionEstablishedWithUnknownScope = {
+                        principalReachGateRef.set(null)
+                        decisionMemo.clear()
+                    },
                 )
-
-                val telemetry = TelemetryDispatcher(b.telemetryHook)
-                val decisionMemo = DecisionMemo(b.decisionMemoTtl.toKotlinDuration())
-                // §19.2 rule 6: a setting we lowered is reported, not swallowed. The
-                // memo TTL is the only clamped setting here — §16.1's table is not
-                // configurable, only switchable — so it is the only emitter.
-                decisionMemo.reportClamp(b.decisionMemoTtl.toKotlinDuration(), telemetry)
 
                 return Core(
                     baseUrl = baseUrl,
@@ -317,7 +340,8 @@ class AxiamClient private constructor(
                     jitter = b.jitterSource,
                     closed = java.util.concurrent.atomic.AtomicBoolean(false),
                     principalTenantId = java.util.concurrent.atomic.AtomicReference(null),
-                    principalReachGate = java.util.concurrent.atomic.AtomicReference(null),
+                    principalReachGate = principalReachGateRef,
+                    presentsClientCertificate = b.clientCertPem != null,
                 )
             }
         }
@@ -847,6 +871,93 @@ class AxiamClient private constructor(
             // next principal to sign in on this session is not refused (or
             // wrongly allowed) on the strength of someone else's login.
             principalReachGate = null
+        }
+    }
+
+    // ---- §6.1 mTLS device login ------------------------------------------
+
+    /**
+     * `POST /api/v1/auth/device` (CONTRACT.md §6.1 rules 6-10, contract 1.51)
+     * — authenticate this device via the client certificate it was built
+     * with, adopting the result as this client's credential.
+     *
+     * One call, no request body. On success the returned [DeviceAuthResult]
+     * is ALSO adopted: every subsequent REST call on this client (and on any
+     * handle [actingTenant] derives from it, since they share [core]) sends
+     * `Authorization: Bearer <accessToken>` automatically, exactly as a
+     * successful [login] makes [checkAccess] and the §27 management surface
+     * carry a session automatically.
+     *
+     * **Unlike [login], this is not a cookie.** The response carries no
+     * `Set-Cookie` — there is no refresh token, by server design (§6.1 rule
+     * 6) — so the adopted credential rides as a bearer token, never in the
+     * cookie jar, and this client withholds any cookie a PRIOR session left
+     * behind rather than send both: a device token next to a stale cookie is
+     * the exact theft scenario RFC 8705 binding exists to close, and an SDK
+     * that sent both would leave the server to guess which principal is
+     * acting. There is also no reactive refresh: a later `401` on this
+     * credential is surfaced as [io.axiam.sdk.errors.AuthError] as-is (§6.1
+     * rule 8) — recovery is calling [authenticateDevice] again, which costs
+     * one TLS handshake rather than spending a stored secret.
+     *
+     * @throws AuthError, with **zero wire calls**, when this client was built
+     *   without [Builder.clientCertificate] (§6.1 rule 7): going to the wire
+     *   without a certificate can only be refused with `401`, and a
+     *   configuration mistake is not worth turning into a network round trip.
+     * @throws AuthError when the server refuses the certificate: unknown,
+     *   untrusted, expired, revoked, unbound to a service account, or bound
+     *   to a `Server`-type certificate — all `401 authentication_failed`
+     *   (§6.1 rule 8). The server's message is surfaced verbatim.
+     */
+    suspend fun authenticateDevice(): DeviceAuthResult {
+        ensureOpen()
+        // §6.1 rule 7: reachable only on a client configured with a
+        // certificate. Kotlin's type system cannot express "this overload
+        // requires §6.1 identity" without splitting AxiamClient in two, so
+        // this is the client-side refusal rule 7 asks for instead — before
+        // any request is built, let alone sent.
+        if (!presentsClientCertificate) {
+            throw AuthError(
+                "authenticateDevice: this client was built without a client certificate " +
+                    "(Builder.clientCertificate) — the server would refuse with 401 regardless, " +
+                    "so this is refused locally with no wire call (CONTRACT.md §6.1 rule 7)",
+            )
+        }
+        onCredentialChange()
+        // Credential-free (rule 9's concern reaches this call too): a client
+        // that held a prior cookie session must present the certificate
+        // ALONE here, never the old session beside it.
+        postEmptyCredentialFree(DEVICE_AUTH_PATH).use { response ->
+            if (response.code != 200) {
+                if (response.code == 401) {
+                    // §6.1 rule 8: every refusal is a 401 -> AuthError, and
+                    // "the message differs by case" is surfaced verbatim —
+                    // unlike the shared ErrorMapper's fixed 401 message,
+                    // which has no response to read from at every OTHER call
+                    // site (a 403/409 body is the one case it already peeks).
+                    val detail = response.body?.string()?.takeIf { it.isNotBlank() }
+                    throw AuthError("authenticateDevice failed" + (detail?.let { ": $it" } ?: ""))
+                }
+                // A 429 (the route's own per-IP rate limit) falls through to
+                // ErrorMapper's ordinary §16 handling and is never an auth
+                // failure.
+                throw ErrorMapper.fromHttpStatus(response.code, "authenticateDevice failed", response)
+            }
+            val wire = readJson(response)
+            val accessToken = wire.str("access_token")
+            session.adoptDeviceToken(accessToken)
+            // §6.1's device login completes a session without reporting the
+            // principal's reach (it IS a service-account token, aud axiam:m2m,
+            // and no `user` object comes back to read one from) — reset
+            // rather than carry a PREVIOUS login's gate into it, matching
+            // every other session-establishing call that reports no scope
+            // (§5.2 rule 1, "For C-12" answer 5).
+            principalReachGate = null
+            return DeviceAuthResult(
+                accessToken = Sensitive.of(accessToken),
+                tokenType = wire["token_type"]?.jsonPrimitive?.contentOrNull ?: "Bearer",
+                expiresIn = wire["expires_in"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L,
+            )
         }
     }
 
@@ -2259,7 +2370,11 @@ class AxiamClient private constructor(
      */
     private suspend fun postWithRefresh(path: String, body: JsonObject): Response {
         val first = postJson(path, body)
-        if (first.code == 401 && !SessionState.isRefreshPath(path)) {
+        // §6.1 rule 8: a device token has no refresh token, so a 401 on it is
+        // surfaced as-is (AuthError, via the caller's own error mapping) —
+        // never a refresh attempt, even if a stale cookie session happens to
+        // still be sitting in the jar underneath.
+        if (first.code == 401 && !SessionState.isRefreshPath(path) && session.deviceToken() == null) {
             val observed = session.cachedAccessToken()
             if (observed != null) {
                 first.close()
@@ -2313,6 +2428,28 @@ class AxiamClient private constructor(
                 throw NetworkError("request failed: ${e.message}", e)
             }
         }
+
+    /**
+     * A genuinely bodyless POST, withholding this client's session credentials
+     * exactly as [postJsonCredentialFree] does — CONTRACT.md §6.1 rule 6:
+     * `authenticateDevice()` sends no request body at all (the certificate,
+     * presented at the TLS layer, is the credential), and rule 9's stale-cookie
+     * concern applies to this call too — a client that had a prior cookie
+     * session must present the certificate alone, not the old session beside it.
+     */
+    private suspend fun postEmptyCredentialFree(path: String): Response = withContext(Dispatchers.IO) {
+        val request = Request.Builder()
+            .url(baseUrl + path)
+            .header(AuthHeaderInterceptor.NO_SESSION_CREDENTIALS_HEADER, "1")
+            .actingTenantHeader()
+            .post(ByteArray(0).toRequestBody(null))
+            .build()
+        try {
+            httpClient.newCall(request).execute()
+        } catch (e: IOException) {
+            throw NetworkError("request failed: ${e.message}", e)
+        }
+    }
 
     /**
      * The §5.2 flag and the §5.2.2/§5.2.3 scope, read off a completed login
@@ -2691,6 +2828,7 @@ class AxiamClient private constructor(
         private const val OPAQUE_MODE_OPTIONAL = "optional"
 
         private const val LOGOUT_PATH = "/api/v1/auth/logout"
+        private const val DEVICE_AUTH_PATH = "/api/v1/auth/device"
         private const val WEBAUTHN_REGISTER_START_PATH = "/api/v1/auth/webauthn/register/start"
         private const val WEBAUTHN_REGISTER_FINISH_PATH = "/api/v1/auth/webauthn/register/finish"
         private const val WEBAUTHN_AUTH_START_PATH = "/api/v1/auth/webauthn/authenticate/start"

@@ -328,4 +328,106 @@ class ActingTenantTest {
         assertEquals(2, requestsTo("/api/v1/authz/check").size, "the memo did not answer the second from the first")
         base.close()
     }
+
+    // -------------------------------------------------------------------
+    // Present when set: refresh, logout, and a self-service POST
+    // (orchestrator review lesson 1 — CONTRACT.md §5.2.2 rule 4: "Send the
+    // header as normal; the server decides", which is a MUST for every
+    // /api/v1 call, not only management/authz).
+    // -------------------------------------------------------------------
+
+    /**
+     * The header is sent, not withheld, on `refresh`, `logout` and a
+     * self-service POST (`mfaEnroll`) when the handle acts on a tenant —
+     * completing the pair with "a client without an acting tenant sends no
+     * header anywhere", which already pins the ABSENT half for these same
+     * three calls.
+     */
+    @Test
+    fun `refresh, logout and a self-service call send the header when set`() {
+        val client = loggedInClient(orgAdmin)
+        val acting = client.actingTenant(otherTenant)
+        routes["POST /api/v1/auth/refresh"] = TestSupport.loginOkResponse()
+        mount(
+            "POST", "/api/v1/auth/mfa/enroll", 200,
+            """{"secret_base32":"JBSWY3DPEHPK3PXP","totp_uri":"otpauth://totp/x"}""",
+        )
+        mount("POST", "/api/v1/auth/logout", 204, "")
+
+        runBlocking {
+            acting.mfaEnroll()
+            acting.refresh()
+        }
+        val loggingOut = client.actingTenant(otherTenant)
+        runBlocking { loggingOut.logout() }
+
+        for (path in listOf("/api/v1/auth/mfa/enroll", "/api/v1/auth/refresh", "/api/v1/auth/logout")) {
+            val sent = requestsTo(path)
+            assertTrue(sent.isNotEmpty(), path)
+            assertEquals(otherTenant.toString(), actingHeader(sent.last()), path)
+        }
+    }
+
+    // -------------------------------------------------------------------
+    // Orchestrator review lesson 2 — every session-establishing call that
+    // reports no LoginUserInfo (SSO/federation completions; WebAuthn's own
+    // plain login is pinned in DeviceAuthTest/WebauthnTest's own suites)
+    // resets the gate to "nothing known", not to the PREVIOUS principal's.
+    // -------------------------------------------------------------------
+
+    /**
+     * A login that reported `organization_level: false` refuses
+     * `actingTenant`; completing an SSO sign-in on the SAME client — which
+     * reports no such flag at all — must not leave that refusal in force.
+     * The twin: a FAILED SSO completion changes nothing, and the gate the
+     * first login set is still in force.
+     *
+     * **This is the test a reverted `onSessionEstablishedWithUnknownScope`
+     * callback turns red**: without it, `actingTenant` keeps refusing after
+     * the SSO completion, on the strength of the first login's report.
+     */
+    @Test
+    fun `an SSO completion resets the gate the previous login set`() {
+        var ssoShouldSucceed = true
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                val path = request.path.orEmpty().substringBefore('?')
+                if (path == "/api/v1/auth/login") {
+                    return TestSupport.loginOkResponse().setBody("""{"user":{"username":"a"}}""")
+                }
+                if (path == "/api/v1/auth/federation/oidc/callback") {
+                    return if (ssoShouldSucceed) {
+                        TestSupport.loginOkResponse().setBody(
+                            """{"user_id":"${UUID.randomUUID()}","session_id":"${UUID.randomUUID()}",""" +
+                                """"expires_in":900,"redirect_uri":"https://app.example/done"}""",
+                        )
+                    } else {
+                        MockResponse().setResponseCode(401).setBody("bad code")
+                    }
+                }
+                seen += request
+                return MockResponse().setResponseCode(501)
+            }
+        }
+        server.start()
+        val client = AxiamClient.builder(server.url("/").toString(), TestSupport.TENANT_ID)
+            .orgId(TestSupport.ORG_ID)
+            .build()
+        runBlocking { client.login("root@example.com", "hunter2hunter2") }
+        assertThrows(AuthzError::class.java) { client.actingTenant(otherTenant) }
+
+        // The twin: a FAILED completion leaves the gate exactly as it was.
+        ssoShouldSucceed = false
+        assertThrows(RuntimeException::class.java) {
+            runBlocking { client.ssoComplete(io.axiam.sdk.oidc.SsoCompleteParams(state = "s", code = "c")) }
+        }
+        assertThrows(AuthzError::class.java) { client.actingTenant(otherTenant) }
+
+        // A successful completion resets it: nothing is known any more, so
+        // the server's 403 is the answer instead of a client-side refusal.
+        ssoShouldSucceed = true
+        runBlocking { client.ssoComplete(io.axiam.sdk.oidc.SsoCompleteParams(state = "s", code = "c")) }
+        assertTrue(runCatching { client.actingTenant(otherTenant) }.isSuccess)
+        client.close()
+    }
 }

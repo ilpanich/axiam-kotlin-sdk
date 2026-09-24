@@ -104,7 +104,12 @@ class ManagementTransport internal constructor(
      * missing session instead of a 401 they have to interpret.
      */
     private fun requireSession(operation: String) {
-        if (sessionState.cachedAccessToken() == null) {
+        // CONTRACT.md §6.1 rule 10: an adopted device token (aud axiam:m2m)
+        // is a service-account session that authorizes §27 operations exactly
+        // as a user's would — it carries no cookie, so the cookie-derived
+        // check alone would wrongly refuse every management call a device
+        // makes.
+        if (sessionState.cachedAccessToken() == null && sessionState.deviceToken() == null) {
             throw AuthError(
                 "$operation: no active session. The management API acts as the logged-in " +
                     "administrator, so call login() (or complete an OAuth2 flow) first — " +
