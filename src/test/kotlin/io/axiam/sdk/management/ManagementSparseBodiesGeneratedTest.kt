@@ -305,6 +305,10 @@ class ManagementSparseBodiesGeneratedTest {
             TenantSettingsOverride.serializer(), "sensitive_scopes_enabled",
         )
         assertKeys(
+            TenantSettingsOverride(serverCertAllowedNames = emptyList()),
+            TenantSettingsOverride.serializer(), "server_cert_allowed_names",
+        )
+        assertKeys(
             TenantSettingsOverride(webauthnUserVerification = "example"),
             TenantSettingsOverride.serializer(), "webauthn_user_verification",
         )
@@ -343,6 +347,7 @@ class ManagementSparseBodiesGeneratedTest {
                 requireSymbols = true,
                 requireUppercase = true,
                 sensitiveScopesEnabled = true,
+                serverCertAllowedNames = emptyList(),
                 webauthnUserVerification = "example",
             ),
             TenantSettingsOverride.serializer(),
@@ -356,7 +361,7 @@ class ManagementSparseBodiesGeneratedTest {
             "mfa_challenge_lifetime_secs", "mfa_enforced", "min_length", "opaque_ksf",
             "opaque_mode", "opaque_suite", "password_history_count", "refresh_token_lifetime_secs",
             "require_digits", "require_lowercase", "require_symbols", "require_uppercase",
-            "sensitive_scopes_enabled", "webauthn_user_verification",
+            "sensitive_scopes_enabled", "server_cert_allowed_names", "webauthn_user_verification",
         )
         assertKeys(TenantSettingsOverride(), TenantSettingsOverride.serializer())
     }

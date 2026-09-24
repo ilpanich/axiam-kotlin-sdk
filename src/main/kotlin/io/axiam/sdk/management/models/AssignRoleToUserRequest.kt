@@ -11,6 +11,13 @@ import kotlinx.serialization.Serializable
 /**
  * The AssignRoleToUserRequest schema from the server's OpenAPI document.
  *
+ * @property inherit Whether the assignment also reaches the descendants of `resource_id`.
+ *     Omitted — the default — or `true` is today's behaviour: a resource-scoped assignment applies
+ *     at its resource and everywhere below it. `false` applies it at `resource_id` only, "here and
+ *     no further", for allow and deny grants alike. Refused with 400 when `false` is sent with no
+ *     `resource_id` (a tenant-wide assignment has no node to stop at) or for a role with
+ *     `is_global: true` (a global role applies everywhere by definition). The flag is part of the
+ *     assignment: to change it, unassign and assign again.
  * @property resourceId the server's resource_id field
  * @property tenantScope The tenants this assignment reaches. Only meaningful for an assignment
  *     made in an organization's scope, whose global roles otherwise reach every tenant of the
@@ -22,6 +29,7 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class AssignRoleToUserRequest(
+    @SerialName("inherit") val inherit: Boolean? = null,
     @SerialName("resource_id") val resourceId: @Serializable(with = UuidSerializer::class) UUID? = null,
     @SerialName("tenant_scope") val tenantScope: List<@Serializable(with = UuidSerializer::class) UUID>? = null,
     @SerialName("user_id") val userId: @Serializable(with = UuidSerializer::class) UUID,

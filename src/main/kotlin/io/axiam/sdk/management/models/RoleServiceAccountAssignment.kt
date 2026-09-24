@@ -11,6 +11,10 @@ import kotlinx.serialization.Serializable
 /**
  * A service account together with the resource scope of its assignment.
  *
+ * @property inherit Whether the assignment also reaches the descendants of `resource_id`
+ *     (`true`, the default) or applies at that resource only (`false`). A server that omits this
+ *     (older than contract 1.51) means `true` -- reaches descendants -- which is this property's
+ *     default rather than a decode failure on the whole response (CONTRACT §27.13 S-10 rule 3).
  * @property resourceId `None` means the role was assigned globally (no resource scope).
  * @property serviceAccount The assigned service account. Carries no secret — the client secret
  *     is returned once, at creation, and never again.
@@ -20,6 +24,7 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class RoleServiceAccountAssignment(
+    @SerialName("inherit") val inherit: Boolean = true,
     @SerialName("resource_id") val resourceId: @Serializable(with = UuidSerializer::class) UUID? = null,
     @SerialName("service_account") val serviceAccount: ServiceAccountResponse,
     @SerialName("tenant_scope") val tenantScope: List<@Serializable(with = UuidSerializer::class) UUID>? = null,

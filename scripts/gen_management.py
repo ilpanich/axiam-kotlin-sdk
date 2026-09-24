@@ -263,6 +263,45 @@ def flatten(name: str) -> tuple[dict[str, Any], set[str], str | None]:
     return props, required, schema.get("description")
 
 
+def externally_tagged(schema: Any) -> list[tuple[str, Any]] | None:
+    """Detects an EXTERNALLY tagged ``oneOf``: arms with no shared discriminator
+    field, where each arm's own single property key IS the tag -- e.g.
+    ``{"dns": "..."} | {"ip": "..."}`` (``SubjectAltName``, contract 1.51).
+
+    Distinct from :func:`discriminated`, whose arms share a `type`-style enum
+    property. kotlinx.serialization's generated polymorphic serializer always
+    adds such a discriminator PROPERTY (`@JsonClassDiscriminator`), which
+    cannot produce a bare single-key wrapper -- the ONLY thing this shape
+    lowers to, un-special-cased, is a data class with no top-level properties
+    (nothing here is INSIDE a `properties` object), which serializes as `{}`
+    and is refused by the server. That was a real defect: the re-vendor to
+    contract 1.51 was the first time this SDK's generator met a oneOf shaped
+    this way, and it silently produced an object with no fields at all.
+
+    Restricted to string-valued single-property arms, which is every case this
+    SDK's schemas use today; a schema outside that returns ``None`` rather
+    than emitting a serializer that cannot actually round-trip it.
+    """
+    variants = schema.get("oneOf") if isinstance(schema, dict) else None
+    if not isinstance(variants, list) or len(variants) < 2:
+        return None
+    arms: list[tuple[str, Any]] = []
+    seen_keys: set[str] = set()
+    for variant in variants:
+        if not isinstance(variant, dict) or "$ref" in variant or "allOf" in variant:
+            return None
+        props = variant.get("properties") or {}
+        required = variant.get("required") or []
+        if len(props) != 1 or list(props.keys()) != list(required):
+            return None
+        key = next(iter(props))
+        if key in seen_keys or kotlin_type(props[key]) != "String":
+            return None
+        seen_keys.add(key)
+        arms.append((key, props[key]))
+    return arms
+
+
 def discriminated(schema: Any) -> tuple[str, list[tuple[str, Any]]] | None:
     """Detect an internally-tagged union and return ``(tag, [(value, payload)])``."""
     variants = schema.get("oneOf")
@@ -411,6 +450,11 @@ def kotlin_type(schema: Any) -> str:
 
 def model_imports(rendered: str) -> list[str]:
     """The imports a generated model file needs, from what it actually renders."""
+    # `encodeJsonElement`/`decodeJsonElement` (JsonEncoder/JsonDecoder member
+    # calls, needing no import of their own) contain "JsonElement" as a
+    # substring, which would otherwise false-positive an unused import for a
+    # file that never names the JsonElement TYPE.
+    matched_against = rendered.replace("encodeJsonElement", "").replace("decodeJsonElement", "")
     wanted = [
         ("io.axiam.sdk.Sensitive", "Sensitive"),
         ("io.axiam.sdk.management.InstantSerializer", "InstantSerializer"),
@@ -427,10 +471,19 @@ def model_imports(rendered: str) -> list[str]:
         ("kotlinx.serialization.descriptors.SerialDescriptor", "SerialDescriptor"),
         ("kotlinx.serialization.encoding.Decoder", "Decoder"),
         ("kotlinx.serialization.encoding.Encoder", "Encoder"),
+        # The externally-tagged-oneOf serializer (see emit_externally_tagged).
+        ("kotlinx.serialization.SerializationException", "SerializationException"),
+        ("kotlinx.serialization.descriptors.buildClassSerialDescriptor", "buildClassSerialDescriptor"),
+        ("kotlinx.serialization.json.JsonDecoder", "JsonDecoder"),
+        ("kotlinx.serialization.json.JsonEncoder", "JsonEncoder"),
+        ("kotlinx.serialization.json.buildJsonObject", "buildJsonObject"),
+        ("kotlinx.serialization.json.jsonObject", "jsonObject"),
+        ("kotlinx.serialization.json.jsonPrimitive", "jsonPrimitive"),
+        ("kotlinx.serialization.json.put", "put("),
         ("java.time.Instant", "Instant"),
         ("java.util.UUID", "UUID"),
     ]
-    return sorted(fqn for fqn, token in wanted if token in rendered)
+    return sorted(fqn for fqn, token in wanted if token in matched_against)
 
 
 def header(rendered: str, package: str) -> str:
@@ -586,11 +639,29 @@ def emit_enum(name: str, schema: Any) -> str:
     return header("\n".join(body), MODELS_PACKAGE)
 
 
+# §27.13 S-10 rule 3 / contract 1.51: a role-side assignment listing
+# (RoleUserAssignment, RoleGroupAssignment, RoleServiceAccountAssignment) marks
+# `inherit` REQUIRED, but a server older than 1.51 sends none. A plain
+# `val inherit: Boolean` generated from that would fail kotlinx.serialization's
+# decode of the WHOLE listing on one missing field the moment this SDK talks
+# to an older server -- exactly the failure mode §27.11 rule 1 forbids for an
+# unrecognised enum value, applied here to an unrecognised-as-absent boolean.
+# The contract's own default for an absent `inherit` is `true` (an assignment
+# reaches descendants unless it says otherwise), so a required field in this
+# set is generated as `Boolean = true` -- not nullable, not `= false`, and not
+# left as a hard requirement -- rather than the schema's literal "required".
+DEFAULT_TRUE_FIELDS = {"inherit"}
+
+
 def emit_data_class(name: str, secrets: set[str], replacement: bool) -> str:
     """A ``@Serializable data class`` for an object schema."""
     type_name = pascal(name)
     fields, required, description = field_list(name, secrets)
-    all_optional = bool(fields) and not required
+    # A DEFAULT_TRUE_FIELDS member defaults rather than being a hard
+    # requirement (see that constant's own comment), so it does not count
+    # against "every property is required" / "all properties are optional".
+    defaultable_required = required - DEFAULT_TRUE_FIELDS
+    all_optional = bool(fields) and not defaultable_required
 
     text = escape(description or f"The {type_name} schema from the server's OpenAPI document.")
     if all_optional:
@@ -612,6 +683,10 @@ def emit_data_class(name: str, secrets: set[str], replacement: bool) -> str:
         if f["secret"]:
             doc += (" -- SECRET: redacted from toString and from every rendering except the "
                     "one request body it is sent in")
+        if f["wire"] in DEFAULT_TRUE_FIELDS and f["required"]:
+            doc += (" A server that omits this (older than contract 1.51) means `true` -- "
+                    "reaches descendants -- which is this property's default rather than a "
+                    "decode failure on the whole response (CONTRACT §27.13 S-10 rule 3).")
         tags.append(f"@property {f['name'].strip('`')} {doc}")
 
     body: list[str] = kdoc(text, "", tags)
@@ -622,8 +697,13 @@ def emit_data_class(name: str, secrets: set[str], replacement: bool) -> str:
 
     body.append(f"data class {type_name}(")
     for f in fields:
-        default = "" if f["required"] else " = null"
-        nullable = "" if f["required"] else "?"
+        if f["wire"] in DEFAULT_TRUE_FIELDS and f["required"] and f["type"] == "Boolean":
+            # §27.13 S-10 rule 3: required-on-the-wire, defaulted here -- see
+            # DEFAULT_TRUE_FIELDS. Neither nullable nor a hard requirement.
+            default, nullable = " = true", ""
+        else:
+            default = "" if f["required"] else " = null"
+            nullable = "" if f["required"] else "?"
         body.append(f'    @SerialName("{f["wire"]}") val {f["name"]}: {f["type"]}{nullable}{default},')
     body.append(")")
     return header("\n".join(body), MODELS_PACKAGE)
@@ -677,6 +757,77 @@ def emit_union(name: str, schema: Any, tag: str, arms: list[tuple[str, Any]]) ->
     return files
 
 
+def emit_externally_tagged(name: str, schema: Any, arms: list[tuple[str, Any]]) -> str:
+    """A sealed interface for a schema whose ``oneOf`` arms are externally
+    tagged by their own single property key (``SubjectAltName``, contract
+    1.51): the wire shape is ``{"dns": "..."}`` or ``{"ip": "..."}``, never a
+    shared discriminator field, so this carries a hand-written ``KSerializer``
+    rather than ``@JsonClassDiscriminator`` -- kotlinx.serialization's
+    generated polymorphic serializer cannot produce a bare single-key wrapper.
+    """
+    type_name = pascal(name)
+    variants = [f"{type_name}{pascal(key)}" for key, _ in arms]
+    wire_shapes = " or ".join(f'`{{"{key}": ...}}`' for key, _ in arms)
+
+    lines = kdoc(
+        escape(schema.get("description") or f"A {type_name} value.")
+        + f"\n\nAn EXTERNALLY TAGGED `oneOf`: the wire shape is {wire_shapes} -- the "
+          "key itself is the tag, not a shared discriminator field. "
+          "kotlinx.serialization's built-in polymorphism always adds a discriminator "
+          f"PROPERTY, which cannot produce this shape, so {type_name} carries a "
+          "hand-written `KSerializer` instead.")
+    lines.append(f"@Serializable(with = {type_name}.Companion.Serializer::class)")
+    lines.append(f"sealed interface {type_name} {{")
+    lines.append("")
+    for (key, value_schema), variant in zip(arms, variants):
+        doc = escape(value_schema.get("description") or f"the `{key}` value")
+        lines.extend(kdoc(doc, "    ", [f"@property {prop(key)} {doc}"]))
+        lines.append(f"    data class {variant}(val {prop(key)}: String) : {type_name}")
+        lines.append("")
+    lines.append("    companion object {")
+    lines.append("        /**")
+    lines.append(f"         * Hand-rolled because {type_name} is externally tagged (see the")
+    lines.append("         * type's own doc): kotlinx.serialization's generated polymorphic")
+    lines.append("         * serializer always adds a `type`-style tag field, and the ONE")
+    lines.append("         * thing an un-special-cased `oneOf` of this shape lowers to is a")
+    lines.append("         * data class with no top-level properties -- which serializes as")
+    lines.append("         * `{}`, and the server refuses an empty object outright.")
+    lines.append("         */")
+    lines.append(f"        internal object Serializer : KSerializer<{type_name}> {{")
+    lines.append("            override val descriptor: SerialDescriptor =")
+    lines.append(f'                buildClassSerialDescriptor("{MODELS_PACKAGE}.{type_name}")')
+    lines.append("")
+    lines.append(f"            override fun serialize(encoder: Encoder, value: {type_name}) {{")
+    lines.append("                val output = encoder as? JsonEncoder")
+    lines.append(f'                    ?: error("{type_name} can only be serialized as JSON")')
+    lines.append("                val json = when (value) {")
+    for (key, _), variant in zip(arms, variants):
+        lines.append(f"                    is {variant} -> "
+                      f'buildJsonObject {{ put("{key}", value.{prop(key)}) }}')
+    lines.append("                }")
+    lines.append("                output.encodeJsonElement(json)")
+    lines.append("            }")
+    lines.append("")
+    lines.append(f"            override fun deserialize(decoder: Decoder): {type_name} {{")
+    lines.append("                val input = decoder as? JsonDecoder")
+    lines.append(f'                    ?: error("{type_name} can only be deserialized from JSON")')
+    lines.append("                val obj = input.decodeJsonElement().jsonObject")
+    for i, ((key, _), variant) in enumerate(zip(arms, variants)):
+        keyword = "                if" if i == 0 else "                } else if"
+        lines.append(f'{keyword} ("{key}" in obj) {{')
+        lines.append(f'                    return {variant}(obj.getValue("{key}").jsonPrimitive.content)')
+    lines.append("                }")
+    keys_list = ", ".join(f'\\"{key}\\"' for key, _ in arms)
+    lines.append("                throw SerializationException(")
+    lines.append(f'                    "{type_name}: expected one of [{keys_list}], got: $obj",')
+    lines.append("                )")
+    lines.append("            }")
+    lines.append("        }")
+    lines.append("    }")
+    lines.append("}")
+    return header("\n".join(lines), MODELS_PACKAGE)
+
+
 def emit_models() -> dict[str, str]:
     """Every generated model file, keyed by repository-relative path."""
     secrets = sensitive_map()
@@ -686,6 +837,10 @@ def emit_models() -> dict[str, str]:
         schema = SCHEMAS[name]
         if "enum" in schema and schema.get("type") == "string":
             files[f"{MODELS_DIR}/{pascal(name)}.kt"] = emit_enum(name, schema)
+            continue
+        tagged = externally_tagged(schema)
+        if tagged:
+            files[f"{MODELS_DIR}/{pascal(name)}.kt"] = emit_externally_tagged(name, schema, tagged)
             continue
         union = discriminated(schema)
         if union:

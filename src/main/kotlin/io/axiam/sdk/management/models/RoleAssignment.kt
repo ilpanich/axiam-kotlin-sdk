@@ -11,12 +11,16 @@ import kotlinx.serialization.Serializable
 /**
  * A role together with its assignment context (the resource it is scoped to).
  *
+ * @property inherit Whether the assignment reaches the descendants of `resource_id` as well as
+ *     the resource itself (`true`, the default, and the value of every assignment written before
+ *     the field existed) or applies at that resource only (`false`).
  * @property resourceId `None` means the role was assigned globally (no resource scope).
  * @property role the server's role field
  * @property tenantScope The tenants this assignment reaches. See &#91;`TenantScope`&#93;.
  */
 @Serializable
 data class RoleAssignment(
+    @SerialName("inherit") val inherit: Boolean? = null,
     @SerialName("resource_id") val resourceId: @Serializable(with = UuidSerializer::class) UUID? = null,
     @SerialName("role") val role: Role,
     @SerialName("tenant_scope") val tenantScope: List<@Serializable(with = UuidSerializer::class) UUID>? = null,

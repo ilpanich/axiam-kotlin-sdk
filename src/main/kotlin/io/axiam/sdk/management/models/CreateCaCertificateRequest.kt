@@ -21,7 +21,9 @@ import kotlinx.serialization.Serializable
  *     root that signs only an intermediate can have that intermediate revoked and replaced without
  *     redistributing the trust anchor, and a root that signs leaves cannot.
  * @property keyAlgorithm the server's key_algorithm field
- * @property subject the server's subject field
+ * @property subject The CA's common name, e.g. `ACME Corp Root CA`. A **common name**, not a
+ *     distinguished name. A single `CN=` prefix is accepted and stripped; anything else containing
+ *     `=` — `O=Acme, CN=ACME Corp Root CA` — is refused with `400`.
  * @property validityDays Validity duration in days.
  */
 @Serializable

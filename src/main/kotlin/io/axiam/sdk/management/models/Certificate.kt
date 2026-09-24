@@ -30,7 +30,9 @@ import kotlinx.serialization.json.JsonElement
  * @property notBefore Validity start.
  * @property publicCertPem PEM-encoded public certificate.
  * @property status the server's status field
- * @property subject The certificate subject (e.g., `CN=device-001`).
+ * @property subject The certificate's common name, e.g. `device-001`. The normalised value: a
+ *     `CN=` prefix in the request is understood and stripped, so this always says what the
+ *     certificate's subject DN says (DF-023).
  * @property tenantId The tenant this certificate belongs to.
  */
 @Serializable

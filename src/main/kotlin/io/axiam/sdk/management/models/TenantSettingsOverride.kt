@@ -50,6 +50,9 @@ import kotlinx.serialization.Serializable
  * @property requireSymbols the server's require_symbols field
  * @property requireUppercase the server's require_uppercase field
  * @property sensitiveScopesEnabled the server's sensitive_scopes_enabled field
+ * @property serverCertAllowedNames S-7 — tighten-only: every entry must be covered by an
+ *     organization entry. An empty list means this tenant issues no `Server` certificate at all,
+ *     which is different from an absent field (inherit the organization's list).
  * @property webauthnUserVerification the server's webauthn_user_verification field
  */
 @Serializable
@@ -87,5 +90,6 @@ data class TenantSettingsOverride(
     @SerialName("require_symbols") val requireSymbols: Boolean? = null,
     @SerialName("require_uppercase") val requireUppercase: Boolean? = null,
     @SerialName("sensitive_scopes_enabled") val sensitiveScopesEnabled: Boolean? = null,
+    @SerialName("server_cert_allowed_names") val serverCertAllowedNames: List<String>? = null,
     @SerialName("webauthn_user_verification") val webauthnUserVerification: String? = null,
 )

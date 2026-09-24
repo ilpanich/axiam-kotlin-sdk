@@ -57,7 +57,9 @@ import kotlinx.serialization.Serializable
  *     under `vault_pki` custody is the intermediate rather than the root beneath which it was
  *     created.
  * @property status the server's status field
- * @property subject The certificate subject (e.g., `CN=ACME Corp Root CA`).
+ * @property subject The CA's common name, e.g. `ACME Corp Root CA`. The normalised value: a
+ *     `CN=` prefix in the request is understood and stripped, so this always says what the
+ *     certificate's subject DN says (DF-023).
  * @property tenantId The tenant this CA signs for, when it is a tenant signing CA. `None` for
  *     an organization-level CA — the trust anchor, and the only kind that existed before tenant
  *     signing CAs. `Some` for an intermediate created under one, which exists so a tenant's user,
