@@ -412,4 +412,79 @@ class LocalVerificationSetTest {
         assertTrue(!tp.contains("=") && !tp.contains("+") && !tp.contains("/"))
         assertEquals(tp, JwksVerifier.certificateThumbprintS256(der))
     }
+
+    // --- Rule 9 at the DEFAULT entry point (contract 1.51 fix) ------------------
+    //
+    // The defect this section pins: `verifySession` — the documented §10 guard
+    // entry point every `AxiamUser`, the §11 macros and the §28 guard reach —
+    // applied rules 1-7 but never rule 9. A device login's token (§6.1 rules 6/9,
+    // `cnf.x5t#S256`) lifted off the device therefore opened every guarded route,
+    // because the guard read it as an ordinary bearer token. The same defect was
+    // found, and fixed the same way, in the Rust, TypeScript, Go and Python ports.
+    //
+    // The fix: `verifySession` gained a `presentedProofs` parameter defaulting to
+    // `PresentedProofs.none()`, and now calls `verifyTokenBinding` after the claim
+    // checks. An unbound token is unaffected (rule 9's first row); a bound token
+    // is refused UNLESS the caller threads through the proof it holds — which for
+    // most callers of this SDK (no HTTP server framework of its own) means never,
+    // so a bound token reaching this entry point is refused by default, exactly
+    // as the "no evidence" case should be.
+
+    /**
+     * **This is the test that pins the fix and that a reverted
+     * `verifyTokenBinding` call in `verifySession` turns red.** A device
+     * token, presented with no evidence (the default), must not be accepted
+     * as an ordinary bearer token — accepting it silently degrades §6.1's
+     * certificate binding to nothing.
+     */
+    @Test
+    fun `rule 9 - the default verifySession call refuses a bound token with no evidence`() {
+        val bound = signEd25519(boundClaims(thumbprint))
+        val e = assertThrows(AuthError::class.java) { client().use { it.verifySession(bound) } }
+        assertTrue(e.message!!.contains("cnf") || e.message!!.contains("certificate"), e.message)
+    }
+
+    /**
+     * The I4 twin: an ordinary unbound token — every token this SDK issued
+     * before §6.1 existed, and every one a non-mTLS deployment ever will —
+     * verifies exactly as it always did. Rule 9's fix must not turn into a
+     * certificate mandate for callers who never asked for one.
+     */
+    @Test
+    fun `rule 9 - the default verifySession call is unaffected for an unbound token`() {
+        val token = signEd25519(claims())
+        client().use { c ->
+            val user = c.verifySession(token)
+            assertEquals("user-1", user.userId)
+        }
+    }
+
+    /**
+     * A caller that DOES have evidence — an integrator embedding this SDK in
+     * a server that terminated the mTLS handshake itself — threads it
+     * through explicitly and the same token that was refused above is
+     * accepted.
+     */
+    @Test
+    fun `rule 9 - the default verifySession call accepts a bound token when the caller proves it`() {
+        val bound = signEd25519(boundClaims(thumbprint))
+        client().use { c ->
+            val user = c.verifySession(
+                bound,
+                io.axiam.sdk.internal.PresentedProofs.certificate(thumbprint),
+            )
+            assertEquals("user-1", user.userId)
+        }
+    }
+
+    /** The wrong certificate is still a refusal, not merely "no certificate". */
+    @Test
+    fun `rule 9 - the default verifySession call refuses a bound token proved with the wrong certificate`() {
+        val bound = signEd25519(boundClaims(thumbprint))
+        client().use { c ->
+            assertThrows(AuthError::class.java) {
+                c.verifySession(bound, io.axiam.sdk.internal.PresentedProofs.certificate(otherThumbprint))
+            }
+        }
+    }
 }

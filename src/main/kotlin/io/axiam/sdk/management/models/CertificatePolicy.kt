@@ -11,9 +11,18 @@ import kotlinx.serialization.Serializable
  *
  * @property defaultCertValidityDays the server's default_cert_validity_days field
  * @property maxCertValidityDays the server's max_cert_validity_days field
+ * @property serverCertAllowedNames The names a `Server` certificate may be issued for (S-7,
+ *     DF-001): DNS suffixes (`.lakeside.internal`, strictly below), exact hosts
+ *     (`lakeside.internal`) and IP prefixes (`10.0.0.0/8`, `fd00::/8`). See
+ *     &#91;`crate::models::server_names`&#93; for the matching rules. **Empty by default, and
+ *     empty refuses every `Server` request** (I1). A certificate for a name, signed under the
+ *     organization root, is trusted by every relying party that trusts that root, so the list is
+ *     written where the root is owned. A tenant override may only remove an entry or narrow one;
+ *     when the baseline later shrinks, the tenant's effective list is the intersection of the two.
  */
 @Serializable
 data class CertificatePolicy(
     @SerialName("default_cert_validity_days") val defaultCertValidityDays: Int,
     @SerialName("max_cert_validity_days") val maxCertValidityDays: Int,
+    @SerialName("server_cert_allowed_names") val serverCertAllowedNames: List<String>? = null,
 )

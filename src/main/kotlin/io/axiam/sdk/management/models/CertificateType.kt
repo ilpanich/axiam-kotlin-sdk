@@ -31,6 +31,8 @@ enum class CertificateType(val wire: String) {
 
     DEVICE("Device"),
 
+    SERVER("Server"),
+
     /** A value this SDK's copy of the spec does not list; see the type's doc. */
     UNKNOWN("");
 

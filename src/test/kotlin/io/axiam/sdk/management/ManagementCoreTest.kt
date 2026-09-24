@@ -212,7 +212,8 @@ class ManagementCoreTest : ManagementTestBase() {
                         users = listOf(
                             ManagementManifest.UserSpec(
                                 "alice", "alice", "a@example.test", null,
-                                roles = listOf("ghost-role"), groups = listOf("ghost-group"),
+                                roles = listOf(ManagementManifest.RoleBinding.of("ghost-role")),
+                                groups = listOf("ghost-group"),
                             ),
                         ),
                     ),

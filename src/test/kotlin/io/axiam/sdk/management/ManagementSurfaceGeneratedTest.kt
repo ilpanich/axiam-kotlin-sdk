@@ -488,7 +488,7 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
     /** Exercises roles.list_users. */
     @Test
     fun `roles list_users`() = runTest {
-        val body = "[{\"user\": {\"created_at\": \"2026-08-26T00:00:00Z\", \"email\": \"example\", \"email_verified\": true, \"failed_login_attempts\": 1, \"id\": \"11111111-1111-4111-8111-111111111111\", \"is_locked\": true, \"metadata\": null, \"mfa_enabled\": true, \"status\": \"Active\", \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"updated_at\": \"2026-08-26T00:00:00Z\", \"username\": \"example\"}}]"
+        val body = "[{\"inherit\": true, \"user\": {\"created_at\": \"2026-08-26T00:00:00Z\", \"email\": \"example\", \"email_verified\": true, \"failed_login_attempts\": 1, \"id\": \"11111111-1111-4111-8111-111111111111\", \"is_locked\": true, \"metadata\": null, \"mfa_enabled\": true, \"status\": \"Active\", \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"updated_at\": \"2026-08-26T00:00:00Z\", \"username\": \"example\"}}]"
         mount("GET", "/api/v1/roles/$EXAMPLE_ID/users", 200, body)
         val result = client.management().roles().listUsers(roleId = EXAMPLE_ID)
         val item = Json.parseToJsonElement(body).jsonArray.first().toString()
@@ -514,7 +514,7 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
     /** Exercises roles.list_groups. */
     @Test
     fun `roles list_groups`() = runTest {
-        val body = "[{\"group\": {\"created_at\": \"2026-08-26T00:00:00Z\", \"description\": \"example\", \"id\": \"11111111-1111-4111-8111-111111111111\", \"metadata\": null, \"name\": \"example\", \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"updated_at\": \"2026-08-26T00:00:00Z\"}}]"
+        val body = "[{\"group\": {\"created_at\": \"2026-08-26T00:00:00Z\", \"description\": \"example\", \"id\": \"11111111-1111-4111-8111-111111111111\", \"metadata\": null, \"name\": \"example\", \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"updated_at\": \"2026-08-26T00:00:00Z\"}, \"inherit\": true}]"
         mount("GET", "/api/v1/roles/$EXAMPLE_ID/groups", 200, body)
         val result = client.management().roles().listGroups(roleId = EXAMPLE_ID)
         val item = Json.parseToJsonElement(body).jsonArray.first().toString()
@@ -566,7 +566,7 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
     /** Exercises roles.list_service_accounts. */
     @Test
     fun `roles list_service_accounts`() = runTest {
-        val body = "[{\"service_account\": {\"client_id\": \"example\", \"created_at\": \"2026-08-26T00:00:00Z\", \"id\": \"11111111-1111-4111-8111-111111111111\", \"name\": \"example\", \"status\": \"Active\", \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"updated_at\": \"2026-08-26T00:00:00Z\"}}]"
+        val body = "[{\"inherit\": true, \"service_account\": {\"client_id\": \"example\", \"created_at\": \"2026-08-26T00:00:00Z\", \"id\": \"11111111-1111-4111-8111-111111111111\", \"name\": \"example\", \"status\": \"Active\", \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"updated_at\": \"2026-08-26T00:00:00Z\"}}]"
         mount("GET", "/api/v1/roles/$EXAMPLE_ID/service-accounts", 200, body)
         val result = client.management().roles().listServiceAccounts(roleId = EXAMPLE_ID)
         val item = Json.parseToJsonElement(body).jsonArray.first().toString()

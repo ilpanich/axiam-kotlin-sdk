@@ -7,6 +7,90 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Contract 1.51.** Re-vendored `CONTRACT.md`, `openapi.json` and `management-registry.json`
+  from `axiam` `56fbe44` (merge of #497); `CONTRACT.md` sha256 `0ac7fd75f83c…`, matching the
+  reference (Rust) port byte for byte. `proto/` was already identical. `scripts/gen_management.py`
+  regenerated the §27 surface (still 162 operations, 24 namespaces) and picked up two generator
+  defects the re-vendor exposed — the same pair the Rust reference found:
+  - `SubjectAltName`, an externally-tagged `oneOf` (`{"dns": …}` | `{"ip": …}`, no shared
+    discriminator), fell through to a zero-property class and serialized as `{}`. A new
+    `externally_tagged()` detector + `emit_externally_tagged()` emitter now generate a sealed
+    interface with a hand-written `KSerializer` for the single-key wire shape.
+  - `inherit` is required on the three role-side assignment listings
+    (`RoleUserAssignment`/`RoleGroupAssignment`/`RoleServiceAccountAssignment`); a server older
+    than 1.51 omits it, which used to fail decoding the whole listing. A `DEFAULT_TRUE_FIELDS`
+    name list in the generator now defaults a required-but-absent `inherit` to `true`.
+
+  Pinned by `Contract151ModelsTest.kt` (8 tests, real `kotlinx.serialization` round-trips against
+  a mocked server, including the SAN shape through an actual `certificates.generate()` call).
+
+- **Acting tenant (`AxiamClient.actingTenant`/`clearActingTenant`/`Builder.withActingTenant`,
+  CONTRACT.md §5.2 rule 1).** An organization-level principal can now say which tenant of its
+  organization a given request is about; `X-Axiam-Tenant` is sent on every REST request a handle
+  derived this way makes, gated client-side against the session's own reported reach with zero
+  wire calls when it is refused. See the README's
+  [Acting tenant](README.md#acting-tenant-52-rule-1-contract-151) section. Tests:
+  `ActingTenantTest.kt` (11).
+
+- **Device login (`AxiamClient.authenticateDevice()`, CONTRACT.md §6.1 rules 6–10).** A client
+  built with `clientCertificate(...)` can exchange the certificate it presents for a bearer
+  session with no password — `POST /api/v1/auth/device`. The adopted token replaces any cookie
+  session on the client and is sent as `Authorization: Bearer …`, cookie-free. See the README's
+  [Device login](README.md#device-login-61-rules-610-contract-151) section. Tests:
+  `DeviceAuthTest.kt` (9).
+
+- **Manifest additions (`ManagementManifest`, CONTRACT.md §27.6.1).** Resource `metadata`,
+  two-shape (`RoleBinding.Plain` / `RoleBinding.Scoped`) role bindings with `inherit`, and service
+  accounts, reconciled by `manifest().plan()`/`apply()`. See the README's
+  [Manifest additions](README.md#manifest-additions-2761-contract-151) section. Tests:
+  `ManifestAdditionsTest.kt` (14, against a stateful fake tenant).
+
+### Breaking
+
+- **`AxiamClient.verifySession` now enforces CONTRACT.md §10.1 rule 9 (sender-constrained
+  tokens), where before it silently ignored `cnf` (security fix, contract 1.51).**
+  `verifySession` — the entry point `AxiamUser`, the §11 guard helpers, and the Ktor
+  `AxiamAuthentication` plugin all reach — applied rules 1–7 of the minimum local-verification set
+  and never checked a token's `cnf` claim. A device-login token (§6.1, `cnf.x5t#S256` bound to a
+  client certificate) lifted off a device and replayed as an ordinary bearer credential verified
+  successfully; it no longer does.
+
+  `verifySession` gains a second parameter, `presentedProofs: PresentedProofs =
+  PresentedProofs.none()`. The default is the safe reading of rule 9's own first row — an
+  **unbound** token (`cnf` absent, every token before §6.1 existed) verifies exactly as before. A
+  **bound** token is now refused unless the caller supplies what it proved on this connection:
+
+  ```kotlin
+  // before (1.50 and earlier) — accepted a device-login token as an ordinary bearer credential
+  val user = client.verifySession(token)
+
+  // after (1.51) — a bound token needs the caller's own evidence for THIS connection
+  val user = client.verifySession(token, PresentedProofs.certificate(peerCertificateThumbprintS256))
+  ```
+
+  A caller that never presents device-login tokens for verification is unaffected. A caller that
+  does, and cannot supply `PresentedProofs`, will see those tokens refused with `AuthError` where
+  they used to be accepted — this is the fix, not a regression, and no `alg` pin or TLS policy
+  changed. The Ktor `AxiamAuthentication` plugin still calls the zero-argument form (this SDK ships
+  no HTTP server framework of its own to source peer-certificate evidence from), so a device token
+  presented to a Ktor route is now refused rather than silently accepted — the correct, safe side
+  to be on. See the README's
+  [Rule 9 — sender-constrained tokens](README.md#rule-9--sender-constrained-tokens-contract-151-breaking-fix)
+  section. Tests: four new cases in `LocalVerificationSetTest.kt`.
+
+### Declined
+
+- **The gRPC transport, including `validateToken`/`introspectToken` (CONTRACT.md §1.1.1, new in
+  contract 1.51).** This SDK has never shipped gRPC; the contract does not list Kotlin among the
+  SDKs implementing it. `validateToken`/`introspectToken` wrap
+  `axiam.v1.TokenService/ValidateToken` and `/IntrospectToken`, which have no REST equivalent —
+  adopting them without the transport that carries them is not possible. Tracked as a future
+  addition alongside the gRPC-only `getUserInfo` operation already deferred.
+- **CONTRACT.md §8 rule 7's "gRPC wrappers read `cnf`" test — not applicable**, for the same
+  reason: this SDK ships no gRPC transport for such a wrapper to exist on.
+
 ## [1.0.0-beta16] - 2026-09-19
 
 ### Added

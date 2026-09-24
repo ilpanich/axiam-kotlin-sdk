@@ -26,12 +26,17 @@ internal object ManifestValidation {
         val permissionKeys = manifest.permissions.map { it.key }.toSet()
         val roleKeys = manifest.roles.map { it.key }.toSet()
         val groupKeys = manifest.groups.map { it.key }.toSet()
+        // §27.6.1 item 2's MAY: a global role applies everywhere by
+        // definition, so binding it "here only" is refused server-side and
+        // caught here first.
+        val globalRoleKeys = manifest.roles.filter { it.global }.map { it.key }.toSet()
 
         duplicates(manifest.resources.map { it.key }, "resource", problems)
         duplicates(manifest.permissions.map { it.key }, "permission", problems)
         duplicates(manifest.roles.map { it.key }, "role", problems)
         duplicates(manifest.groups.map { it.key }, "group", problems)
         duplicates(manifest.users.map { it.key }, "user", problems)
+        duplicates(manifest.serviceAccounts.map { it.key }, "service_account", problems)
 
         for (resource in manifest.resources) {
             val parent = resource.parent
@@ -59,19 +64,13 @@ internal object ManifestValidation {
                 }
             }
         }
-        for (group in manifest.groups) {
-            for (role in group.roles) {
-                if (role !in roleKeys) {
-                    problems += "group '${group.key}' holds role '$role', which no role declares"
-                }
-            }
-        }
+        bindings("group", manifest.groups.map { it.key to it.roles }, roleKeys, resourceKeys, globalRoleKeys, problems)
+        bindings("user", manifest.users.map { it.key to it.roles }, roleKeys, resourceKeys, globalRoleKeys, problems)
+        bindings(
+            "service_account", manifest.serviceAccounts.map { it.key to it.roles },
+            roleKeys, resourceKeys, globalRoleKeys, problems,
+        )
         for (user in manifest.users) {
-            for (role in user.roles) {
-                if (role !in roleKeys) {
-                    problems += "user '${user.key}' holds role '$role', which no role declares"
-                }
-            }
             for (group in user.groups) {
                 if (group !in groupKeys) {
                     problems += "user '${user.key}' joins group '$group', which no group declares"
@@ -87,6 +86,51 @@ internal object ManifestValidation {
                     "\n\nNothing was sent: §27.6 rule 1 refuses a manifest before the first " +
                     "request rather than part-way through an apply.",
             )
+        }
+    }
+
+    /**
+     * Shared reference/consistency checks for a subject's [ManagementManifest.RoleBinding]
+     * list — groups, users and service accounts alike (§27.6.1 item 2).
+     *
+     * Two checks beyond "does the key exist": one role bound MORE THAN ONCE to
+     * one subject (plain and scoped both count — `has_role` is
+     * `UNIQUE(subject, role)`, so a second binding of the same role is a state
+     * the server cannot hold, refused here rather than as a 409 half-way
+     * through an apply), and a GLOBAL role bound `inherit: false` (a global
+     * role has no resource to stop at).
+     */
+    private fun bindings(
+        what: String,
+        subjects: List<Pair<String, List<ManagementManifest.RoleBinding>>>,
+        roleKeys: Set<String>,
+        resourceKeys: Set<String>,
+        globalRoleKeys: Set<String>,
+        problems: MutableList<String>,
+    ) {
+        for ((subjectKey, roleBindings) in subjects) {
+            val seenRoles = mutableSetOf<String>()
+            for (binding in roleBindings) {
+                if (binding.role !in roleKeys) {
+                    problems += "$what '$subjectKey' holds role '${binding.role}', which no role declares"
+                }
+                if (binding is ManagementManifest.RoleBinding.Scoped) {
+                    if (binding.resource !in resourceKeys) {
+                        problems += "$what '$subjectKey' binds role '${binding.role}' to resource " +
+                            "'${binding.resource}', which no resource declares"
+                    }
+                    if (!binding.inherit && binding.role in globalRoleKeys) {
+                        problems += "$what '$subjectKey' binds global role '${binding.role}' with " +
+                            "inherit=false; a global role applies everywhere and has no resource to " +
+                            "stop at (§27.6.1 item 2)"
+                    }
+                }
+                if (!seenRoles.add(binding.role)) {
+                    problems += "$what '$subjectKey' binds role '${binding.role}' more than once " +
+                        "(plain and/or scoped); one subject can hold one role at most once " +
+                        "(has_role is UNIQUE(subject, role))"
+                }
+            }
         }
     }
 

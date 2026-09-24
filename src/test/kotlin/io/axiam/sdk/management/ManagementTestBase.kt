@@ -216,9 +216,15 @@ abstract class ManagementTestBase {
         sent: String,
     ) {
         val expected = (Json.parseToJsonElement(sent) as JsonObject).keys.sorted()
+        // Round-trip FIDELITY, not wire ECONOMY: `ROUND_TRIP_READER` always
+        // re-encodes every property, `inherit` (§27.13 S-10 rule 3, contract
+        // 1.51) included even when it decoded to its default `true` --
+        // unlike `ManagementTransport.READER`/`WIRE`, whose `encodeDefaults =
+        // false` is what makes a §27.4 rule 5 sparse request small, and would
+        // otherwise make this helper report a correctly-decoded defaulted
+        // field as "dropped".
         val actual = (
-            io.axiam.sdk.internal.ManagementTransport.READER
-                .encodeToJsonElement(serializer, value) as JsonObject
+            ROUND_TRIP_READER.encodeToJsonElement(serializer, value) as JsonObject
             ).keys.sorted()
         val dropped = expected - actual.toSet()
         if (dropped.isNotEmpty()) {
@@ -267,5 +273,20 @@ abstract class ManagementTestBase {
             """{"id":"$id","name":"$name","description":"$description","is_global":false,""" +
                 """"tenant_id":"$TENANT_ID","created_at":"2026-08-26T00:00:00Z",""" +
                 """"updated_at":"2026-08-26T00:00:00Z"}"""
+
+        /**
+         * The [Json] instance [assertDecodedEveryField] re-encodes with.
+         *
+         * `encodeDefaults = true`, deliberately unlike
+         * [io.axiam.sdk.internal.ManagementTransport.READER]: this exists to prove
+         * decode FIDELITY (nothing the server sent got dropped on the way into the
+         * model), which is a different question from what the wire WRITER should omit
+         * for a §27.4 rule 5 sparse request. A field that decodes correctly to its own
+         * default value — `inherit` (§27.13 S-10 rule 3) is exactly this case — must
+         * still count as present here.
+         */
+        val ROUND_TRIP_READER: Json = Json(io.axiam.sdk.internal.ManagementTransport.READER) {
+            encodeDefaults = true
+        }
     }
 }

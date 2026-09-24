@@ -46,6 +46,13 @@ class ManagementTransport internal constructor(
     private val telemetry: TelemetryDispatcher,
     private val retryEnabled: Boolean,
     private val ensureOpen: () -> Unit,
+    /**
+     * CONTRACT.md §5.2 rule 1 (contract 1.51) — the acting tenant of the
+     * [io.axiam.sdk.AxiamClient] handle this transport was built for. `null`
+     * (the default) sends no `X-Axiam-Tenant`; every §27 management request
+     * this transport issues carries it when set.
+     */
+    private val actingTenant: java.util.UUID? = null,
 ) {
 
     /** The session every management call rides on; read for §27.4 rule 3. */
@@ -97,7 +104,12 @@ class ManagementTransport internal constructor(
      * missing session instead of a 401 they have to interpret.
      */
     private fun requireSession(operation: String) {
-        if (sessionState.cachedAccessToken() == null) {
+        // CONTRACT.md §6.1 rule 10: an adopted device token (aud axiam:m2m)
+        // is a service-account session that authorizes §27 operations exactly
+        // as a user's would — it carries no cookie, so the cookie-derived
+        // check alone would wrongly refuse every management call a device
+        // makes.
+        if (sessionState.cachedAccessToken() == null && sessionState.deviceToken() == null) {
             throw AuthError(
                 "$operation: no active session. The management API acts as the logged-in " +
                     "administrator, so call login() (or complete an OAuth2 flow) first — " +
@@ -126,6 +138,10 @@ class ManagementTransport internal constructor(
         }
 
         val request = Request.Builder().url(url.build())
+        // §5.2 rule 1: every §27 management request carries the acting tenant
+        // when this handle has one, beside §5's X-Tenant-ID (already added by
+        // AuthHeaderInterceptor on the shared httpClient).
+        actingTenant?.let { request.header(io.axiam.sdk.AxiamClient.ACTING_TENANT_HEADER, it.toString()) }
         val payload = body?.toRequestBody(JSON_MEDIA)
         when {
             payload != null -> request.method(method, payload)

@@ -17,6 +17,11 @@ import kotlinx.serialization.json.JsonElement
  * @property keyAlgorithm the server's key_algorithm field
  * @property metadata the server's metadata field
  * @property subject the server's subject field
+ * @property subjectAltNames The names a `Server` certificate is issued for, as `&#91;{"dns":
+ *     "api.lakeside.internal"}, {"ip": "10.0.0.5"}&#93;`. Required for `cert_type: Server` and
+ *     refused for every other type. Each name, and the common name, must be admitted by the
+ *     tenant's effective `server_cert_allowed_names`, which is empty — refusing every `Server`
+ *     request — until an organization administrator lists names.
  * @property validityDays Validity duration in days.
  */
 @Serializable
@@ -26,5 +31,6 @@ data class CreateCertificateRequest(
     @SerialName("key_algorithm") val keyAlgorithm: KeyAlgorithm,
     @SerialName("metadata") val metadata: JsonElement? = null,
     @SerialName("subject") val subject: String,
+    @SerialName("subject_alt_names") val subjectAltNames: List<SubjectAltName>? = null,
     @SerialName("validity_days") val validityDays: Int,
 )

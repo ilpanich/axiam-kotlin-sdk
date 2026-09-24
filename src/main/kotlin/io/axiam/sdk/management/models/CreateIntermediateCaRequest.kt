@@ -13,7 +13,9 @@ import kotlinx.serialization.Serializable
  *
  * @property keyAlgorithm the server's key_algorithm field
  * @property parentCaId The organization CA that signs it.
- * @property subject Subject for the signing CA, e.g. `CN=ACME R&D Signing CA`.
+ * @property subject The signing CA's common name, e.g. `ACME R&D Signing CA`. A **common
+ *     name**, not a distinguished name. A single `CN=` prefix is accepted and stripped; anything
+ *     else containing `=` is refused with `400`.
  * @property validityDays Validity duration in days, capped to the parent's own expiry.
  */
 @Serializable

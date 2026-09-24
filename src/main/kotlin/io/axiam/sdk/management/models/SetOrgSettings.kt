@@ -51,6 +51,8 @@ import kotlinx.serialization.Serializable
  * @property requireSymbols the server's require_symbols field
  * @property requireUppercase the server's require_uppercase field
  * @property sensitiveScopesEnabled the server's sensitive_scopes_enabled field
+ * @property serverCertAllowedNames S-7 — defaulted to empty, so an API client written before
+ *     the field lands on "no `Server` certificate is issued" (I1).
  * @property webauthnUserVerification the server's webauthn_user_verification field
  */
 @Serializable
@@ -88,5 +90,6 @@ data class SetOrgSettings(
     @SerialName("require_symbols") val requireSymbols: Boolean,
     @SerialName("require_uppercase") val requireUppercase: Boolean,
     @SerialName("sensitive_scopes_enabled") val sensitiveScopesEnabled: Boolean? = null,
+    @SerialName("server_cert_allowed_names") val serverCertAllowedNames: List<String>? = null,
     @SerialName("webauthn_user_verification") val webauthnUserVerification: String? = null,
 )

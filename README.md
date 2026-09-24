@@ -24,10 +24,28 @@ Source: [ilpanich/axiam-kotlin-sdk](https://github.com/ilpanich/axiam-kotlin-sdk
 
 ## Contract conformance
 
-This SDK conforms to **contract 1.50**: CONTRACT.md §1–§7, §9–§13 and §12.7, §14, §15, §17, §19,
+This SDK conforms to **contract 1.51**: CONTRACT.md §1–§7, §9–§13 and §12.7, §14, §15, §17, §19,
 §20, §21, §22, §23, §24, §25, §26, §27, §28 (including §6.1 mTLS). §12 is implemented in full at its
 1.38 shape: all **thirteen** operations, including the four public "Sign in with X" entry points,
 as `suspend` functions on the same `AxiamClient`.
+
+**Contract 1.51 additions:**
+
+- **§5.2 rule 1 — acting tenant.** `AxiamClient.Builder.withActingTenant(UUID)` at build time, or
+  `client.actingTenant(tenantId)` / `client.clearActingTenant()` on an existing client, each
+  returning a handle sharing the session but sending `X-Axiam-Tenant` on every request. See
+  [Acting tenant](#acting-tenant-52-rule-1-contract-151) below.
+- **§6.1 rules 6–10 — `authenticateDevice()`.** mTLS device login: a client built with
+  `clientCertificate(...)` can exchange its presented certificate for a bearer token with no
+  password. See [Device login](#device-login-61-rules-610-contract-151) below.
+- **§10.1 rule 9 — sender-constrained tokens are now enforced at the default entry point.** See
+  [What the guard checks](#what-the-guard-checks-101-minimum-local-verification-set) below — this
+  is a **breaking** behavioral fix, not a new feature; see CHANGELOG.md.
+- **§27.6.1 — manifest additions.** Resource `metadata`, two-shape (`Plain` / `Scoped`) role
+  bindings with `inherit`, and service accounts. See
+  [Manifest additions](#manifest-additions-2761-contract-151) below — the `RoleBinding` change to
+  `GroupSpec.roles` / `UserSpec.roles` is **breaking** for any manifest built from the record
+  constructors directly (the `Builder` stays source-compatible).
 
 §12.7, §14, §15, §20, §22, §23, §24, §25, §26, §27 and §28 are named rather than folded into the
 range because they landed after this SDK already stated its coverage: widening the range silently
@@ -75,11 +93,16 @@ default tenant.
   "MCP resource-server helpers" below). Plus, on the AMQP side, the §22 reactor runtime (see
   "Reactors" below) and the §8 v2 / §8b primitives it carries.
 - **Deferred follow-ups (not in v1):** the gRPC transport — including the gRPC-only
-  `getUserInfo` operation (CONTRACT §1.1, contract 1.3) — and §8's `AuthzRequest` /
-  `AuditEventMessage` consumers (async authorization and audit ingestion). The contract does not
-  list Kotlin among the SDKs that speak those; gRPC (and with it `getUserInfo`) is a planned
+  `getUserInfo` operation (CONTRACT §1.1, contract 1.3), and, as of contract 1.51, `validateToken`
+  / `introspectToken` (CONTRACT §1.1.1, wrapping `axiam.v1.TokenService/ValidateToken` and
+  `/IntrospectToken`) — and §8's `AuthzRequest` / `AuditEventMessage` consumers (async
+  authorization and audit ingestion). The contract does not list Kotlin among the SDKs that speak
+  those; gRPC (and with it `getUserInfo`, `validateToken` and `introspectToken`) is a planned
   addition. Per CONTRACT §1.1, this SDK does **not** substitute the REST `/oauth2/userinfo`
-  endpoint for the gRPC operation.
+  endpoint for the gRPC operation, and per §1.1.1 it does not substitute local `verifySession`
+  for `validateToken`/`introspectToken` either — those inspect a token this SDK issued nothing
+  about (a token minted for a different audience, or a raw opaque refresh token), which local
+  verification cannot answer by design.
 
 ## Getting started
 
@@ -236,6 +259,34 @@ AxiamClient.builder(baseUrl, "acme")
     .build()
 ```
 
+### Device login (§6.1 rules 6–10, contract 1.51)
+
+A client already built with `clientCertificate(...)` can exchange the certificate it presents for
+a bearer session, with no password at all — the point of mTLS for a device that has no human to
+type one:
+
+```kotlin
+val device = AxiamClient.builder(baseUrl, tenantId)
+    .clientCertificate(certPem = certBytes, keyPem = keyBytes)
+    .build()
+
+val auth = device.authenticateDevice()   // POST /api/v1/auth/device
+// auth.accessToken: Sensitive<String>, auth.tokenType, auth.expiresIn
+```
+
+Calling it on a client with **no** client certificate configured throws `AuthError` before any
+request — there is nothing on the wire for the server to authenticate. A certificate the server
+does not recognise comes back as `AuthError` too, carrying the server's own message rather than
+this SDK's fixed 401 text, and is never retried: §16.3 retries `NetworkError`, not a credential the
+server has already looked at and refused.
+
+The token this adopts is a **bearer credential on the client's session**, not a cookie: it
+replaces whatever cookie session the client held (a device that authenticates by certificate has
+no further use for a stale password session) and is sent as `Authorization: Bearer …` on every
+subsequent request, cookie-free. It carries `cnf.x5t#S256` bound to the certificate that won it
+(§6.1 rule 9) — see the next section for what that means for a caller *verifying* one of these
+tokens rather than holding it.
+
 ### RFC 8705 §5 `mtls_endpoint_aliases` (contract 1.40, CONTRACT.md §21.3 rule 2)
 
 A TLS listener decides whether to ask for a client certificate during the handshake, before
@@ -338,6 +389,7 @@ A signature check alone is not a guard.
 | 5 | `iss` | Checked only when `expectedIssuer(...)` was configured on the builder. |
 | 6 | `aud` | Checked only when `expectedAudience(...)` was configured on the builder. |
 | 7 | clock skew | One named 60s constant, `JwksVerifier.CLOCK_SKEW_SECONDS`, on rules 2 and 3. Not settable. |
+| 9 | `cnf` (sender-constrained tokens, contract 1.51) | Absent `cnf` ⇒ an ordinary bearer token, rules 1–7 alone decide. A **present** `cnf.x5t#S256` (a device-login token, §6.1 rule 9) is now checked against what the caller proves it holds — see below. |
 
 Every rule fails **closed** — a required claim that is absent, unparseable, or of the wrong JSON
 type rejects the token.
@@ -352,6 +404,37 @@ val guardClient = AxiamClient.builder(baseUrl, tenantId = "22222222-…-uuid")
 `JwksVerifier.verifySignatureOnlyUnchecked(...)` is the raw signature primitive §10.1 permits for
 integrators writing their own policy. As its name says, it checks **no** claims — it is not a
 guard, and the SDK's own guards never stop there.
+
+#### Rule 9 — sender-constrained tokens (contract 1.51, breaking fix)
+
+`verifySession(token, presentedProofs = PresentedProofs.none())` — the entry point `AxiamUser`,
+the §11 guard helpers, and the Ktor `AxiamAuthentication` plugin all reach — now checks a token's
+`cnf` claim, where before it did not. This closes a real gap: a device-login token (§6.1, bound to
+a client certificate via `cnf.x5t#S256`) lifted off a device and replayed as an ordinary bearer
+credential used to verify successfully. It no longer does.
+
+The default — `PresentedProofs.none()` — is the safe reading of rule 9's own first row: an
+**unbound** token (`cnf` absent, which is every token before §6.1 existed, and every token a
+non-mTLS deployment will ever mint) verifies exactly as before. A **bound** token now verifies
+only when the caller supplies what it proved on *this* connection:
+
+```kotlin
+import io.axiam.sdk.internal.PresentedProofs
+
+// A caller with genuine mTLS evidence for this request — e.g. an Armeria/
+// Netty handler that terminates the client's TLS connection itself:
+val proofs = PresentedProofs.certificate(peerCertificateThumbprintS256)
+val user = client.verifySession(token, proofs)
+```
+
+This SDK ships no HTTP server framework of its own, so nothing in it has today's evidence to
+thread through automatically — **including the Ktor `AxiamAuthentication` plugin**, which still
+calls the zero-argument `verifySession(token)`. After this fix a device token presented to a
+Ktor route is *refused* rather than silently accepted, which is the correct, safe side to be on;
+wiring real peer-certificate evidence out of a specific underlying Ktor engine (Netty, CIO and
+Jetty each expose it differently, if at all) is a separate integration this SDK does not attempt
+to guess at. An integrator with that evidence supplies it exactly as above, directly to
+`verifySession`.
 
 ### The session-revocation feed (§10.4, contract 1.44, opt-in)
 
@@ -1600,6 +1683,46 @@ rejects one too.
 Worked end to end in [`examples/account-lifecycle`](examples/account-lifecycle)
 (`./gradlew runAccountLifecycleExample`).
 
+### Acting tenant (§5.2 rule 1, contract 1.51)
+
+An organization-level principal (above) is a principal of *every* tenant in its organization, but
+still needs to tell the server which one it means on any given request. `actingTenant(tenantId)`
+derives a new handle that sends `X-Axiam-Tenant` on every REST request, sharing everything else —
+the cookie jar, the refresh guard, the decision memo, telemetry:
+
+```kotlin
+val acme = client.actingTenant(acmeTenantId)   // a NEW AxiamClient; `client` itself is unchanged
+acme.groups().list()                           // carries X-Axiam-Tenant: <acmeTenantId>
+
+val back = acme.clearActingTenant()            // another new handle, header removed
+```
+
+Refused **client-side** with `AuthzError` and zero wire calls when this client holds a login
+result that rules the tenant out: the session reported `organizationLevel = false`, or it
+reported `reachableTenantIds` and `tenantId` is not among them (§5.2.3 rule 4). A login result is
+held after `login`, `verifyMfa`, `loginOpaque`, `mfaSetupConfirm` and
+`webauthnSetupRegisterFinish`, whose responses all carry `LoginUserInfo`. A client holding **no**
+login result — one that has not logged in, or whose session came from a WebAuthn login, an
+SSO/federation completion, the device login, or an injected token — has nothing to check, so it
+sends the header and lets the server's own `403` answer.
+
+This differs from the Rust reference, which treats OPAQUE and the two setup completions as holding
+no login result. Their responses carry the same `LoginUserInfo` a password login does (the server
+builds OPAQUE's `200` with the password path's builder, though the spec leaves that body
+undocumented), so gating on it is tighter than gating on nothing; the TypeScript, Go, Python, C#
+and Java ports made the same choice. A login response that carries no `user` object at all is
+read as `organizationLevel = false`, the value §5.2 gives a server too old to report the field.
+
+**Every call that completes a NEW session resets this gate to unknown** — a fresh login has not
+yet said what it can reach — unless that call's own response reports `LoginUserInfo`: `refresh()`
+does **not** reset it (it is not a new session), but `webauthnFinish()`, `logout()`, and every
+SSO/federation completion (`ssoComplete`, `ssoCompleteOauth2`, the OIDC handoff) do, since none of
+those report reach information either.
+
+Two handles derived from one client acting on two different tenants cannot rewrite each other's
+header between deciding and sending: `actingTenant`/`clearActingTenant` return a new client rather
+than mutating the one they were called on.
+
 ## Pushed Authorization Requests (§26, RFC 9126)
 
 PAR moves the authorization request off the browser. Instead of putting `scope`, `redirect_uri`,
@@ -1791,6 +1914,49 @@ if (!plan.isConverged) {
 Worked end to end in [`examples/management-manifest`](examples/management-manifest), and combined
 with §6.1 mTLS for a full device provisioning lifecycle in
 [`examples/device-mtls-provisioning`](examples/device-mtls-provisioning).
+
+#### Manifest additions (§27.6.1, contract 1.51)
+
+**Resource `metadata`.** `resource(key, name, type, metadata = jsonObject)` / `childResource(...)`
+now take an optional `JsonElement`. Drift is equality of the WHOLE object, never a merge; leaving
+it out (the default) means unstated — the field is silent no matter what the server holds, and a
+stated `JsonObject(emptyMap())` matches what the server stores for a resource created with none.
+
+**Two-shape role bindings.** A binding is now either "no resource" (`RoleBinding.of(roleKey)` —
+reaches wherever the role does) or "scoped" (`RoleBinding.at(roleKey, resourceKey)`, inheriting to
+descendants, or `RoleBinding.atOnly(roleKey, resourceKey)`, stopping at that resource). The
+`group(key, name, desc, vararg roleKeys)` convenience shown above still works unchanged — each
+name becomes a plain `RoleBinding.of(...)` — but a scoped binding needs `bindGroupRole` /
+`assignRole` / `bindServiceAccountRole`:
+
+```kotlin
+val manifest = ManagementManifest.builder()
+    .resource("site", "Site One", "site")
+    .role("resident", "Resident", "Lives here")
+    .group("residents", "Residents", "All residents")
+    .bindGroupRole("residents", ManagementManifest.RoleBinding.atOnly("resident", "site"))
+    .build()
+```
+
+One role bound more than once to one subject — plain and/or scoped — is refused at `build()`
+before any request: `has_role` is `UNIQUE(subject, role)`, so a second binding is a state the
+server cannot hold. A **global** role bound `atOnly` is refused the same way — it has no resource
+to stop at.
+
+**Service accounts.** `serviceAccount(key, name, description)` + `bindServiceAccountRole(key,
+binding)`, reconciled last (§27.6 rule 5) since their bindings can name roles and resources
+declared earlier in the same manifest, and reconciled by **name** — the server does not keep it
+unique (only `client_id` is indexed), so a manifest naming a name that matches more than one
+existing account is refused before any write. `apply` never rotates a secret to reconcile, and the
+one-time `client_secret` a `Create` returns rides on the outcome, not only on the created object,
+so it survives a later step of the same `apply` failing:
+
+```kotlin
+val report = client.management().manifest().apply(manifest)
+for ((action, created) in report.createdServiceAccounts()) {
+    saveSecretSomewhereSafe(action.key, created.clientSecret.expose())   // shown exactly once
+}
+```
 
 ## Building from source
 

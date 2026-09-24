@@ -48,10 +48,24 @@ class AuthHeaderInterceptor(private val session: SessionState) : Interceptor {
         if (sameHost) {
             builder.header("X-Tenant-ID", session.tenantId())
             if (!credentialFree) {
-                session.cachedAccessToken()?.let { builder.header("Authorization", "Bearer $it") }
-                val csrf = session.csrfToken()
-                if (csrf != null && STATE_CHANGING.contains(original.method)) {
-                    builder.header("X-CSRF-Token", csrf)
+                // CONTRACT.md §6.1 rule 6: an adopted device token is a BEARER
+                // credential, never a cookie, and rides ALONE — no CSRF
+                // forwarding (there is no fresh one to forward; the response
+                // that minted this token set no cookie to protect), and
+                // STRIP_COOKIE_HEADER marks the request so
+                // [NoSessionCredentialsNetworkInterceptor] removes whatever
+                // the shared jar would otherwise attach downstream, after
+                // OkHttp's own BridgeInterceptor has run.
+                val device = session.deviceToken()
+                if (device != null) {
+                    builder.header("Authorization", "Bearer $device")
+                    builder.header(STRIP_COOKIE_HEADER, "1")
+                } else {
+                    session.cachedAccessToken()?.let { builder.header("Authorization", "Bearer $it") }
+                    val csrf = session.csrfToken()
+                    if (csrf != null && STATE_CHANGING.contains(original.method)) {
+                        builder.header("X-CSRF-Token", csrf)
+                    }
                 }
             }
         }
@@ -72,6 +86,14 @@ class AuthHeaderInterceptor(private val session: SessionState) : Interceptor {
          * `setup/register/{start,finish}` pair is the only caller.
          */
         internal const val NO_SESSION_CREDENTIALS_HEADER = "X-Axiam-Internal-No-Session-Credentials"
+
+        /**
+         * Internal request marker: tells [NoSessionCredentialsNetworkInterceptor]
+         * to strip `Cookie` while leaving `Authorization` (the device bearer
+         * token, already set above) untouched — CONTRACT.md §6.1 rule 6.
+         * Distinct from [NO_SESSION_CREDENTIALS_HEADER], which strips both.
+         */
+        internal const val STRIP_COOKIE_HEADER = "X-Axiam-Internal-Strip-Cookie"
     }
 }
 
@@ -92,11 +114,14 @@ internal class NoSessionCredentialsNetworkInterceptor : Interceptor {
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val original = chain.request()
-        if (original.header(AuthHeaderInterceptor.NO_SESSION_CREDENTIALS_HEADER) == null) {
+        val noSessionCredentials = original.header(AuthHeaderInterceptor.NO_SESSION_CREDENTIALS_HEADER) != null
+        val stripCookieOnly = original.header(AuthHeaderInterceptor.STRIP_COOKIE_HEADER) != null
+        if (!noSessionCredentials && !stripCookieOnly) {
             return chain.proceed(original)
         }
         val stripped = original.newBuilder()
             .removeHeader(AuthHeaderInterceptor.NO_SESSION_CREDENTIALS_HEADER)
+            .removeHeader(AuthHeaderInterceptor.STRIP_COOKIE_HEADER)
             .removeHeader("Cookie")
             .build()
         return chain.proceed(stripped)

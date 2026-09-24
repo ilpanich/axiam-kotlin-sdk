@@ -138,7 +138,10 @@ class ManagementManifestTest : ManagementTestBase() {
                             ),
                         ),
                         groups = listOf(
-                            ManagementManifest.GroupSpec("staff", "Staff", "All", listOf("ghost")),
+                            ManagementManifest.GroupSpec(
+                                "staff", "Staff", "All",
+                                listOf(ManagementManifest.RoleBinding.of("ghost")),
+                            ),
                         ),
                     ),
                 )
