@@ -387,9 +387,12 @@ class AxiamClient private constructor(
      *   anything else), or [tenantId] outside a reported `reachableTenantIds`
      *   (§5.2.3 rule 4). A client holding no such result — a service account
      *   from client credentials or an injected token, or a session completed
-     *   without reporting the flag (OPAQUE, SSO, WebAuthn, the MFA setup; see
-     *   the CHANGELOG) — has nothing to gate on, so the handle is returned and
-     *   the server's `403` is the answer.
+     *   without reporting the flag (an SSO/federation completion, or a plain
+     *   WebAuthn authentication; see the CHANGELOG) — has nothing to gate on,
+     *   so the handle is returned and the server's `403` is the answer. OPAQUE
+     *   and the MFA-setup completion DO report the flag, exactly as `login`
+     *   and `verifyMfa` do — they read the same `user` object through
+     *   `loginScopeOf` and gate on it like any other login.
      */
     fun actingTenant(tenantId: UUID): AxiamClient {
         principalReachGate?.let { gate ->

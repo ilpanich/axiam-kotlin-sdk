@@ -108,6 +108,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   addition alongside the gRPC-only `getUserInfo` operation already deferred.
 - **CONTRACT.md §8 rule 7's "gRPC wrappers read `cnf`" test — not applicable**, for the same
   reason: this SDK ships no gRPC transport for such a wrapper to exist on.
+- **`webhooks` in the §27.6 manifest (§27.6, "webhooks stays named and unspecified").** The
+  namespace is SHOULD-level and, per §27.6, nothing in contract 1.51 requires an SDK to cover it —
+  a webhook's `secret` is caller-supplied rather than minted, so nothing forbids it, but no
+  consumer has asked for it. `ManagementManifest` has no `webhook(...)` builder call and no
+  `webhooks` field; only the imperative `WebhooksApi` (`client.management().webhooks`, §27's
+  ordinary CRUD) is available. (C-12 — this was previously undocumented; the other SDKs that
+  decline it say so.)
 
 ## [1.0.0-beta16] - 2026-09-19
 

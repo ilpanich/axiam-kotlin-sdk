@@ -24,7 +24,9 @@ Source: [ilpanich/axiam-kotlin-sdk](https://github.com/ilpanich/axiam-kotlin-sdk
 
 ## Contract conformance
 
-This SDK conforms to **contract 1.51**: CONTRACT.md §1–§7, §9–§13 and §12.7, §14, §15, §17, §19,
+This SDK conforms to **contract 1.51**: CONTRACT.md §1–§7 (§1.1's `getUserInfo` and §1.1.1's
+`validateToken`/`introspectToken` declined — gRPC-only, and this SDK ships no gRPC transport; see
+[Scope of this SDK (v1)](#scope-of-this-sdk-v1) below), §9–§13 and §12.7, §14, §15, §17, §19,
 §20, §21, §22, §23, §24, §25, §26, §27, §28 (including §6.1 mTLS). §12 is implemented in full at its
 1.38 shape: all **thirteen** operations, including the four public "Sign in with X" entry points,
 as `suspend` functions on the same `AxiamClient`.
@@ -51,11 +53,12 @@ as `suspend` functions on the same `AxiamClient`.
 range because they landed after this SDK already stated its coverage: widening the range silently
 would turn a statement that was true when written into a different claim without anyone editing it.
 
-**§28 (MCP resource-server helpers) is vendored ahead of `axiam` `main`.** `CONTRACT.md`,
-`openapi.json` and `proto/` are re-synced from the `axiam` repository's
-`claude_dev/mcp-authorization-server-plan.md` branch, where contract 1.48 lands before the phase
-that carries it merges to `main`. See [MCP resource-server helpers](#mcp-resource-server-helpers-ioaxiamsdkmcp-28-opt-in)
-below.
+**§28 (MCP resource-server helpers)** shipped in `1.0.0-beta16`, when `CONTRACT.md`, `openapi.json`
+and `proto/` were re-synced ahead of `axiam` `main` from the `claude_dev/mcp-authorization-server-plan.md`
+branch, where contract 1.48 landed before that phase merged. `CONTRACT.md`, `openapi.json` and
+`proto/` have since been re-synced again, from `axiam` `main` at `56fbe44` (contract 1.51) — this
+SDK now tracks `main`, not a branch ahead of it. See
+[MCP resource-server helpers](#mcp-resource-server-helpers-ioaxiamsdkmcp-28-opt-in) below.
 
 **§27 is the Management API** — all 162 operations across 24 namespaces, with the §27.6 declarative
 layer. See [Management API](#management-api-27) below.
@@ -287,6 +290,18 @@ subsequent request, cookie-free. It carries `cnf.x5t#S256` bound to the certific
 (§6.1 rule 9) — see the next section for what that means for a caller *verifying* one of these
 tokens rather than holding it.
 
+**Held until a later session-establishing call replaces it.** `login`, `verifyMfa`, an OPAQUE
+finish, the MFA-setup and WebAuthn-setup completions, a plain WebAuthn authentication, and an
+SSO/federation completion each release an adopted device token on their own success — so, for
+example, calling `login()` after `authenticateDevice()` puts the client back on the login's cookie
+session, and the device bearer stops riding. `logout()` also releases it. `refresh()` does **not**:
+a device credential has no refresh token, so nothing about `refresh()` touches it either way.
+
+**A later `401` on the device token is never refreshed.** §6.1 rule 6 gives it no refresh token to
+spend, so a `401` surfaces as `AuthError` with the server's message as-is; the only recovery is
+calling `authenticateDevice()` again. A `429` — the route's own per-IP rate limit — is **not** an
+`AuthError`: it falls through to the ordinary §16 status mapping instead.
+
 ### RFC 8705 §5 `mtls_endpoint_aliases` (contract 1.40, CONTRACT.md §21.3 rule 2)
 
 A TLS listener decides whether to ask for a client certificate during the handshake, before
@@ -429,9 +444,10 @@ val user = client.verifySession(token, proofs)
 
 This SDK ships no HTTP server framework of its own, so nothing in it has today's evidence to
 thread through automatically — **including the Ktor `AxiamAuthentication` plugin**, which still
-calls the zero-argument `verifySession(token)`. After this fix a device token presented to a
-Ktor route is *refused* rather than silently accepted, which is the correct, safe side to be on;
-wiring real peer-certificate evidence out of a specific underlying Ktor engine (Netty, CIO and
+calls the zero-argument `verifySession(token)` and therefore refuses **every** sender-constrained
+token behind it: a device-login token (`cnf.x5t#S256`, §6.1) presented to a Ktor route is refused
+exactly as a DPoP-bound one (`cnf.jkt`, RFC 9449) would be, neither silently accepted. Wiring real
+peer-certificate or DPoP-proof evidence out of a specific underlying Ktor engine (Netty, CIO and
 Jetty each expose it differently, if at all) is a separate integration this SDK does not attempt
 to guess at. An integrator with that evidence supplies it exactly as above, directly to
 `verifySession`.
@@ -1938,10 +1954,12 @@ val manifest = ManagementManifest.builder()
     .build()
 ```
 
-One role bound more than once to one subject — plain and/or scoped — is refused at `build()`
-before any request: `has_role` is `UNIQUE(subject, role)`, so a second binding is a state the
-server cannot hold. A **global** role bound `atOnly` is refused the same way — it has no resource
-to stop at.
+One role bound more than once to one subject — plain and/or scoped — is refused at `plan()`/
+`apply()`, still before any request: `has_role` is `UNIQUE(subject, role)`, so a second binding is
+a state the server cannot hold. A **global** role bound `atOnly` (or, equivalently, any scoped
+binding with `inherit: false`) is refused the same way — it has no resource to stop at.
+`build()` only catches a dangling key reference; these two checks need the whole manifest and run
+in `ManifestValidation`, which `plan()` and `apply()` both call first.
 
 **Service accounts.** `serviceAccount(key, name, description)` + `bindServiceAccountRole(key,
 binding)`, reconciled last (§27.6 rule 5) since their bindings can name roles and resources
@@ -1957,6 +1975,20 @@ for ((action, created) in report.createdServiceAccounts()) {
     saveSecretSomewhereSafe(action.key, created.clientSecret.expose())   // shown exactly once
 }
 ```
+
+**Rebinding a role is unassign-then-assign, not a single call.** A binding `Update` — the
+manifest's desired resource/`inherit`/`tenant_scope` differ from the server's — first unassigns
+the previous binding, then assigns the new one, carrying the previous binding's `tenant_scope`
+across. If the assign half fails, the previous binding is re-assigned so the subject is never left
+holding neither, and the step reports `ApplyReport.Status.BINDING_UPDATE_FAILED` with
+`StepOutcome.restoreSucceeded` (and, on `message`, the restore's own error when it too failed) —
+not only a message string. `inherit` reaches the wire only as `false`: an omitted or `true` value
+is never sent (§27.13 S-10 rule 1).
+
+**Declined: `webhooks` in the manifest (§27.6, "webhooks stays named and unspecified").** The
+namespace is SHOULD-level and 1.51 does not require an SDK to cover it. `ManagementManifest` has no
+`webhook(...)` builder call; use the imperative `client.management().webhooks` (§27's ordinary
+CRUD — `list`/`create`/`get`/`update`/`delete`) instead.
 
 ## Building from source
 
