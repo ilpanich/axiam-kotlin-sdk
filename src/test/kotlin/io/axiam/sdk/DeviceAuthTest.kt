@@ -2,6 +2,7 @@ package io.axiam.sdk
 
 import io.axiam.sdk.errors.AuthError
 import io.axiam.sdk.management.PageRequest
+import io.axiam.sdk.oidc.SsoCompleteParams
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
@@ -433,5 +434,78 @@ class DeviceAuthTest {
         val sent = requestsTo("/api/v1/groups")[0]
         assertEquals("Bearer $webauthnJwt", header(sent, "authorization"))
         assertTrue((header(sent, "cookie") ?: "").contains("axiam_access"))
+    }
+
+    /**
+     * An SSO/federation completion is the third, separate call site of the
+     * N4.4 fix — `ssoComplete`/`ssoCompleteOauth2`/`ssoCompleteHandoff` all
+     * share the `onSessionEstablishedWithUnknownScope` hook (`AxiamClient.kt`
+     * `Core.build`), a code path distinct from both `loginScopeOf` (login,
+     * verifyMfa, OPAQUE, the MFA-setup and WebAuthn-setup completions) and
+     * `webauthnFinish` (plain WebAuthn authentication). Deleting only the
+     * hook's `session.clearDeviceToken()` line leaves this test red while
+     * every other test in the suite stays green.
+     */
+    @Test
+    fun `an sso completion also replaces the device credential`() {
+        val deviceTok = deviceTokenJwt()
+        mountDeviceLogin(deviceTok)
+        val ssoJwt = TestSupport.fakeJwt(sub = "user-3")
+        routes["POST /api/v1/auth/federation/oidc/callback"] = okhttp3.mockwebserver.MockResponse()
+            .setResponseCode(200)
+            .addHeader("Content-Type", "application/json")
+            .addHeader("Set-Cookie", "axiam_access=$ssoJwt; Path=/")
+            .setBody(
+                """{"user_id":"${UUID.randomUUID()}","session_id":"${UUID.randomUUID()}",""" +
+                    """"expires_in":900,"redirect_uri":"https://app.example.com/home"}""",
+            )
+        mount("GET", "/api/v1/groups", 200, """{"items":[],"total":0,"offset":0,"limit":50}""")
+        val client = deviceClient()
+
+        runBlocking {
+            client.authenticateDevice()
+            client.ssoComplete(SsoCompleteParams(state = "s-1", code = "the-code"))
+            client.groups.list(PageRequest(limit = 50))
+        }
+
+        val sent = requestsTo("/api/v1/groups")[0]
+        assertEquals(
+            "Bearer $ssoJwt",
+            header(sent, "authorization"),
+            "the SSO session must be the credential, not the stale device token",
+        )
+        assertTrue(
+            (header(sent, "cookie") ?: "").contains("axiam_access"),
+            "the cookie must no longer be withheld once the device token is released",
+        )
+    }
+
+    /**
+     * The I4 twin: a refused SSO completion must leave a previously-adopted
+     * device token exactly as it was. `ssoComplete` throws before
+     * `onSessionEstablishedWithUnknownScope` ever runs on a non-200
+     * (`OidcSupport.kt` `completeFederationSession`: the status check
+     * precedes the hook call), so the hook's `clearDeviceToken()` cannot
+     * fire here either.
+     */
+    @Test
+    fun `a refused sso completion leaves the device credential in place`() {
+        val deviceTok = deviceTokenJwt()
+        mountDeviceLogin(deviceTok)
+        mount("POST", "/api/v1/auth/federation/oidc/callback", 401, """{"error":"unauthorized"}""")
+        mount("GET", "/api/v1/groups", 200, """{"items":[],"total":0,"offset":0,"limit":50}""")
+        val client = deviceClient()
+
+        runBlocking {
+            client.authenticateDevice()
+            assertThrows(AuthError::class.java) {
+                runBlocking { client.ssoComplete(SsoCompleteParams(state = "s-1", code = "the-code")) }
+            }
+            client.groups.list(PageRequest(limit = 50))
+        }
+
+        val sent = requestsTo("/api/v1/groups")[0]
+        assertEquals("Bearer $deviceTok", header(sent, "authorization"))
+        assertFalse((header(sent, "cookie") ?: "").contains("axiam_access"))
     }
 }

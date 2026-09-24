@@ -61,9 +61,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hook) — never proactively before the wire call, so a *refused* later call leaves a
   previously-adopted device token exactly as it was. `refresh()` is unaffected: CONTRACT 1.52
   N4.4 point 4 is explicit that refresh must not clear the device credential, and it does not.
-  Tests: `DeviceAuthTest.kt` — `a later login replaces the device credential`, `a webauthn
-  authentication also replaces the device credential`, and the I4 twin `a refused later login
-  leaves the device credential in place` (3 new; 12 total in the file).
+  Tests: `DeviceAuthTest.kt` — one pair per call site, each with its own I4 twin, since the three
+  call sites are independent and a mutation of any one alone must be caught: `a later login
+  replaces the device credential` / `a refused later login leaves the device credential in
+  place`; `a webauthn authentication also replaces the device credential` / (the login refusal
+  twin covers this path too, `webauthnFinish` reaching no success branch on a refusal); `an sso
+  completion also replaces the device credential` / `a refused sso completion leaves the device
+  credential in place` (5 new; 14 total in the file).
 
 ### Breaking
 
