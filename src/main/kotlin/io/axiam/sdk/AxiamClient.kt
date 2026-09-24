@@ -6,6 +6,7 @@ import io.axiam.sdk.errors.ErrorMapper
 import io.axiam.sdk.errors.NetworkError
 import io.axiam.sdk.internal.AuthHeaderInterceptor
 import io.axiam.sdk.internal.JwksVerifier
+import io.axiam.sdk.internal.PresentedProofs
 import io.axiam.sdk.internal.NoSessionCredentialsNetworkInterceptor
 import io.axiam.sdk.internal.RefreshGuard
 import io.axiam.sdk.internal.RevocationFeed
@@ -1369,18 +1370,43 @@ class AxiamClient private constructor(
      * Applies the CONTRACT.md §10.1 **minimum local-verification set** in
      * full — EdDSA signature against the org JWKS with `alg` pinned before
      * key lookup, REQUIRED `exp`, `nbf` when present, REQUIRED `tenant_id`
-     * asserted against the configured tenant, and `iss`/`aud` when this
-     * client was configured with an expected value (see
-     * [Builder.expectedIssuer] / [Builder.expectedAudience]) — with a single
-     * bounded [JwksVerifier.CLOCK_SKEW_SECONDS] leeway on the time claims.
-     * Every failure, including a required claim that is simply absent,
-     * surfaces as [AuthError].
+     * asserted against the configured tenant, `iss`/`aud` when this client
+     * was configured with an expected value (see [Builder.expectedIssuer] /
+     * [Builder.expectedAudience]), and **rule 9**: a token carrying `cnf`
+     * MUST NOT be accepted without proof the caller holds the named key — see
+     * [presentedProofs] — with a single bounded
+     * [JwksVerifier.CLOCK_SKEW_SECONDS] leeway on the time claims. Every
+     * failure, including a required claim that is simply absent, surfaces as
+     * [AuthError].
+     *
+     * **Rule 9 at this default entry point (contract 1.51).** [presentedProofs]
+     * defaults to [PresentedProofs.none], so a caller that does not thread its
+     * transport's proofs through gets the SAFE reading of rule 9: a
+     * certificate- or DPoP-bound token — a device login's token, notably (§6.1
+     * rules 6/9) — is REFUSED here rather than silently accepted as an
+     * ordinary bearer token, which is what this method did before contract
+     * 1.51 and is a defect the Rust, TypeScript, Go and Python ports all had
+     * too. An UNBOUND token is unaffected either way — rule 9's first row is
+     * "absent `cnf` -> returns", so this fix breaks nothing for a deployment
+     * that never mints bound tokens. A caller whose transport DOES have
+     * something to prove with — this SDK ships no HTTP server framework of its
+     * own, but an integrator embedding it in one that does terminate mTLS or
+     * verify DPoP — passes [presentedProofs] explicitly; see
+     * [JwksVerifier.verifyTokenBinding] for the full ten-row table.
      *
      * The signature-only primitive
      * ([JwksVerifier.verifySignatureOnlyUnchecked]) is NOT a substitute for
      * this method.
+     *
+     * @param presentedProofs what the caller proved on THIS connection —
+     *   [PresentedProofs.none] (the default) if the transport has no evidence
+     *   to offer, which is the correct answer for every caller that has not
+     *   itself terminated an mTLS handshake or verified a DPoP proof.
      */
-    fun verifySession(token: String): AxiamUser {
+    fun verifySession(
+        token: String,
+        presentedProofs: PresentedProofs = PresentedProofs.none(),
+    ): AxiamUser {
         val claims = jwksVerifier.verifySignatureOnlyUnchecked(token)
         JwksVerifier.assertLocalClaims(
             claims = claims,
@@ -1388,6 +1414,12 @@ class AxiamClient private constructor(
             expectedIssuer = expectedIssuer,
             expectedAudience = expectedAudience,
         )
+        // §10.1 rule 9 (contract 1.51): a bound token needs evidence this
+        // entry point either received or does not have. Placed after the
+        // claim checks (an expired-but-bound token should say "expired", not
+        // "unverifiable constraint") and before revocation, which is a
+        // narrower rejection layered on top of an otherwise-valid token.
+        JwksVerifier.verifyTokenBinding(claims, presentedProofs)
         // §10.4 (contract 1.44) — last, and only ever a rejection. Every rule
         // above has already decided the token is valid; a feed that is unset or
         // cannot be read, and a token with no session behind it, all change
