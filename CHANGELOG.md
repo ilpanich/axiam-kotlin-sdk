@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **CONTRACT.md re-vendored at contract 1.52.** Copied byte for byte from axiam `80bc7aa`
+  (sha256 `c7954eec…`), the merge of the C-12 cross-SDK conformance review
+  (ilpanich/axiam#500). 1.52 changes no wire behaviour: it writes rules N1–N6, which
+  this SDK's C-12 fixes (#69) already implement. The README's conformance line
+  moves to 1.52.
+
 ### Added
 
 - **Contract 1.51.** Re-vendored `CONTRACT.md`, `openapi.json` and `management-registry.json`

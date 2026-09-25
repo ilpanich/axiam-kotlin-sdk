@@ -24,7 +24,7 @@ Source: [ilpanich/axiam-kotlin-sdk](https://github.com/ilpanich/axiam-kotlin-sdk
 
 ## Contract conformance
 
-This SDK conforms to **contract 1.51**: CONTRACT.md §1–§7 (§1.1's `getUserInfo` and §1.1.1's
+This SDK conforms to **contract 1.52**: CONTRACT.md §1–§7 (§1.1's `getUserInfo` and §1.1.1's
 `validateToken`/`introspectToken` declined — gRPC-only, and this SDK ships no gRPC transport; see
 [Scope of this SDK (v1)](#scope-of-this-sdk-v1) below), §9–§13 and §12.7, §14, §15, §17, §19,
 §20, §21, §22, §23, §24, §25, §26, §27, §28 (including §6.1 mTLS). §12 is implemented in full at its
