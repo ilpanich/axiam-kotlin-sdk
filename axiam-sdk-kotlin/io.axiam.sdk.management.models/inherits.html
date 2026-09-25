@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html class="no-js">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" charset="UTF-8">
+    <title>inherits</title>
+    <link href="../../images/logo-icon.svg" rel="icon" type="image/svg">
+    <script>var pathToRoot = "../../";</script>
+    <script>document.documentElement.classList.replace("no-js","js");</script>
+    <script>const storage = localStorage.getItem("dokka-dark-mode")
+    if (storage == null) {
+        const osDarkSchemePreferred = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+        if (osDarkSchemePreferred === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    } else {
+        const savedDarkMode = JSON.parse(storage)
+        if(savedDarkMode === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    }
+    </script>
+<script type="text/javascript" src="https://unpkg.com/kotlin-playground@1/dist/playground.min.js" async="async"></script>
+<script type="text/javascript" src="../../scripts/sourceset_dependencies.js" async="async"></script>
+<link href="../../styles/style.css" rel="Stylesheet">
+<link href="../../styles/main.css" rel="Stylesheet">
+<link href="../../styles/prism.css" rel="Stylesheet">
+<link href="../../styles/logo-styles.css" rel="Stylesheet">
+<link href="../../styles/font-jb-sans-auto.css" rel="Stylesheet">
+<script type="text/javascript" src="../../scripts/clipboard.js" async="async"></script>
+<script type="text/javascript" src="../../scripts/navigation-loader.js" async="async"></script>
+<script type="text/javascript" src="../../scripts/platform-content-handler.js" async="async"></script>
+<script type="text/javascript" src="../../scripts/main.js" defer="defer"></script>
+<script type="text/javascript" src="../../scripts/prism.js" async="async"></script>
+<script type="text/javascript" src="../../scripts/symbol-parameters-wrapper_deferred.js" defer="defer"></script>
+</head>
+<body>
+    <div class="root">
+<nav class="navigation" id="navigation-wrapper">
+    <div class="navigation--inner">
+        <div class="navigation-title">
+            <button class="menu-toggle" id="menu-toggle" type="button">toggle menu</button>
+            <div class="library-name">
+                    <a class="library-name--link" href="../../index.html">
+                            axiam-sdk-kotlin
+                    </a>
+            </div>
+            <div class="library-version">
+1.0.0-beta17            </div>
+        </div>
+        <div class="filter-section" id="filter-section">
+                <button class="platform-tag platform-selector jvm-like" data-active="" data-filter=":dokkaHtml/main">jvm</button>
+        </div>
+    </div>
+    <div class="navigation-controls">
+        <button class="navigation-controls--btn navigation-controls--theme" id="theme-toggle-button" type="button">switch theme</button>
+        <div class="navigation-controls--btn navigation-controls--search" id="searchBar" role="button">search in API</div>
+    </div>
+</nav>
+        <div id="container">
+            <div class="sidebar" id="leftColumn">
+                <div class="sidebar--inner" id="sideMenu"></div>
+            </div>
+            <div id="main">
+<div class="main-content" data-page-type="member" id="content" pageIds="axiam-sdk-kotlin::io.axiam.sdk.management.models//inherits/io.axiam.sdk.management.models.RoleAssignment#/PointingToDeclaration//769193423">
+  <div class="breadcrumbs"><a href="../../index.html">axiam-sdk-kotlin</a><span class="delimiter">/</span><a href="index.html">io.axiam.sdk.management.models</a><span class="delimiter">/</span><span class="current">inherits</span></div>
+  <div class="cover ">
+    <h1 class="cover"><span><span>inherits</span></span></h1>
+  </div>
+  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">fun </span><a href="-role-assignment/index.html">RoleAssignment</a><span class="token punctuation">.</span><a href="inherits.html"><span class="token function">inherits</span></a><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-boolean/index.html">Boolean</a></div><p class="paragraph">Whether <a href="-role-assignment/index.html">RoleAssignment</a> reaches the descendants of <code class="lang-kotlin">resourceId</code> (CONTRACT.md §27.13 S-10 rule 3, contract 1.51).</p><p class="paragraph"><code class="lang-kotlin">RoleAssignment.inherit</code> is OPTIONAL on the wire (unlike the role-side listings <a href="-role-user-assignment/inherit.html">RoleUserAssignment.inherit</a> / <a href="-role-group-assignment/inherit.html">RoleGroupAssignment.inherit</a> / <a href="-role-service-account-assignment/inherit.html">RoleServiceAccountAssignment.inherit</a>, which are required-but-defaulted at generation time — see <code class="lang-kotlin">DEFAULT_TRUE_FIELDS</code> in <code class="lang-kotlin">scripts/gen_management.py</code>), so <code class="lang-kotlin">null</code> decodes to exactly that field's raw value: not invented, not defaulted at decode time. This is the ONE place the default is decided, so a caller never writes <code class="lang-kotlin">inherit ?: true</code> itself and risks getting it backwards.</p><p class="paragraph">Hand-written rather than generated: <a href="-role-assignment/index.html">RoleAssignment</a> itself is generated from <code class="lang-kotlin">openapi.json</code> and regenerated verbatim on every run, so a default belongs beside it rather than inside it.</p></div></div>
+</div>
+      <div class="footer">
+        <span class="go-to-top-icon"><a href="#content" id="go-to-top-link"></a></span><span>© 2026 Copyright</span><span
+                class="pull-right"><span>Generated by </span><a
+                href="https://github.com/Kotlin/dokka"><span>dokka</span><span class="padded-icon"></span></a></span>
+      </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
