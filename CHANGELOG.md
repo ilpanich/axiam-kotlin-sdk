@@ -47,6 +47,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [Manifest additions](README.md#manifest-additions-2761-contract-151) section. Tests:
   `ManifestAdditionsTest.kt` (14, against a stateful fake tenant).
 
+### Fixed
+
+- **The device credential now survives a later login (CONTRACT 1.52 N4.4, C-12).**
+  `onCredentialChange()` only ever cleared the §17 decision memo; nothing released
+  `SessionState.deviceToken`, so `AuthHeaderInterceptor` kept preferring an
+  `authenticateDevice()`-adopted bearer token — and kept withholding `Cookie` — after a later
+  `login`, `verifyMfa`, an OPAQUE finish, the MFA-setup and WebAuthn-setup completions, a plain
+  WebAuthn authentication, or an SSO/federation completion. A cookie session established after a
+  device login was silently shadowed by the stale device token on every following request.
+  `SessionState.clearDeviceToken()` is now called from each of those calls' own success path
+  (`loginScopeOf`, `webauthnFinish`, and the `onSessionEstablishedWithUnknownScope` federation
+  hook) — never proactively before the wire call, so a *refused* later call leaves a
+  previously-adopted device token exactly as it was. `refresh()` is unaffected: CONTRACT 1.52
+  N4.4 point 4 is explicit that refresh must not clear the device credential, and it does not.
+  Tests: `DeviceAuthTest.kt` — one pair per call site, each with its own I4 twin, since the three
+  call sites are independent and a mutation of any one alone must be caught: `a later login
+  replaces the device credential` / `a refused later login leaves the device credential in
+  place`; `a webauthn authentication also replaces the device credential` / (the login refusal
+  twin covers this path too, `webauthnFinish` reaching no success branch on a refusal); `an sso
+  completion also replaces the device credential` / `a refused sso completion leaves the device
+  credential in place` (5 new; 14 total in the file).
+
 ### Breaking
 
 - **`AxiamClient.verifySession` now enforces CONTRACT.md §10.1 rule 9 (sender-constrained
@@ -90,6 +112,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   addition alongside the gRPC-only `getUserInfo` operation already deferred.
 - **CONTRACT.md §8 rule 7's "gRPC wrappers read `cnf`" test — not applicable**, for the same
   reason: this SDK ships no gRPC transport for such a wrapper to exist on.
+- **`webhooks` in the §27.6 manifest (§27.6, "webhooks stays named and unspecified").** The
+  namespace is SHOULD-level and, per §27.6, nothing in contract 1.51 requires an SDK to cover it —
+  a webhook's `secret` is caller-supplied rather than minted, so nothing forbids it, but no
+  consumer has asked for it. `ManagementManifest` has no `webhook(...)` builder call and no
+  `webhooks` field; only the imperative `WebhooksApi` (`client.management().webhooks`, §27's
+  ordinary CRUD) is available. (C-12 — this was previously undocumented; the other SDKs that
+  decline it say so.)
 
 ## [1.0.0-beta16] - 2026-09-19
 

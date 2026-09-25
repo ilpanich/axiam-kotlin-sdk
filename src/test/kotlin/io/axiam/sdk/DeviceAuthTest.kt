@@ -2,6 +2,7 @@ package io.axiam.sdk
 
 import io.axiam.sdk.errors.AuthError
 import io.axiam.sdk.management.PageRequest
+import io.axiam.sdk.oidc.SsoCompleteParams
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
@@ -322,5 +323,189 @@ class DeviceAuthTest {
             "the stale cookie session must not be refreshed on the device token's 401",
         )
         assertEquals(1, requestsTo("/api/v1/authz/check").size)
+    }
+
+    // -------------------------------------------------------------------
+    // CONTRACT 1.52 N4.4 (C-12) — a later session-establishing call
+    // replaces the device credential.
+    // -------------------------------------------------------------------
+
+    /**
+     * A device credential is held until replaced (§6.1 rule 11 / N4.4 point
+     * 4): a `login()` after `authenticateDevice()` must be the credential
+     * every later request sends — the device bearer must stop riding, and
+     * the login's own cookie session must resume.
+     *
+     * Before the C-12 fix, `onCredentialChange()` cleared only the decision
+     * memo; nothing released `deviceToken`, so [AuthHeaderInterceptor] kept
+     * preferring the stale device bearer and stripping the fresh cookie.
+     */
+    @Test
+    fun `a later login replaces the device credential`() {
+        val deviceTok = deviceTokenJwt()
+        mountDeviceLogin(deviceTok)
+        val loginJwt = TestSupport.fakeJwt(sub = "user-1")
+        routes["POST /api/v1/auth/login"] = TestSupport.loginOkResponse(accessJwt = loginJwt)
+        mount("GET", "/api/v1/groups", 200, """{"items":[],"total":0,"offset":0,"limit":50}""")
+        val client = deviceClient()
+
+        runBlocking {
+            client.authenticateDevice()
+            client.login("u@example.com", "hunter2hunter2")
+            client.groups.list(PageRequest(limit = 50))
+        }
+
+        val sent = requestsTo("/api/v1/groups")[0]
+        assertEquals(
+            "Bearer $loginJwt",
+            header(sent, "authorization"),
+            "the login's cookie session must be the credential, not the stale device token",
+        )
+        assertTrue(
+            (header(sent, "cookie") ?: "").contains("axiam_access"),
+            "the cookie must no longer be withheld once the device token is released",
+        )
+    }
+
+    /**
+     * The I4 twin: a login that FAILS must leave a previously-adopted device
+     * token exactly as it was (N4.2's reasoning, applied to the SDK's own
+     * session-establishing calls generally) — the release happens only on
+     * `loginScopeOf`'s success path, never proactively before the wire call.
+     * This pins the pre-fix behaviour that must not change.
+     */
+    @Test
+    fun `a refused later login leaves the device credential in place`() {
+        val deviceTok = deviceTokenJwt()
+        mountDeviceLogin(deviceTok)
+        routes["POST /api/v1/auth/login"] = TestSupport.json(401, "invalid credentials")
+        mount("GET", "/api/v1/groups", 200, """{"items":[],"total":0,"offset":0,"limit":50}""")
+        val client = deviceClient()
+
+        runBlocking {
+            client.authenticateDevice()
+            assertThrows(AuthError::class.java) {
+                runBlocking { client.login("u@example.com", "wrong") }
+            }
+            client.groups.list(PageRequest(limit = 50))
+        }
+
+        val sent = requestsTo("/api/v1/groups")[0]
+        assertEquals("Bearer $deviceTok", header(sent, "authorization"))
+        assertFalse((header(sent, "cookie") ?: "").contains("axiam_access"))
+    }
+
+    /**
+     * A plain WebAuthn authentication is also a later session-establishing
+     * call (§6.1 rule 11 / N4.4 point 4) but does not go through
+     * `loginScopeOf` (it never reports `organization_level`) — a separate
+     * code path this fix touches, tested separately.
+     */
+    @Test
+    fun `a webauthn authentication also replaces the device credential`() {
+        val deviceTok = deviceTokenJwt()
+        mountDeviceLogin(deviceTok)
+        val webauthnJwt = TestSupport.fakeJwt(sub = "user-2")
+        routes["POST /api/v1/auth/webauthn/authenticate/discoverable/finish"] = okhttp3.mockwebserver.MockResponse()
+            .setResponseCode(200)
+            .addHeader("Content-Type", "application/json")
+            .addHeader("Set-Cookie", "axiam_access=$webauthnJwt; Path=/")
+            .addHeader("Set-Cookie", "axiam_refresh=refresh-cookie; Path=/")
+            .setBody(
+                """{"access_token":"wa-access","refresh_token":"wa-refresh",""" +
+                    """"session_id":"${UUID.randomUUID()}","expires_in":900}""",
+            )
+        mount("GET", "/api/v1/groups", 200, """{"items":[],"total":0,"offset":0,"limit":50}""")
+        val client = deviceClient()
+        val response = """
+            {"id":"bmV3LWNyZWQ","rawId":"bmV3LWNyZWQ",
+             "response":{"clientDataJSON":"eyJ0eXBlIjoid2ViYXV0aG4uZ2V0In0",
+                         "authenticatorData":"YXV0aC1kYXRh","signature":"c2ln",
+                         "userHandle":"dXNlci1oYW5kbGU"},
+             "type":"public-key","clientExtensionResults":{}}
+        """.trimIndent()
+
+        runBlocking {
+            client.authenticateDevice()
+            client.webauthnDiscoverableFinish(Sensitive.of("state-token"), response)
+            client.groups.list(PageRequest(limit = 50))
+        }
+
+        val sent = requestsTo("/api/v1/groups")[0]
+        assertEquals("Bearer $webauthnJwt", header(sent, "authorization"))
+        assertTrue((header(sent, "cookie") ?: "").contains("axiam_access"))
+    }
+
+    /**
+     * An SSO/federation completion is the third, separate call site of the
+     * N4.4 fix — `ssoComplete`/`ssoCompleteOauth2`/`ssoCompleteHandoff` all
+     * share the `onSessionEstablishedWithUnknownScope` hook (`AxiamClient.kt`
+     * `Core.build`), a code path distinct from both `loginScopeOf` (login,
+     * verifyMfa, OPAQUE, the MFA-setup and WebAuthn-setup completions) and
+     * `webauthnFinish` (plain WebAuthn authentication). Deleting only the
+     * hook's `session.clearDeviceToken()` line leaves this test red while
+     * every other test in the suite stays green.
+     */
+    @Test
+    fun `an sso completion also replaces the device credential`() {
+        val deviceTok = deviceTokenJwt()
+        mountDeviceLogin(deviceTok)
+        val ssoJwt = TestSupport.fakeJwt(sub = "user-3")
+        routes["POST /api/v1/auth/federation/oidc/callback"] = okhttp3.mockwebserver.MockResponse()
+            .setResponseCode(200)
+            .addHeader("Content-Type", "application/json")
+            .addHeader("Set-Cookie", "axiam_access=$ssoJwt; Path=/")
+            .setBody(
+                """{"user_id":"${UUID.randomUUID()}","session_id":"${UUID.randomUUID()}",""" +
+                    """"expires_in":900,"redirect_uri":"https://app.example.com/home"}""",
+            )
+        mount("GET", "/api/v1/groups", 200, """{"items":[],"total":0,"offset":0,"limit":50}""")
+        val client = deviceClient()
+
+        runBlocking {
+            client.authenticateDevice()
+            client.ssoComplete(SsoCompleteParams(state = "s-1", code = "the-code"))
+            client.groups.list(PageRequest(limit = 50))
+        }
+
+        val sent = requestsTo("/api/v1/groups")[0]
+        assertEquals(
+            "Bearer $ssoJwt",
+            header(sent, "authorization"),
+            "the SSO session must be the credential, not the stale device token",
+        )
+        assertTrue(
+            (header(sent, "cookie") ?: "").contains("axiam_access"),
+            "the cookie must no longer be withheld once the device token is released",
+        )
+    }
+
+    /**
+     * The I4 twin: a refused SSO completion must leave a previously-adopted
+     * device token exactly as it was. `ssoComplete` throws before
+     * `onSessionEstablishedWithUnknownScope` ever runs on a non-200
+     * (`OidcSupport.kt` `completeFederationSession`: the status check
+     * precedes the hook call), so the hook's `clearDeviceToken()` cannot
+     * fire here either.
+     */
+    @Test
+    fun `a refused sso completion leaves the device credential in place`() {
+        val deviceTok = deviceTokenJwt()
+        mountDeviceLogin(deviceTok)
+        mount("POST", "/api/v1/auth/federation/oidc/callback", 401, """{"error":"unauthorized"}""")
+        mount("GET", "/api/v1/groups", 200, """{"items":[],"total":0,"offset":0,"limit":50}""")
+        val client = deviceClient()
+
+        runBlocking {
+            client.authenticateDevice()
+            assertThrows(AuthError::class.java) {
+                runBlocking { client.ssoComplete(SsoCompleteParams(state = "s-1", code = "the-code")) }
+            }
+            client.groups.list(PageRequest(limit = 50))
+        }
+
+        val sent = requestsTo("/api/v1/groups")[0]
+        assertEquals("Bearer $deviceTok", header(sent, "authorization"))
+        assertFalse((header(sent, "cookie") ?: "").contains("axiam_access"))
     }
 }

@@ -321,6 +321,11 @@ class AxiamClient private constructor(
                     onSessionEstablishedWithUnknownScope = {
                         principalReachGateRef.set(null)
                         decisionMemo.clear()
+                        // CONTRACT 1.52 N4.4 (C-12): the SSO/federation
+                        // completions are also later session-establishing
+                        // calls, reached only on success — replace any device
+                        // token a prior authenticateDevice() had adopted.
+                        session.clearDeviceToken()
                     },
                 )
 
@@ -382,9 +387,12 @@ class AxiamClient private constructor(
      *   anything else), or [tenantId] outside a reported `reachableTenantIds`
      *   (§5.2.3 rule 4). A client holding no such result — a service account
      *   from client credentials or an injected token, or a session completed
-     *   without reporting the flag (OPAQUE, SSO, WebAuthn, the MFA setup; see
-     *   the CHANGELOG) — has nothing to gate on, so the handle is returned and
-     *   the server's `403` is the answer.
+     *   without reporting the flag (an SSO/federation completion, or a plain
+     *   WebAuthn authentication; see the CHANGELOG) — has nothing to gate on,
+     *   so the handle is returned and the server's `403` is the answer. OPAQUE
+     *   and the MFA-setup completion DO report the flag, exactly as `login`
+     *   and `verifyMfa` do — they read the same `user` object through
+     *   `loginScopeOf` and gate on it like any other login.
      */
     fun actingTenant(tenantId: UUID): AxiamClient {
         principalReachGate?.let { gate ->
@@ -1953,6 +1961,11 @@ class AxiamClient private constructor(
             // to "nothing known" rather than carry the PREVIOUS principal's
             // gate into a session that may not be the same principal.
             principalReachGate = null
+            // CONTRACT 1.52 N4.4 (C-12): a plain WebAuthn authentication is
+            // also a later session-establishing call, reached only here on
+            // success — replace any device token a prior authenticateDevice()
+            // had adopted.
+            session.clearDeviceToken()
             val wire = readJson(http)
             return WebauthnLoginResult(
                 accessToken = Sensitive.of(wire.str("access_token")),
@@ -2512,6 +2525,13 @@ class AxiamClient private constructor(
      * unknown, and that is the whole point of the field.
      */
     private fun loginScopeOf(response: Response): LoginScope {
+        // CONTRACT 1.52 N4.4 (C-12): every caller of this function is a later
+        // session-establishing call (login, verifyMfa, an OPAQUE finish, the
+        // MFA-setup and WebAuthn-setup completions) reached ONLY on success
+        // (its 200 check runs first) — so a device token adopted by a prior
+        // authenticateDevice() is replaced here, never proactively before the
+        // wire call, matching N4.2 for the call that IS the device login.
+        session.clearDeviceToken()
         val user = readJson(response)["user"]?.jsonObject
             ?: run {
                 // §5.2 rule 1: `organizationLevel` is always answered (`false`
