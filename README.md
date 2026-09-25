@@ -53,7 +53,7 @@ as `suspend` functions on the same `AxiamClient`.
 range because they landed after this SDK already stated its coverage: widening the range silently
 would turn a statement that was true when written into a different claim without anyone editing it.
 
-**§28 (MCP resource-server helpers)** shipped in `1.0.0-beta16`, when `CONTRACT.md`, `openapi.json`
+**§28 (MCP resource-server helpers)** shipped in `1.0.0-beta17`, when `CONTRACT.md`, `openapi.json`
 and `proto/` were re-synced ahead of `axiam` `main` from the `claude_dev/mcp-authorization-server-plan.md`
 branch, where contract 1.48 landed before that phase merged. `CONTRACT.md`, `openapi.json` and
 `proto/` have since been re-synced again, from `axiam` `main` at `56fbe44` (contract 1.51) — this
@@ -113,7 +113,7 @@ default tenant.
 
 ```kotlin
 dependencies {
-    implementation("io.github.ilpanich:axiam-sdk-kotlin:1.0.0-beta16")
+    implementation("io.github.ilpanich:axiam-sdk-kotlin:1.0.0-beta17")
     // Optional — only if you use the Ktor route guard / §11 helpers:
     implementation("io.ktor:ktor-server-core:2.3.12")
 }
@@ -125,7 +125,7 @@ dependencies {
 <dependency>
   <groupId>io.github.ilpanich</groupId>
   <artifactId>axiam-sdk-kotlin</artifactId>
-  <version>1.0.0-beta16</version>
+  <version>1.0.0-beta17</version>
 </dependency>
 ```
 

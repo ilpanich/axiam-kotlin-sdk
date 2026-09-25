@@ -7,15 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- **CONTRACT.md re-vendored at contract 1.52.** Copied byte for byte from axiam `80bc7aa`
-  (sha256 `c7954eec…`), the merge of the C-12 cross-SDK conformance review
-  (ilpanich/axiam#500). 1.52 changes no wire behaviour: it writes rules N1–N6, which
-  this SDK's C-12 fixes (#69) already implement. The README's conformance line
-  moves to 1.52.
+## [1.0.0-beta17] - 2026-09-25
 
 ### Added
+
+- Manifest additions — metadata, two-shape bindings, service accounts (CONTRACT §27.6.1, contract 1.51)
+
+- Authenticate_device(), the mTLS device login (CONTRACT §6.1 rules 6-10)
+
+- Acting tenant, X-Axiam-Tenant (CONTRACT §5.2 rule 1, contract 1.51)
+
+- Re-vendor contract 1.51 and regenerate the §27 surface
 
 - **Contract 1.51.** Re-vendored `CONTRACT.md`, `openapi.json` and `management-registry.json`
   from `axiam` `56fbe44` (merge of #497); `CONTRACT.md` sha256 `0ac7fd75f83c…`, matching the
@@ -55,7 +57,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [Manifest additions](README.md#manifest-additions-2761-contract-151) section. Tests:
   `ManifestAdditionsTest.kt` (14, against a stateful fake tenant).
 
+### Changed
+
+- Re-vendor CONTRACT.md at contract 1.52
+
+- Pin the SSO call site of the N4.4 device-credential fix
+
+- Correct and complete the C-12 conformance documentation
+
+- What the acting-tenant gate records, as the code does
+
+- Contract 1.51 conformance, README and CHANGELOG (C-8)
+
+- **CONTRACT.md re-vendored at contract 1.52.** Copied byte for byte from axiam `80bc7aa`
+  (sha256 `c7954eec…`), the merge of the C-12 cross-SDK conformance review
+  (ilpanich/axiam#500). 1.52 changes no wire behaviour: it writes rules N1–N6, which
+  this SDK's C-12 fixes (#69) already implement. The README's conformance line
+  moves to 1.52.
+
 ### Fixed
+
+- Release the device credential on a later session-establishing call
+
+- VerifySession enforces §10.1 rule 9 (contract 1.51)
 
 - **The device credential now survives a later login (CONTRACT 1.52 N4.4, C-12).**
   `onCredentialChange()` only ever cleared the §17 decision memo; nothing released
@@ -118,8 +142,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `axiam.v1.TokenService/ValidateToken` and `/IntrospectToken`, which have no REST equivalent —
   adopting them without the transport that carries them is not possible. Tracked as a future
   addition alongside the gRPC-only `getUserInfo` operation already deferred.
+
 - **CONTRACT.md §8 rule 7's "gRPC wrappers read `cnf`" test — not applicable**, for the same
   reason: this SDK ships no gRPC transport for such a wrapper to exist on.
+
 - **`webhooks` in the §27.6 manifest (§27.6, "webhooks stays named and unspecified").** The
   namespace is SHOULD-level and, per §27.6, nothing in contract 1.51 requires an SDK to cover it —
   a webhook's `secret` is caller-supplied rather than minted, so nothing forbids it, but no
