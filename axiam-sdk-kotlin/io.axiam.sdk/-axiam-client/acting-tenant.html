@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html class="no-js">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" charset="UTF-8">
+    <title>actingTenant</title>
+    <link href="../../../images/logo-icon.svg" rel="icon" type="image/svg">
+    <script>var pathToRoot = "../../../";</script>
+    <script>document.documentElement.classList.replace("no-js","js");</script>
+    <script>const storage = localStorage.getItem("dokka-dark-mode")
+    if (storage == null) {
+        const osDarkSchemePreferred = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+        if (osDarkSchemePreferred === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    } else {
+        const savedDarkMode = JSON.parse(storage)
+        if(savedDarkMode === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    }
+    </script>
+<script type="text/javascript" src="https://unpkg.com/kotlin-playground@1/dist/playground.min.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/sourceset_dependencies.js" async="async"></script>
+<link href="../../../styles/style.css" rel="Stylesheet">
+<link href="../../../styles/main.css" rel="Stylesheet">
+<link href="../../../styles/prism.css" rel="Stylesheet">
+<link href="../../../styles/logo-styles.css" rel="Stylesheet">
+<link href="../../../styles/font-jb-sans-auto.css" rel="Stylesheet">
+<script type="text/javascript" src="../../../scripts/clipboard.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/navigation-loader.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/platform-content-handler.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/main.js" defer="defer"></script>
+<script type="text/javascript" src="../../../scripts/prism.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/symbol-parameters-wrapper_deferred.js" defer="defer"></script>
+</head>
+<body>
+    <div class="root">
+<nav class="navigation" id="navigation-wrapper">
+    <div class="navigation--inner">
+        <div class="navigation-title">
+            <button class="menu-toggle" id="menu-toggle" type="button">toggle menu</button>
+            <div class="library-name">
+                    <a class="library-name--link" href="../../../index.html">
+                            axiam-sdk-kotlin
+                    </a>
+            </div>
+            <div class="library-version">
+1.0.0-beta17            </div>
+        </div>
+        <div class="filter-section" id="filter-section">
+                <button class="platform-tag platform-selector jvm-like" data-active="" data-filter=":dokkaHtml/main">jvm</button>
+        </div>
+    </div>
+    <div class="navigation-controls">
+        <button class="navigation-controls--btn navigation-controls--theme" id="theme-toggle-button" type="button">switch theme</button>
+        <div class="navigation-controls--btn navigation-controls--search" id="searchBar" role="button">search in API</div>
+    </div>
+</nav>
+        <div id="container">
+            <div class="sidebar" id="leftColumn">
+                <div class="sidebar--inner" id="sideMenu"></div>
+            </div>
+            <div id="main">
+<div class="main-content" data-page-type="member" id="content" pageIds="axiam-sdk-kotlin::io.axiam.sdk/AxiamClient/actingTenant/#java.util.UUID/PointingToDeclaration//769193423">
+  <div class="breadcrumbs"><a href="../../../index.html">axiam-sdk-kotlin</a><span class="delimiter">/</span><a href="../index.html">io.axiam.sdk</a><span class="delimiter">/</span><a href="index.html">AxiamClient</a><span class="delimiter">/</span><span class="current">actingTenant</span></div>
+  <div class="cover ">
+    <h1 class="cover"><span>acting</span><wbr></wbr><span><span>Tenant</span></span></h1>
+  </div>
+  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">fun </span><a href="acting-tenant.html"><span class="token function">actingTenant</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">tenantId<span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/util/UUID.html">UUID</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="index.html">AxiamClient</a></div><p class="paragraph">A handle to this client that acts on <a href="acting-tenant.html">tenantId</a> — CONTRACT.md §5.2 rule 1 (contract 1.51).</p><p class="paragraph">The returned handle shares everything with <code class="lang-kotlin">this</code> — session, cookie jar, refresh guard, telemetry, decision memo — and differs only in the <code class="lang-kotlin">X-Axiam-Tenant</code> it sends. <code class="lang-kotlin">this</code> is unchanged, so two tasks can act on two tenants at once over one session. Call <a href="clear-acting-tenant.html">clearActingTenant</a> (or simply keep using <code class="lang-kotlin">this</code>) to act on the principal's own tenant again.</p><p class="paragraph">Meaningful only for an <strong>organization-level</strong> principal; see <a href="-builder/with-acting-tenant.html">Builder.withActingTenant</a> for what the header does and does not reach (not <code class="lang-kotlin">X-Tenant-ID</code>, not gRPC — this SDK ships none).</p><h4 class="">Throws</h4><div class="table"><div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main"><div class="main-subrow keyValue "><div class=""><span class="inline-flex"><div><a href="../../io.axiam.sdk.errors/-authz-error/index.html"><span>Authz</span><wbr></wbr><span><span>Error</span></span></a></div></span></div><div><div class="title"><p class="paragraph">, with <strong>no</strong> wire call, when this client holds a login result that reported the principal's reach and that result says the header would be refused: <code class="lang-kotlin">organizationLevel: false</code> (an ordinary tenant principal is a principal of one tenant, and the server answers <code class="lang-kotlin">403</code> to anything else), or <a href="acting-tenant.html">tenantId</a> outside a reported <code class="lang-kotlin">reachableTenantIds</code> (§5.2.3 rule 4). A client holding no such result — a service account from client credentials or an injected token, or a session completed without reporting the flag (an SSO/federation completion, or a plain WebAuthn authentication; see the CHANGELOG) — has nothing to gate on, so the handle is returned and the server's <code class="lang-kotlin">403</code> is the answer. OPAQUE and the MFA-setup completion DO report the flag, exactly as <code class="lang-kotlin">login</code> and <code class="lang-kotlin">verifyMfa</code> do — they read the same <code class="lang-kotlin">user</code> object through <code class="lang-kotlin">loginScopeOf</code> and gate on it like any other login.</p></div></div></div></div></div></div></div>
+</div>
+      <div class="footer">
+        <span class="go-to-top-icon"><a href="#content" id="go-to-top-link"></a></span><span>© 2026 Copyright</span><span
+                class="pull-right"><span>Generated by </span><a
+                href="https://github.com/Kotlin/dokka"><span>dokka</span><span class="padded-icon"></span></a></span>
+      </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

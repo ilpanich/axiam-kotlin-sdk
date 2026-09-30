@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html class="no-js">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" charset="UTF-8">
+    <title>OidcPolicy</title>
+    <link href="../../../images/logo-icon.svg" rel="icon" type="image/svg">
+    <script>var pathToRoot = "../../../";</script>
+    <script>document.documentElement.classList.replace("no-js","js");</script>
+    <script>const storage = localStorage.getItem("dokka-dark-mode")
+    if (storage == null) {
+        const osDarkSchemePreferred = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+        if (osDarkSchemePreferred === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    } else {
+        const savedDarkMode = JSON.parse(storage)
+        if(savedDarkMode === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    }
+    </script>
+<script type="text/javascript" src="https://unpkg.com/kotlin-playground@1/dist/playground.min.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/sourceset_dependencies.js" async="async"></script>
+<link href="../../../styles/style.css" rel="Stylesheet">
+<link href="../../../styles/main.css" rel="Stylesheet">
+<link href="../../../styles/prism.css" rel="Stylesheet">
+<link href="../../../styles/logo-styles.css" rel="Stylesheet">
+<link href="../../../styles/font-jb-sans-auto.css" rel="Stylesheet">
+<script type="text/javascript" src="../../../scripts/clipboard.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/navigation-loader.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/platform-content-handler.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/main.js" defer="defer"></script>
+<script type="text/javascript" src="../../../scripts/prism.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/symbol-parameters-wrapper_deferred.js" defer="defer"></script>
+</head>
+<body>
+    <div class="root">
+<nav class="navigation" id="navigation-wrapper">
+    <div class="navigation--inner">
+        <div class="navigation-title">
+            <button class="menu-toggle" id="menu-toggle" type="button">toggle menu</button>
+            <div class="library-name">
+                    <a class="library-name--link" href="../../../index.html">
+                            axiam-sdk-kotlin
+                    </a>
+            </div>
+            <div class="library-version">
+1.0.0-beta17            </div>
+        </div>
+        <div class="filter-section" id="filter-section">
+                <button class="platform-tag platform-selector jvm-like" data-active="" data-filter=":dokkaHtml/main">jvm</button>
+        </div>
+    </div>
+    <div class="navigation-controls">
+        <button class="navigation-controls--btn navigation-controls--theme" id="theme-toggle-button" type="button">switch theme</button>
+        <div class="navigation-controls--btn navigation-controls--search" id="searchBar" role="button">search in API</div>
+    </div>
+</nav>
+        <div id="container">
+            <div class="sidebar" id="leftColumn">
+                <div class="sidebar--inner" id="sideMenu"></div>
+            </div>
+            <div id="main">
+<div class="main-content" data-page-type="classlike" id="content" pageIds="axiam-sdk-kotlin::io.axiam.sdk.management.models/OidcPolicy///PointingToDeclaration//769193423">
+  <div class="breadcrumbs"><a href="../../../index.html">axiam-sdk-kotlin</a><span class="delimiter">/</span><a href="../index.html">io.axiam.sdk.management.models</a><span class="delimiter">/</span><span class="current">OidcPolicy</span></div>
+  <div class="cover ">
+    <h1 class="cover"><span>Oidc</span><wbr></wbr><span><span>Policy</span></span></h1>
+    <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><div class="block"><div class="block"><span class="token annotation builtin">@</span><span data-unresolved-link="kotlinx.serialization/Serializable///PointingToDeclaration/"><span class="token annotation builtin">Serializable</span></span></div></div><span class="token keyword">data </span><span class="token keyword">class </span><a href="index.html">OidcPolicy</a><span class="token punctuation">(</span><span class="parameters "><span class="parameter "><span class="token keyword">val </span>cimd<span class="token operator">: </span><a href="../-cimd-policy/index.html">CimdPolicy</a><span class="token operator">?</span><span class="token operator"> = </span>null<span class="token punctuation">, </span></span><span class="parameter "><span class="token keyword">val </span>dcrAllowedRedirectHosts<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-list/index.html">List</a><span class="token operator">&lt;</span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">&gt;</span><span class="token operator">?</span><span class="token operator"> = </span>null<span class="token punctuation">, </span></span><span class="parameter "><span class="token keyword">val </span>dcrAllowedScopes<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-list/index.html">List</a><span class="token operator">&lt;</span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">&gt;</span><span class="token operator">?</span><span class="token operator"> = </span>null<span class="token punctuation">, </span></span><span class="parameter "><span class="token keyword">val </span>dcrMaxClients<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-int/index.html">Int</a><span class="token operator">?</span><span class="token operator"> = </span>null<span class="token punctuation">, </span></span><span class="parameter "><span class="token keyword">val </span>dcrUnusedClientTtlDays<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-int/index.html">Int</a><span class="token operator">?</span><span class="token operator"> = </span>null<span class="token punctuation">, </span></span><span class="parameter "><span class="token keyword">val </span>defaultLocale<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">?</span><span class="token operator"> = </span>null<span class="token punctuation">, </span></span><span class="parameter "><span class="token keyword">val </span>dynamicRegistration<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">?</span><span class="token operator"> = </span>null<span class="token punctuation">, </span></span><span class="parameter "><span class="token keyword">val </span>externalClientAllowedResources<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-list/index.html">List</a><span class="token operator">&lt;</span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">&gt;</span><span class="token operator">?</span><span class="token operator"> = </span>null<span class="token punctuation">, </span></span><span class="parameter "><span class="token keyword">val </span>sensitiveScopesEnabled<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-boolean/index.html">Boolean</a></span></span><span class="token punctuation">)</span></div><p class="paragraph">OpenID Connect surface controls (X7 G8, plan §4.6/§4.8; T21.4). Settings that are not password rules, here because this is the org-baseline-plus-tenant-override surface every other per-tenant control lives on. They are not all of the same kind as each other, and which is which is the whole of what [<code class="lang-kotlin">validate_tenant_override</code>] and [<code class="lang-kotlin">clamp_overrides_to_org</code>] read, so it is set out rather than inferred. <strong>Ordered</strong> — a tenant may be stricter than its organization and never more permissive: * [<code class="lang-kotlin">Self::sensitive_scopes_enabled</code>], validated <strong>disable-only</strong> — the mirror image of <code class="lang-kotlin">mfa_enforced</code>, because releasing personal data is the less-restrictive direction, so a tenant can turn its organization's decision off but never on. * [<code class="lang-kotlin">Self::dynamic_registration</code>], on the ladder <code class="lang-kotlin">disabled</code> → <code class="lang-kotlin">initial_access_token</code> → <code class="lang-kotlin">anonymous</code>: a tenant may move down it and never up. * [<code class="lang-kotlin">Self::dcr_max_clients</code>] and [<code class="lang-kotlin">Self::dcr_unused_client_ttl_days</code>], on the ordinary <code class="lang-kotlin">tenant &lt;= org</code> rule — with the wrinkle that <code class="lang-kotlin">0</code> on the second means <i>never sweep</i>, which is the longest window of all and is handled by [<code class="lang-kotlin">dcr_ttl_strictness</code>]. <strong>Not ordered</strong>, therefore never validated against the baseline and never clamped: * [<code class="lang-kotlin">Self::default_locale</code>]. A language is a presentation preference; there is no sense in which Italian is stricter than French. * [<code class="lang-kotlin">Self::dcr_allowed_scopes</code>], [<code class="lang-kotlin">Self::dcr_allowed_redirect_hosts</code>] and [<code class="lang-kotlin">Self::external_client_allowed_resources</code>]. Each names per-tenant resources — <i>this</i> tenant's MCP servers, <i>this</i> tenant's callback hosts — and there is no sense in which one such list is stricter than another. A subset rule would force an organization to enumerate every tenant's resource servers in its own baseline before any tenant could name one. The model's rule is &quot;a tenant may only be more restrictive&quot;, which binds every field that <i>has</i> a restrictiveness; a field that has none cannot violate it. One cross-field interlock spans both groups and is checked on the resolved policy rather than on either input: see [<code class="lang-kotlin">validate_dcr_policy</code>].</p></div></div>
+  </div>
+  <div class="tabbedcontent">
+    <div class="tabs-section" tabs-section="tabs-section"><button class="section-tab" data-active="" data-togglable="CONSTRUCTOR,TYPE,PROPERTY,FUNCTION">Members</button></div>
+    <div class="tabs-section-body">
+      <div data-togglable="CONSTRUCTOR">
+        <h2 class="">Constructors</h2>
+        <div class="table"><a data-name="1003800769%2FConstructors%2F769193423" anchor-label="OidcPolicy" id="1003800769%2FConstructors%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-togglable="CONSTRUCTOR" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="-oidc-policy.html"><span>Oidc</span><wbr></wbr><span><span>Policy</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="1003800769%2FConstructors%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">constructor</span><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">cimd<span class="token operator">: </span><a href="../-cimd-policy/index.html">CimdPolicy</a><span class="token operator">?</span><span class="token operator"> = </span>null<span class="token punctuation">, </span></span><span class="parameter ">dcrAllowedRedirectHosts<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-list/index.html">List</a><span class="token operator">&lt;</span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">&gt;</span><span class="token operator">?</span><span class="token operator"> = </span>null<span class="token punctuation">, </span></span><span class="parameter ">dcrAllowedScopes<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-list/index.html">List</a><span class="token operator">&lt;</span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">&gt;</span><span class="token operator">?</span><span class="token operator"> = </span>null<span class="token punctuation">, </span></span><span class="parameter ">dcrMaxClients<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-int/index.html">Int</a><span class="token operator">?</span><span class="token operator"> = </span>null<span class="token punctuation">, </span></span><span class="parameter ">dcrUnusedClientTtlDays<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-int/index.html">Int</a><span class="token operator">?</span><span class="token operator"> = </span>null<span class="token punctuation">, </span></span><span class="parameter ">defaultLocale<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">?</span><span class="token operator"> = </span>null<span class="token punctuation">, </span></span><span class="parameter ">dynamicRegistration<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">?</span><span class="token operator"> = </span>null<span class="token punctuation">, </span></span><span class="parameter ">externalClientAllowedResources<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-list/index.html">List</a><span class="token operator">&lt;</span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">&gt;</span><span class="token operator">?</span><span class="token operator"> = </span>null<span class="token punctuation">, </span></span><span class="parameter ">sensitiveScopesEnabled<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-boolean/index.html">Boolean</a></span></span><span class="token punctuation">)</span></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div data-togglable="PROPERTY">
+        <h2 class="">Properties</h2>
+        <div class="table"><a data-name="-1542875422%2FProperties%2F769193423" anchor-label="cimd" id="-1542875422%2FProperties%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="cimd.html"><span><span>cimd</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1542875422%2FProperties%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><div class="block"><div class="block"><span class="token annotation builtin">@</span><span data-unresolved-link="kotlinx.serialization/SerialName///PointingToDeclaration/"><span class="token annotation builtin">SerialName</span></span><span class="token punctuation">(</span><span>value<span class="token operator"> = </span><span class="breakable-word"><span class="token string">&quot;cimd&quot;</span></span></span><wbr></wbr><span class="token punctuation">)</span></div></div><span class="token keyword">val </span><a href="cimd.html">cimd</a><span class="token operator">: </span><a href="../-cimd-policy/index.html">CimdPolicy</a><span class="token operator">?</span><span class="token operator"> = </span>null</div><div class="brief "><p class="paragraph">T21.5 — whether a URL-shaped <code class="lang-kotlin">client_id</code> is resolved by fetching the document     it names, and on what terms. See [<code class="lang-kotlin">CimdPolicy</code>]; off unless somebody turns it on     (I1). Nested, and therefore inherited or overridden <strong>whole</strong>: the fields are terms of one     decision, and a half-merged posture is one neither the organization nor the tenant wrote.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-64006207%2FProperties%2F769193423" anchor-label="dcrAllowedRedirectHosts" id="-64006207%2FProperties%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="dcr-allowed-redirect-hosts.html"><span>dcr</span><wbr></wbr><span>Allowed</span><wbr></wbr><span>Redirect</span><wbr></wbr><span><span>Hosts</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-64006207%2FProperties%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><div class="block"><div class="block"><span class="token annotation builtin">@</span><span data-unresolved-link="kotlinx.serialization/SerialName///PointingToDeclaration/"><span class="token annotation builtin">SerialName</span></span><span class="token punctuation">(</span><span>value<span class="token operator"> = </span><span class="breakable-word"><span class="token string">&quot;dcr_allowed_redirect_hosts&quot;</span></span></span><wbr></wbr><span class="token punctuation">)</span></div></div><span class="token keyword">val </span><a href="dcr-allowed-redirect-hosts.html">dcrAllowedRedirectHosts</a><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-list/index.html">List</a><span class="token operator">&lt;</span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">&gt;</span><span class="token operator">?</span><span class="token operator"> = </span>null</div><div class="brief "><p class="paragraph">T21.4 — hosts a self-registered client's <code class="lang-kotlin">redirect_uris</code>     may point at, as globs (<code class="lang-kotlin">*.example.com</code>, or <code class="lang-kotlin">*</code> for any). The loopback hosts (<code class="lang-kotlin">127.0.0.1</code>,     <code class="lang-kotlin">&amp;#91;::1&amp;#93;</code>, <code class="lang-kotlin">localhost</code>) are always allowed whatever this says, because RFC 8252 §7.3     is how every desktop MCP client receives its callback and a tenant that forbade them would     have turned registration on for nobody.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-865340181%2FProperties%2F769193423" anchor-label="dcrAllowedScopes" id="-865340181%2FProperties%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="dcr-allowed-scopes.html"><span>dcr</span><wbr></wbr><span>Allowed</span><wbr></wbr><span><span>Scopes</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-865340181%2FProperties%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><div class="block"><div class="block"><span class="token annotation builtin">@</span><span data-unresolved-link="kotlinx.serialization/SerialName///PointingToDeclaration/"><span class="token annotation builtin">SerialName</span></span><span class="token punctuation">(</span><span>value<span class="token operator"> = </span><span class="breakable-word"><span class="token string">&quot;dcr_allowed_scopes&quot;</span></span></span><wbr></wbr><span class="token punctuation">)</span></div></div><span class="token keyword">val </span><a href="dcr-allowed-scopes.html">dcrAllowedScopes</a><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-list/index.html">List</a><span class="token operator">&lt;</span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">&gt;</span><span class="token operator">?</span><span class="token operator"> = </span>null</div><div class="brief "><p class="paragraph">T21.4 — the scopes a self-registered client may ask for. A     <code class="lang-kotlin">scope</code> a registration names that is not on this list is <code class="lang-kotlin">invalid_client_metadata</code>; an empty     list means a self-registered client gets no scopes at all, which is the honest default for a     tenant that has turned registration on without deciding what it grants. May not contain     <code class="lang-kotlin">address</code> or <code class="lang-kotlin">phone</code> — see this module's [<code class="lang-kotlin">sensitive_scope_in_dcr_list</code>].</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="1986934948%2FProperties%2F769193423" anchor-label="dcrMaxClients" id="1986934948%2FProperties%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="dcr-max-clients.html"><span>dcr</span><wbr></wbr><span>Max</span><wbr></wbr><span><span>Clients</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="1986934948%2FProperties%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><div class="block"><div class="block"><span class="token annotation builtin">@</span><span data-unresolved-link="kotlinx.serialization/SerialName///PointingToDeclaration/"><span class="token annotation builtin">SerialName</span></span><span class="token punctuation">(</span><span>value<span class="token operator"> = </span><span class="breakable-word"><span class="token string">&quot;dcr_max_clients&quot;</span></span></span><wbr></wbr><span class="token punctuation">)</span></div></div><span class="token keyword">val </span><a href="dcr-max-clients.html">dcrMaxClients</a><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-int/index.html">Int</a><span class="token operator">?</span><span class="token operator"> = </span>null</div><div class="brief "><p class="paragraph">T21.4 — how many externally registered clients this tenant may hold.     See [<code class="lang-kotlin">DEFAULT_DCR_MAX_CLIENTS</code>]. <strong>Counted once per mechanism, against the same     number</strong> (T21.8): <code class="lang-kotlin">managed_by: dcr</code> rows and <code class="lang-kotlin">managed_by: cimd</code> rows each have this many. So     a tenant running both cannot have shadow rows materialised from documents exhaust the     allowance for self-registration, or the reverse. The CIMD count is checked <i>before</i> the     document is fetched, so a tenant at its ceiling is not an outbound amplifier either. It     keeps its <code class="lang-kotlin">dcr_</code> name because dynamic registration defined it, on the same precedent as     [<code class="lang-kotlin">Self::dcr_allowed_scopes</code>].</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-612923888%2FProperties%2F769193423" anchor-label="dcrUnusedClientTtlDays" id="-612923888%2FProperties%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="dcr-unused-client-ttl-days.html"><span>dcr</span><wbr></wbr><span>Unused</span><wbr></wbr><span>Client</span><wbr></wbr><span>Ttl</span><wbr></wbr><span><span>Days</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-612923888%2FProperties%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><div class="block"><div class="block"><span class="token annotation builtin">@</span><span data-unresolved-link="kotlinx.serialization/SerialName///PointingToDeclaration/"><span class="token annotation builtin">SerialName</span></span><span class="token punctuation">(</span><span>value<span class="token operator"> = </span><span class="breakable-word"><span class="token string">&quot;dcr_unused_client_ttl_days&quot;</span></span></span><wbr></wbr><span class="token punctuation">)</span></div></div><span class="token keyword">val </span><a href="dcr-unused-client-ttl-days.html">dcrUnusedClientTtlDays</a><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-int/index.html">Int</a><span class="token operator">?</span><span class="token operator"> = </span>null</div><div class="brief "><p class="paragraph">T21.4 — how long an externally registered client survives     without being used. See [<code class="lang-kotlin">DEFAULT_DCR_UNUSED_CLIENT_TTL_DAYS</code>]. <code class="lang-kotlin">0</code> disables the     sweep for this tenant, which an operator who prunes out of band may legitimately want. <strong>Two     sweeps read it, over different clocks</strong> (T21.8). A <code class="lang-kotlin">managed_by: dcr</code> row is measured from     its last authorization, falling back to when it was registered. A <code class="lang-kotlin">managed_by: cimd</code> row is     measured from the last time its document was <i>presented</i>, which every authorize, token and     PAR request moves — so a document in daily use is never swept however old its registration     is, and one nobody has presented since the window is, and re-materialises on the next     request if it is still published. Like the ceiling, it keeps its <code class="lang-kotlin">dcr_</code> name.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="446412128%2FProperties%2F769193423" anchor-label="defaultLocale" id="446412128%2FProperties%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="default-locale.html"><span>default</span><wbr></wbr><span><span>Locale</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="446412128%2FProperties%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><div class="block"><div class="block"><span class="token annotation builtin">@</span><span data-unresolved-link="kotlinx.serialization/SerialName///PointingToDeclaration/"><span class="token annotation builtin">SerialName</span></span><span class="token punctuation">(</span><span>value<span class="token operator"> = </span><span class="breakable-word"><span class="token string">&quot;default_locale&quot;</span></span></span><wbr></wbr><span class="token punctuation">)</span></div></div><span class="token keyword">val </span><a href="default-locale.html">defaultLocale</a><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">?</span><span class="token operator"> = </span>null</div><div class="brief "><p class="paragraph">The BCP 47 tag the sign-in page falls back to when the relying     party's <code class="lang-kotlin">ui_locales</code> selects nothing (W5's chain, plan §4.6). <code class="lang-kotlin">None</code> means &quot;no tenant     preference&quot;, which lands on the deployment default (<code class="lang-kotlin">en</code>) — the behaviour every deployment     had before this field existed. A tag this build does not ship also lands there: the parse is     exact rather than a language lookup, so a stored <code class="lang-kotlin">fr-CA</code> reads as &quot;somebody wrote something     this binary does not ship&quot; rather than as a guess at French. Stored as a string rather than     as the <code class="lang-kotlin">Locale</code> enum because that enum lives in <code class="lang-kotlin">axiam-oauth2</code>, four layers above this     crate, and the crate layering points inward.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-1709592861%2FProperties%2F769193423" anchor-label="dynamicRegistration" id="-1709592861%2FProperties%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="dynamic-registration.html"><span>dynamic</span><wbr></wbr><span><span>Registration</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1709592861%2FProperties%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><div class="block"><div class="block"><span class="token annotation builtin">@</span><span data-unresolved-link="kotlinx.serialization/SerialName///PointingToDeclaration/"><span class="token annotation builtin">SerialName</span></span><span class="token punctuation">(</span><span>value<span class="token operator"> = </span><span class="breakable-word"><span class="token string">&quot;dynamic_registration&quot;</span></span></span><wbr></wbr><span class="token punctuation">)</span></div></div><span class="token keyword">val </span><a href="dynamic-registration.html">dynamicRegistration</a><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">?</span><span class="token operator"> = </span>null</div><div class="brief "><p class="paragraph">T21.4 — whether a client may register itself (RFC 7591), and     on what terms. <code class="lang-kotlin">disabled</code> unless somebody says otherwise (I1).</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="640323756%2FProperties%2F769193423" anchor-label="externalClientAllowedResources" id="640323756%2FProperties%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="external-client-allowed-resources.html"><span>external</span><wbr></wbr><span>Client</span><wbr></wbr><span>Allowed</span><wbr></wbr><span><span>Resources</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="640323756%2FProperties%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><div class="block"><div class="block"><span class="token annotation builtin">@</span><span data-unresolved-link="kotlinx.serialization/SerialName///PointingToDeclaration/"><span class="token annotation builtin">SerialName</span></span><span class="token punctuation">(</span><span>value<span class="token operator"> = </span><span class="breakable-word"><span class="token string">&quot;external_client_allowed_resources&quot;</span></span></span><wbr></wbr><span class="token punctuation">)</span></div></div><span class="token keyword">val </span><a href="external-client-allowed-resources.html">externalClientAllowedResources</a><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-list/index.html">List</a><span class="token operator">&lt;</span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">&gt;</span><span class="token operator">?</span><span class="token operator"> = </span>null</div><div class="brief "><p class="paragraph"><strong>D3</strong> — the audiences an externally registered     client may address. The single most important field on this policy, and the reason the     settings handler refuses <code class="lang-kotlin">dynamic_registration: anonymous</code> while it is empty. A client an     unrelated party registered cannot declare its own <code class="lang-kotlin">allowed_resources</code>; it inherits this list     verbatim, so what a stranger can mint a token <i>for</i> is a decision the tenant took in advance     rather than one the registration request makes. Empty means an externally registered client     can obtain only today's <code class="lang-kotlin">axiam:user</code> tokens — which AXIAM's own APIs accept. That is why the     interlock exists: the empty list is not a safe default for an <i>open</i> registration endpoint,     it is the most dangerous one. Shared with T5 (CIMD), which inherits the same list for the     same reason.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="796687123%2FProperties%2F769193423" anchor-label="sensitiveScopesEnabled" id="796687123%2FProperties%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="sensitive-scopes-enabled.html"><span>sensitive</span><wbr></wbr><span>Scopes</span><wbr></wbr><span><span>Enabled</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="796687123%2FProperties%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><div class="block"><div class="block"><span class="token annotation builtin">@</span><span data-unresolved-link="kotlinx.serialization/SerialName///PointingToDeclaration/"><span class="token annotation builtin">SerialName</span></span><span class="token punctuation">(</span><span>value<span class="token operator"> = </span><span class="breakable-word"><span class="token string">&quot;sensitive_scopes_enabled&quot;</span></span></span><wbr></wbr><span class="token punctuation">)</span></div></div><span class="token keyword">val </span><a href="sensitive-scopes-enabled.html">sensitiveScopesEnabled</a><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-boolean/index.html">Boolean</a></div><div class="brief "><p class="paragraph">Whether <code class="lang-kotlin">address</code> and <code class="lang-kotlin">phone</code> may be registered on a     client, requested at the authorization endpoint, and released at UserInfo (X7 G8). <strong>Off     unless an organization turns it on.</strong> The two scopes release a postal address and a     telephone number — categories of personal data AXIAM has no other use for — so the     deployment that has never thought about them releases nothing, and the operator who has     thought about them says so once, at the organization level, where the lawful basis for     holding the data was decided. The switch is a <i>capability</i>, not a grant: with it on, a     client still has to register the scope, the request still has to ask for it, and the user     still has to have consented. It is the first of four gates, and it is the only one an     operator can close for everybody at once.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      <div class="footer">
+        <span class="go-to-top-icon"><a href="#content" id="go-to-top-link"></a></span><span>© 2026 Copyright</span><span
+                class="pull-right"><span>Generated by </span><a
+                href="https://github.com/Kotlin/dokka"><span>dokka</span><span class="padded-icon"></span></a></span>
+      </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

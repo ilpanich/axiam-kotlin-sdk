@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html class="no-js">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" charset="UTF-8">
+    <title>serveProtectedResourceMetadata</title>
+    <link href="../../images/logo-icon.svg" rel="icon" type="image/svg">
+    <script>var pathToRoot = "../../";</script>
+    <script>document.documentElement.classList.replace("no-js","js");</script>
+    <script>const storage = localStorage.getItem("dokka-dark-mode")
+    if (storage == null) {
+        const osDarkSchemePreferred = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+        if (osDarkSchemePreferred === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    } else {
+        const savedDarkMode = JSON.parse(storage)
+        if(savedDarkMode === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    }
+    </script>
+<script type="text/javascript" src="https://unpkg.com/kotlin-playground@1/dist/playground.min.js" async="async"></script>
+<script type="text/javascript" src="../../scripts/sourceset_dependencies.js" async="async"></script>
+<link href="../../styles/style.css" rel="Stylesheet">
+<link href="../../styles/main.css" rel="Stylesheet">
+<link href="../../styles/prism.css" rel="Stylesheet">
+<link href="../../styles/logo-styles.css" rel="Stylesheet">
+<link href="../../styles/font-jb-sans-auto.css" rel="Stylesheet">
+<script type="text/javascript" src="../../scripts/clipboard.js" async="async"></script>
+<script type="text/javascript" src="../../scripts/navigation-loader.js" async="async"></script>
+<script type="text/javascript" src="../../scripts/platform-content-handler.js" async="async"></script>
+<script type="text/javascript" src="../../scripts/main.js" defer="defer"></script>
+<script type="text/javascript" src="../../scripts/prism.js" async="async"></script>
+<script type="text/javascript" src="../../scripts/symbol-parameters-wrapper_deferred.js" defer="defer"></script>
+</head>
+<body>
+    <div class="root">
+<nav class="navigation" id="navigation-wrapper">
+    <div class="navigation--inner">
+        <div class="navigation-title">
+            <button class="menu-toggle" id="menu-toggle" type="button">toggle menu</button>
+            <div class="library-name">
+                    <a class="library-name--link" href="../../index.html">
+                            axiam-sdk-kotlin
+                    </a>
+            </div>
+            <div class="library-version">
+1.0.0-beta17            </div>
+        </div>
+        <div class="filter-section" id="filter-section">
+                <button class="platform-tag platform-selector jvm-like" data-active="" data-filter=":dokkaHtml/main">jvm</button>
+        </div>
+    </div>
+    <div class="navigation-controls">
+        <button class="navigation-controls--btn navigation-controls--theme" id="theme-toggle-button" type="button">switch theme</button>
+        <div class="navigation-controls--btn navigation-controls--search" id="searchBar" role="button">search in API</div>
+    </div>
+</nav>
+        <div id="container">
+            <div class="sidebar" id="leftColumn">
+                <div class="sidebar--inner" id="sideMenu"></div>
+            </div>
+            <div id="main">
+<div class="main-content" data-page-type="member" id="content" pageIds="axiam-sdk-kotlin::io.axiam.sdk.ktor//serveProtectedResourceMetadata/io.ktor.server.routing.Route#io.axiam.sdk.mcp.ProtectedResourceMetadata#kotlin.String?#kotlin.String?/PointingToDeclaration//769193423">
+  <div class="breadcrumbs"><a href="../../index.html">axiam-sdk-kotlin</a><span class="delimiter">/</span><a href="index.html">io.axiam.sdk.ktor</a><span class="delimiter">/</span><span class="current">serveProtectedResourceMetadata</span></div>
+  <div class="cover ">
+    <h1 class="cover"><span>serve</span><wbr></wbr><span>Protected</span><wbr></wbr><span>Resource</span><wbr></wbr><span><span>Metadata</span></span></h1>
+  </div>
+  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">fun </span><span data-unresolved-link="io.ktor.server.routing/Route///PointingToDeclaration/">Route</span><span class="token punctuation">.</span><a href="serve-protected-resource-metadata.html"><span class="token function">serveProtectedResourceMetadata</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">metadata<span class="token operator">: </span><a href="../io.axiam.sdk.mcp/-protected-resource-metadata/index.html">ProtectedResourceMetadata</a><span class="token punctuation">, </span></span><span class="parameter ">guardResourceMetadataUrl<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">?</span><span class="token operator"> = </span>null<span class="token punctuation">, </span></span><span class="parameter ">guardExpectedAudience<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">?</span><span class="token operator"> = </span>null</span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../io.axiam.sdk.mcp/-protected-resource-metadata/index.html">ProtectedResourceMetadata</a></div><p class="paragraph"><code class="lang-kotlin">serveProtectedResourceMetadata(app, metadata)</code> (CONTRACT.md §28.3) — register the one <code class="lang-kotlin">GET</code> route that serves the RFC 9728 protected-resource metadata document, on this application's own routing tree, and return the same <a href="serve-protected-resource-metadata.html">metadata</a> so <a href="-axiam-auth-config/resource-metadata-url.html">AxiamAuthConfig.resourceMetadataUrl</a> can be fed from <a href="../io.axiam.sdk.mcp/-protected-resource-metadata/metadata-url.html">ProtectedResourceMetadata.metadataUrl</a> rather than retyped.</p><p class="paragraph"><strong>The path is derived, not chosen</strong>, and <strong>exactly one route is registered</strong> — call this once per resource; a deployment fronting several resources calls it once per resource, and the derived paths cannot collide because each comes from its own resource's own <code class="lang-kotlin">metadataPath</code>.</p><p class="paragraph">The response is <code class="lang-kotlin">200</code> with <code class="lang-kotlin">Content-Type: application/json</code>, the document as its body, <code class="lang-kotlin">Cache-Control: public, max-age=3600</code> and <code class="lang-kotlin">Access-Control-Allow-Origin: *</code> — the last because an MCP client running in a browser cannot read the document without it, and it is safe precisely because the response is identical for every caller. It carries no <code class="lang-kotlin">Access-Control-Allow-Credentials</code>, which would be asking a browser to attach the user's cookies to a request that has no use for them. Nothing is read from the request, so there is no <code class="lang-kotlin">Set-Cookie</code> and no per-caller content. The body is serialized <strong>once</strong>, at registration time.</p><p class="paragraph"><strong>Serving it needs no route ordering.</strong> <code class="lang-kotlin">AxiamAuthentication</code> exempts this exact path from its own credential check itself, from the <code class="lang-kotlin">resourceMetadataUrl</code> it was configured with (§28.3 rule 2) — so this call can come before or after <code class="lang-kotlin">install(AxiamAuthentication)</code>.</p><h4 class="">Parameters</h4><div class="table"><div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main"><div class="main-subrow keyValue "><div class=""><span class="inline-flex"><div><u><span><span>metadata</span></span></u></div></span></div><div><div class="title"><p class="paragraph">the value <a href="../io.axiam.sdk.mcp/-mcp/protected-resource-metadata.html">io.axiam.sdk.mcp.Mcp.protectedResourceMetadata</a> returned.</p></div></div></div></div><div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main"><div class="main-subrow keyValue "><div class=""><span class="inline-flex"><div><u><span>guard</span><wbr></wbr><span>Resource</span><wbr></wbr><span>Metadata</span><wbr></wbr><span><span>Url</span></span></u></div></span></div><div><div class="title"><p class="paragraph">optionally, the paired <code class="lang-kotlin">AxiamAuthConfig.resourceMetadataUrl</code> this document is meant to pair with — passing it applies §28.5 rule 3's cross-check. Omit it (the default) where the guard is configured in a different process: nothing can be checked there, and both sides are configured from the one <a href="../io.axiam.sdk.mcp/-protected-resource-metadata/metadata-url.html">ProtectedResourceMetadata.metadataUrl</a> constant instead.</p></div></div></div></div><div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main"><div class="main-subrow keyValue "><div class=""><span class="inline-flex"><div><u><span>guard</span><wbr></wbr><span>Expected</span><wbr></wbr><span><span>Audience</span></span></u></div></span></div><div><div class="title"><p class="paragraph">the paired guard's <code class="lang-kotlin">AxiamClient.expectedAudience</code>, checked against <a href="serve-protected-resource-metadata.html">metadata</a>'s <code class="lang-kotlin">resource</code> under the same condition as <a href="serve-protected-resource-metadata.html">guardResourceMetadataUrl</a>.</p></div></div></div></div></div><h4 class="">Throws</h4><div class="table"><div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main"><div class="main-subrow keyValue "><div class=""><span class="inline-flex"><div><a href="../io.axiam.sdk.errors/-validation-error/index.html"><span>Validation</span><wbr></wbr><span><span>Error</span></span></a></div></span></div><div><div class="title"><p class="paragraph">when <a href="serve-protected-resource-metadata.html">guardResourceMetadataUrl</a> is given and is not exactly <a href="../io.axiam.sdk.mcp/-protected-resource-metadata/metadata-url.html">ProtectedResourceMetadata.metadataUrl</a>, or <a href="serve-protected-resource-metadata.html">guardExpectedAudience</a> is given and is not exactly <a href="../io.axiam.sdk.mcp/-protected-resource-metadata/document.html">ProtectedResourceMetadata.document</a>'s <code class="lang-kotlin">resource</code>.</p><p class="paragraph">Example:</p><div class="sample-container"><pre><code class="block lang-kotlin" theme="idea">val metadata = Mcp.protectedResourceMetadata(<br>    resource = &quot;https://mcp.example.com/mcp&quot;,<br>    authorizationServers = listOf(&quot;https://axiam.example.com&quot;),<br>    scopesSupported = listOf(&quot;mcp:read&quot;, &quot;mcp:tools&quot;),<br>)<br>val guardClient = AxiamClient.builder(baseUrl, tenantId)<br>    .expectedAudience(metadata.document.resource)<br>    .build()<br><br>install(AxiamAuthentication) {<br>    client = guardClient<br>    resourceMetadataUrl = metadata.metadataUrl<br>}<br>routing {<br>    serveProtectedResourceMetadata(metadata, metadata.metadataUrl, guardClient.expectedAudience())<br>}</code></pre><span class="top-right-position"><span class="copy-icon"></span><div class="copy-popup-wrapper popup-to-left"><span class="copy-popup-icon"></span><span>Content copied to clipboard</span></div></span></div></div></div></div></div></div></div></div>
+</div>
+      <div class="footer">
+        <span class="go-to-top-icon"><a href="#content" id="go-to-top-link"></a></span><span>© 2026 Copyright</span><span
+                class="pull-right"><span>Generated by </span><a
+                href="https://github.com/Kotlin/dokka"><span>dokka</span><span class="padded-icon"></span></a></span>
+      </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

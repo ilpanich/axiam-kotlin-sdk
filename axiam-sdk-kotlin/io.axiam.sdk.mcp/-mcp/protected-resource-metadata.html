@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html class="no-js">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" charset="UTF-8">
+    <title>protectedResourceMetadata</title>
+    <link href="../../../images/logo-icon.svg" rel="icon" type="image/svg">
+    <script>var pathToRoot = "../../../";</script>
+    <script>document.documentElement.classList.replace("no-js","js");</script>
+    <script>const storage = localStorage.getItem("dokka-dark-mode")
+    if (storage == null) {
+        const osDarkSchemePreferred = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+        if (osDarkSchemePreferred === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    } else {
+        const savedDarkMode = JSON.parse(storage)
+        if(savedDarkMode === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    }
+    </script>
+<script type="text/javascript" src="https://unpkg.com/kotlin-playground@1/dist/playground.min.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/sourceset_dependencies.js" async="async"></script>
+<link href="../../../styles/style.css" rel="Stylesheet">
+<link href="../../../styles/main.css" rel="Stylesheet">
+<link href="../../../styles/prism.css" rel="Stylesheet">
+<link href="../../../styles/logo-styles.css" rel="Stylesheet">
+<link href="../../../styles/font-jb-sans-auto.css" rel="Stylesheet">
+<script type="text/javascript" src="../../../scripts/clipboard.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/navigation-loader.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/platform-content-handler.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/main.js" defer="defer"></script>
+<script type="text/javascript" src="../../../scripts/prism.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/symbol-parameters-wrapper_deferred.js" defer="defer"></script>
+</head>
+<body>
+    <div class="root">
+<nav class="navigation" id="navigation-wrapper">
+    <div class="navigation--inner">
+        <div class="navigation-title">
+            <button class="menu-toggle" id="menu-toggle" type="button">toggle menu</button>
+            <div class="library-name">
+                    <a class="library-name--link" href="../../../index.html">
+                            axiam-sdk-kotlin
+                    </a>
+            </div>
+            <div class="library-version">
+1.0.0-beta17            </div>
+        </div>
+        <div class="filter-section" id="filter-section">
+                <button class="platform-tag platform-selector jvm-like" data-active="" data-filter=":dokkaHtml/main">jvm</button>
+        </div>
+    </div>
+    <div class="navigation-controls">
+        <button class="navigation-controls--btn navigation-controls--theme" id="theme-toggle-button" type="button">switch theme</button>
+        <div class="navigation-controls--btn navigation-controls--search" id="searchBar" role="button">search in API</div>
+    </div>
+</nav>
+        <div id="container">
+            <div class="sidebar" id="leftColumn">
+                <div class="sidebar--inner" id="sideMenu"></div>
+            </div>
+            <div id="main">
+<div class="main-content" data-page-type="member" id="content" pageIds="axiam-sdk-kotlin::io.axiam.sdk.mcp/Mcp/protectedResourceMetadata/#kotlin.String#kotlin.collections.List[kotlin.String]#kotlin.collections.List[kotlin.String]#kotlin.collections.List[kotlin.String]#kotlin.String?/PointingToDeclaration//769193423">
+  <div class="breadcrumbs"><a href="../../../index.html">axiam-sdk-kotlin</a><span class="delimiter">/</span><a href="../index.html">io.axiam.sdk.mcp</a><span class="delimiter">/</span><a href="index.html">Mcp</a><span class="delimiter">/</span><span class="current">protectedResourceMetadata</span></div>
+  <div class="cover ">
+    <h1 class="cover"><span>protected</span><wbr></wbr><span>Resource</span><wbr></wbr><span><span>Metadata</span></span></h1>
+  </div>
+  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">fun </span><a href="protected-resource-metadata.html"><span class="token function">protectedResourceMetadata</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">resource<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token punctuation">, </span></span><span class="parameter ">authorizationServers<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-list/index.html">List</a><span class="token operator">&lt;</span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">&gt;</span><span class="token punctuation">, </span></span><span class="parameter ">scopesSupported<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-list/index.html">List</a><span class="token operator">&lt;</span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">&gt;</span><span class="token punctuation">, </span></span><span class="parameter ">bearerMethodsSupported<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-list/index.html">List</a><span class="token operator">&lt;</span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">&gt;</span><span class="token operator"> = </span>DEFAULT_BEARER_METHODS<span class="token punctuation">, </span></span><span class="parameter ">resourceDocumentation<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">?</span><span class="token operator"> = </span>null</span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../-protected-resource-metadata/index.html">ProtectedResourceMetadata</a></div><p class="paragraph"><code class="lang-kotlin">protectedResourceMetadata(...)</code> (CONTRACT.md §28.1) — build and validate the RFC 9728 protected-resource metadata document this server publishes about itself, and derive the path and URL it is served at.</p><p class="paragraph"><strong>Validation happens here and it refuses; it never repairs.</strong> Every §28.2 rule is checked before any route exists and before any request is served, and a violation throws <a href="../../io.axiam.sdk.errors/-validation-error/index.html">ValidationError</a>. Nothing is normalised, trimmed, lowercased or re-encoded to make it pass: a value that needs adjusting is a configuration mistake an operator fixes in one line, and a helper that quietly fixed it would publish a document describing a resource server that does not exist.</p><p class="paragraph"><strong>Nothing in the document may come from a request</strong> (§28.2 rule 8). Both <a href="protected-resource-metadata.html">resource</a> and <a href="protected-resource-metadata.html">authorizationServers</a> are configuration; this SDK offers no option to build either from the <code class="lang-kotlin">Host</code> header, the <code class="lang-kotlin">Forwarded</code>/<code class="lang-kotlin">X-Forwarded-*</code> family or the request URL, because a document assembled from the request is a document an attacker can point at an authorization server of their choosing — the whole handshake redirected with one header.</p><h4 class="">Parameters</h4><div class="table"><div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main"><div class="main-subrow keyValue "><div class=""><span class="inline-flex"><div><u><span><span>resource</span></span></u></div></span></div><div><div class="title"><p class="paragraph">the resource identifier: absolute, <code class="lang-kotlin">https</code> (or <code class="lang-kotlin">http</code> on a loopback host), no query, no fragment. A trailing slash is significant</p></div></div></div></div><div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main"><div class="main-subrow keyValue "><div class=""><span class="inline-flex"><div><u><span>authorization</span><wbr></wbr><span><span>Servers</span></span></u></div></span></div><div><div class="title"><p class="paragraph">the issuer identifiers of the authorization servers guarding it — at least one, no duplicates, no query, no fragment</p></div></div></div></div><div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main"><div class="main-subrow keyValue "><div class=""><span class="inline-flex"><div><u><span>scopes</span><wbr></wbr><span><span>Supported</span></span></u></div></span></div><div><div class="title"><p class="paragraph">the scope tokens this resource server understands. Order is preserved, duplicates are refused, and an empty list omits the member</p></div></div></div></div><div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main"><div class="main-subrow keyValue "><div class=""><span class="inline-flex"><div><u><span>bearer</span><wbr></wbr><span>Methods</span><wbr></wbr><span><span>Supported</span></span></u></div></span></div><div><div class="title"><p class="paragraph">defaults to <code class="lang-kotlin">[&quot;header&quot;]</code>, which is the only accepted value in this contract version</p></div></div></div></div><div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main"><div class="main-subrow keyValue "><div class=""><span class="inline-flex"><div><u><span>resource</span><wbr></wbr><span><span>Documentation</span></span></u></div></span></div><div><div class="title"><p class="paragraph">optional documentation page for a human. May carry a query and a fragment; omitted from the document when <code class="lang-kotlin">null</code></p></div></div></div></div></div><h4 class="">Throws</h4><div class="table"><div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main"><div class="main-subrow keyValue "><div class=""><span class="inline-flex"><div><a href="../../io.axiam.sdk.errors/-validation-error/index.html"><span>Validation</span><wbr></wbr><span><span>Error</span></span></a></div></span></div><div><div class="title"><p class="paragraph">when any CONTRACT.md §28.2 rule is violated</p></div></div></div></div></div></div></div>
+</div>
+      <div class="footer">
+        <span class="go-to-top-icon"><a href="#content" id="go-to-top-link"></a></span><span>© 2026 Copyright</span><span
+                class="pull-right"><span>Generated by </span><a
+                href="https://github.com/Kotlin/dokka"><span>dokka</span><span class="padded-icon"></span></a></span>
+      </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
