@@ -12,54 +12,28 @@ import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 
 /**
- * Events that can trigger an admin notification.
+ * The JWS algorithm a CIBA client signs its authentication requests with (CIBA Core §4
+ * `backchannel_authentication_request_signing_alg`, §7.1.1). Exactly the three algorithms AXIAM
+ * verifies on any client-signed JWT (`axiam_oauth2::jose::PERMITTED_ALGORITHMS`): FAPI 2.0
+ * §5.3.1.1's list. A registration naming anything else — `RS256`, `HS256`, `none` — is refused
+ * rather than stored, so no row can hold an algorithm the verifier would not honour (D-61).
  *
  * Each constant carries the spelling the server uses on the wire, so the Kotlin name can follow
  * Kotlin's conventions without changing what is sent.
  *
  * An **open** enum. A value this SDK's copy of the spec does not list decodes to
- * [NotificationEventType.UNKNOWN] rather than failing the response it arrived in (CONTRACT §27.11
+ * [CibaRequestSigningAlg.UNKNOWN] rather than failing the response it arrived in (CONTRACT §27.11
  * rule 1). Its own wire spelling is the empty string, which no server value is: carrying an
  * unrecognised value back into an update is refused by the server rather than silently written as
  * a spelling it never used. A `when` over these constants needs an `UNKNOWN` branch.
  */
-@Serializable(with = NotificationEventType.Companion.Serializer::class)
-enum class NotificationEventType(val wire: String) {
-    LOGIN_FAILURE("login_failure"),
+@Serializable(with = CibaRequestSigningAlg.Companion.Serializer::class)
+enum class CibaRequestSigningAlg(val wire: String) {
+    PS256("PS256"),
 
-    ACCOUNT_LOCKED("account_locked"),
+    ES256("ES256"),
 
-    MFA_ENROLLMENT_CHANGED("mfa_enrollment_changed"),
-
-    PASSWORD_CHANGED("password_changed"),
-
-    PASSWORD_RESET_REQUESTED("password_reset_requested"),
-
-    ROLE_ASSIGNED("role_assigned"),
-
-    ROLE_UNASSIGNED("role_unassigned"),
-
-    PERMISSION_GRANTED("permission_granted"),
-
-    PERMISSION_REVOKED("permission_revoked"),
-
-    CERTIFICATE_ISSUED("certificate_issued"),
-
-    CERTIFICATE_REVOKED("certificate_revoked"),
-
-    CA_CERTIFICATE_REVOKED("ca_certificate_revoked"),
-
-    USER_CREATED("user_created"),
-
-    USER_DELETED("user_deleted"),
-
-    USER_UPDATED("user_updated"),
-
-    SERVICE_ACCOUNT_CREATED("service_account_created"),
-
-    SERVICE_ACCOUNT_DELETED("service_account_deleted"),
-
-    SCIM_DELIVERY_FAILED("scim_delivery_failed"),
+    ED_DSA("EdDSA"),
 
     /** A value this SDK's copy of the spec does not list; see the type's doc. */
     UNKNOWN("");
@@ -72,15 +46,15 @@ enum class NotificationEventType(val wire: String) {
          * outside the constants, which fails the WHOLE response — not just the
          * field. That is the failure §27.11 rule 1 exists to prevent.
          */
-        internal object Serializer : KSerializer<NotificationEventType> {
+        internal object Serializer : KSerializer<CibaRequestSigningAlg> {
             override val descriptor: SerialDescriptor =
-                PrimitiveSerialDescriptor("io.axiam.sdk.management.models.NotificationEventType", PrimitiveKind.STRING)
+                PrimitiveSerialDescriptor("io.axiam.sdk.management.models.CibaRequestSigningAlg", PrimitiveKind.STRING)
 
-            override fun serialize(encoder: Encoder, value: NotificationEventType) {
+            override fun serialize(encoder: Encoder, value: CibaRequestSigningAlg) {
                 encoder.encodeString(value.wire)
             }
 
-            override fun deserialize(decoder: Decoder): NotificationEventType {
+            override fun deserialize(decoder: Decoder): CibaRequestSigningAlg {
                 val raw = decoder.decodeString()
                 return entries.firstOrNull { it != UNKNOWN && it.wire == raw } ?: UNKNOWN
             }

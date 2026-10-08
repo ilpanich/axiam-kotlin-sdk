@@ -476,7 +476,7 @@ class AxiamClient private constructor(
     // Each delegates to management(), so rule 4's "where an SDK offers both, the two
     // MUST return equivalent handles" holds structurally rather than by two code paths
     // agreeing to stay in step. A `get()` rather than a stored `val`: §27.2 rule 1 says
-    // acquiring a handle performs no I/O, and a stored property would build all 24 of
+    // acquiring a handle performs no I/O, and a stored property would build all 28 of
     // them -- and a ManagementTransport apiece -- when a client is constructed.
 
     /**
@@ -694,6 +694,42 @@ class AxiamClient private constructor(
      */
     val platform: io.axiam.sdk.management.PlatformApi
         get() = management().platform()
+
+    /**
+     * The directory operations.
+     *
+     * Acquiring the handle performs no I/O (§27.2 rule 1). The same handle as
+     * `management().directory()` (§27.2 rule 4).
+     */
+    val directory: io.axiam.sdk.management.DirectoryApi
+        get() = management().directory()
+
+    /**
+     * The saml operations.
+     *
+     * Acquiring the handle performs no I/O (§27.2 rule 1). The same handle as
+     * `management().saml()` (§27.2 rule 4).
+     */
+    val saml: io.axiam.sdk.management.SamlApi
+        get() = management().saml()
+
+    /**
+     * The ssf operations.
+     *
+     * Acquiring the handle performs no I/O (§27.2 rule 1). The same handle as
+     * `management().ssf()` (§27.2 rule 4).
+     */
+    val ssf: io.axiam.sdk.management.SsfApi
+        get() = management().ssf()
+
+    /**
+     * The scim_targets operations.
+     *
+     * Acquiring the handle performs no I/O (§27.2 rule 1). The same handle as
+     * `management().scimTargets()` (§27.2 rule 4).
+     */
+    val scimTargets: io.axiam.sdk.management.ScimTargetsApi
+        get() = management().scimTargets()
 
     /**
      * The organization UUID this client can address, if one has resolved.

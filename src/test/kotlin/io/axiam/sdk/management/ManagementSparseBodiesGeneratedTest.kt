@@ -9,14 +9,17 @@ import io.axiam.sdk.management.models.AuthnRequestParamsMode
 import io.axiam.sdk.management.models.CimdPolicy
 import io.axiam.sdk.management.models.ClientAuthMethod
 import io.axiam.sdk.management.models.ClientProfile
+import io.axiam.sdk.management.models.DirectoryKind
 import io.axiam.sdk.management.models.EmailConfigOverride
 import io.axiam.sdk.management.models.FailurePolicy
+import io.axiam.sdk.management.models.ParseSamlSpMetadata
 import io.axiam.sdk.management.models.ProviderConfigSmtp
 import io.axiam.sdk.management.models.ReactorMode
 import io.axiam.sdk.management.models.RetryPolicy
 import io.axiam.sdk.management.models.TenantSettingsOverride
 import io.axiam.sdk.management.models.TenantStatus
 import io.axiam.sdk.management.models.TokenExchangeTrustRequest
+import io.axiam.sdk.management.models.UpdateDirectoryConfig
 import io.axiam.sdk.management.models.UpdateFederationConfigRequest
 import io.axiam.sdk.management.models.UpdateGroup
 import io.axiam.sdk.management.models.UpdateNotificationRuleRequest
@@ -31,6 +34,7 @@ import io.axiam.sdk.management.models.UpdateServiceAccount
 import io.axiam.sdk.management.models.UpdateTenant
 import io.axiam.sdk.management.models.UpdateUserRequest
 import io.axiam.sdk.management.models.UpdateWebhookRequest
+import io.axiam.sdk.management.models.UserAttributeMap
 import io.axiam.sdk.management.models.UserStatus
 import java.util.UUID
 import kotlinx.serialization.json.jsonObject
@@ -169,6 +173,28 @@ class ManagementSparseBodiesGeneratedTest {
         assertKeys(EmailConfigOverride(), EmailConfigOverride.serializer())
     }
 
+    /** §27.4 rule 5 for ParseSamlSpMetadata: each property sets exactly its own key. */
+    @Test
+    fun `parseSamlSpMetadata sends only what was set`() {
+        assertKeys(
+            ParseSamlSpMetadata(metadataUrl = "example"),
+            ParseSamlSpMetadata.serializer(), "metadata_url",
+        )
+        assertKeys(
+            ParseSamlSpMetadata(metadataXml = "example"),
+            ParseSamlSpMetadata.serializer(), "metadata_xml",
+        )
+        assertKeys(
+            ParseSamlSpMetadata(
+                metadataUrl = "example",
+                metadataXml = "example",
+            ),
+            ParseSamlSpMetadata.serializer(),
+            "metadata_url", "metadata_xml",
+        )
+        assertKeys(ParseSamlSpMetadata(), ParseSamlSpMetadata.serializer())
+    }
+
     /** §27.4 rule 5 for TenantSettingsOverride: each property sets exactly its own key. */
     @Test
     fun `tenantSettingsOverride sends only what was set`() {
@@ -301,12 +327,20 @@ class ManagementSparseBodiesGeneratedTest {
             TenantSettingsOverride.serializer(), "require_uppercase",
         )
         assertKeys(
+            TenantSettingsOverride(samlIdpEnabled = true),
+            TenantSettingsOverride.serializer(), "saml_idp_enabled",
+        )
+        assertKeys(
             TenantSettingsOverride(sensitiveScopesEnabled = true),
             TenantSettingsOverride.serializer(), "sensitive_scopes_enabled",
         )
         assertKeys(
             TenantSettingsOverride(serverCertAllowedNames = emptyList()),
             TenantSettingsOverride.serializer(), "server_cert_allowed_names",
+        )
+        assertKeys(
+            TenantSettingsOverride(ssfEnabled = true),
+            TenantSettingsOverride.serializer(), "ssf_enabled",
         )
         assertKeys(
             TenantSettingsOverride(webauthnUserVerification = "example"),
@@ -346,8 +380,10 @@ class ManagementSparseBodiesGeneratedTest {
                 requireLowercase = true,
                 requireSymbols = true,
                 requireUppercase = true,
+                samlIdpEnabled = true,
                 sensitiveScopesEnabled = true,
                 serverCertAllowedNames = emptyList(),
+                ssfEnabled = true,
                 webauthnUserVerification = "example",
             ),
             TenantSettingsOverride.serializer(),
@@ -361,7 +397,8 @@ class ManagementSparseBodiesGeneratedTest {
             "mfa_challenge_lifetime_secs", "mfa_enforced", "min_length", "opaque_ksf",
             "opaque_mode", "opaque_suite", "password_history_count", "refresh_token_lifetime_secs",
             "require_digits", "require_lowercase", "require_symbols", "require_uppercase",
-            "sensitive_scopes_enabled", "server_cert_allowed_names", "webauthn_user_verification",
+            "saml_idp_enabled", "sensitive_scopes_enabled", "server_cert_allowed_names",
+            "ssf_enabled", "webauthn_user_verification",
         )
         assertKeys(TenantSettingsOverride(), TenantSettingsOverride.serializer())
     }
@@ -407,6 +444,106 @@ class ManagementSparseBodiesGeneratedTest {
             "scope_map", "subject_mapping",
         )
         assertKeys(TokenExchangeTrustRequest(), TokenExchangeTrustRequest.serializer())
+    }
+
+    /** §27.4 rule 5 for UpdateDirectoryConfig: each property sets exactly its own key. */
+    @Test
+    fun `updateDirectoryConfig sends only what was set`() {
+        assertKeys(
+            UpdateDirectoryConfig(baseDn = "example"),
+            UpdateDirectoryConfig.serializer(), "base_dn",
+        )
+        assertKeys(
+            UpdateDirectoryConfig(bindDn = "example"),
+            UpdateDirectoryConfig.serializer(), "bind_dn",
+        )
+        assertKeys(
+            UpdateDirectoryConfig(bindSecret = Sensitive.of("example")),
+            UpdateDirectoryConfig.serializer(), "bind_secret",
+        )
+        assertKeys(
+            UpdateDirectoryConfig(enabled = true),
+            UpdateDirectoryConfig.serializer(), "enabled",
+        )
+        assertKeys(
+            UpdateDirectoryConfig(groupBaseDn = "example"),
+            UpdateDirectoryConfig.serializer(), "group_base_dn",
+        )
+        assertKeys(
+            UpdateDirectoryConfig(groupFilter = "example"),
+            UpdateDirectoryConfig.serializer(), "group_filter",
+        )
+        assertKeys(
+            UpdateDirectoryConfig(groupMappings = emptyList()),
+            UpdateDirectoryConfig.serializer(), "group_mappings",
+        )
+        assertKeys(
+            UpdateDirectoryConfig(groupMemberAttribute = "example"),
+            UpdateDirectoryConfig.serializer(), "group_member_attribute",
+        )
+        assertKeys(
+            UpdateDirectoryConfig(groupNestingDepth = 1),
+            UpdateDirectoryConfig.serializer(), "group_nesting_depth",
+        )
+        assertKeys(
+            UpdateDirectoryConfig(jitProvisioning = true),
+            UpdateDirectoryConfig.serializer(), "jit_provisioning",
+        )
+        assertKeys(
+            UpdateDirectoryConfig(kind = DirectoryKind.OPEN_LDAP),
+            UpdateDirectoryConfig.serializer(), "kind",
+        )
+        assertKeys(
+            UpdateDirectoryConfig(startTls = true),
+            UpdateDirectoryConfig.serializer(), "start_tls",
+        )
+        assertKeys(
+            UpdateDirectoryConfig(syncIntervalSecs = 1L),
+            UpdateDirectoryConfig.serializer(), "sync_interval_secs",
+        )
+        assertKeys(
+            UpdateDirectoryConfig(trustAnchorsPem = emptyList()),
+            UpdateDirectoryConfig.serializer(), "trust_anchors_pem",
+        )
+        assertKeys(
+            UpdateDirectoryConfig(url = "example"),
+            UpdateDirectoryConfig.serializer(), "url",
+        )
+        assertKeys(
+            UpdateDirectoryConfig(userAttributeMap = UserAttributeMap(displayName = "example", email = "example", externalId = "example", username = "example")),
+            UpdateDirectoryConfig.serializer(), "user_attribute_map",
+        )
+        assertKeys(
+            UpdateDirectoryConfig(userFilter = "example"),
+            UpdateDirectoryConfig.serializer(), "user_filter",
+        )
+        assertKeys(
+            UpdateDirectoryConfig(
+                baseDn = "example",
+                bindDn = "example",
+                bindSecret = Sensitive.of("example"),
+                enabled = true,
+                groupBaseDn = "example",
+                groupFilter = "example",
+                groupMappings = emptyList(),
+                groupMemberAttribute = "example",
+                groupNestingDepth = 1,
+                jitProvisioning = true,
+                kind = DirectoryKind.OPEN_LDAP,
+                startTls = true,
+                syncIntervalSecs = 1L,
+                trustAnchorsPem = emptyList(),
+                url = "example",
+                userAttributeMap = UserAttributeMap(displayName = "example", email = "example", externalId = "example", username = "example"),
+                userFilter = "example",
+            ),
+            UpdateDirectoryConfig.serializer(),
+            "base_dn", "bind_dn", "bind_secret", "enabled", "group_base_dn",
+            "group_filter", "group_mappings", "group_member_attribute", "group_nesting_depth",
+            "jit_provisioning", "kind", "start_tls", "sync_interval_secs",
+            "trust_anchors_pem", "url", "user_attribute_map", "user_filter",
+        )
+        assertKeys(UpdateDirectoryConfig(), UpdateDirectoryConfig.serializer())
     }
 
     /** §27.4 rule 5 for UpdateFederationConfigRequest: each property sets exactly its own key. */
@@ -601,8 +738,24 @@ class ManagementSparseBodiesGeneratedTest {
             UpdateOAuth2ClientRequest.serializer(), "authn_request_params",
         )
         assertKeys(
+            UpdateOAuth2ClientRequest(backchannelAuthenticationRequestSigningAlg = "example"),
+            UpdateOAuth2ClientRequest.serializer(), "backchannel_authentication_request_signing_alg",
+        )
+        assertKeys(
+            UpdateOAuth2ClientRequest(backchannelClientNotificationEndpoint = "example"),
+            UpdateOAuth2ClientRequest.serializer(), "backchannel_client_notification_endpoint",
+        )
+        assertKeys(
             UpdateOAuth2ClientRequest(backchannelLogoutUri = "example"),
             UpdateOAuth2ClientRequest.serializer(), "backchannel_logout_uri",
+        )
+        assertKeys(
+            UpdateOAuth2ClientRequest(backchannelTokenDeliveryMode = "example"),
+            UpdateOAuth2ClientRequest.serializer(), "backchannel_token_delivery_mode",
+        )
+        assertKeys(
+            UpdateOAuth2ClientRequest(backchannelUserCodeParameter = true),
+            UpdateOAuth2ClientRequest.serializer(), "backchannel_user_code_parameter",
         )
         assertKeys(
             UpdateOAuth2ClientRequest(browserSso = true),
@@ -680,7 +833,11 @@ class ManagementSparseBodiesGeneratedTest {
             UpdateOAuth2ClientRequest(
                 allowedResources = emptyList(),
                 authnRequestParams = AuthnRequestParamsMode.IGNORE,
+                backchannelAuthenticationRequestSigningAlg = "example",
+                backchannelClientNotificationEndpoint = "example",
                 backchannelLogoutUri = "example",
+                backchannelTokenDeliveryMode = "example",
+                backchannelUserCodeParameter = true,
                 browserSso = true,
                 dpopBoundAccessTokens = true,
                 dpopRequireNonce = true,
@@ -701,7 +858,9 @@ class ManagementSparseBodiesGeneratedTest {
                 tokenEndpointAuthMethod = ClientAuthMethod.CLIENT_SECRET_POST,
             ),
             UpdateOAuth2ClientRequest.serializer(),
-            "allowed_resources", "authn_request_params", "backchannel_logout_uri",
+            "allowed_resources", "authn_request_params", "backchannel_authentication_request_signing_alg",
+            "backchannel_client_notification_endpoint", "backchannel_logout_uri",
+            "backchannel_token_delivery_mode", "backchannel_user_code_parameter",
             "browser_sso", "dpop_bound_access_tokens", "dpop_require_nonce",
             "grant_types", "jwks", "jwks_uri", "name", "post_logout_redirect_uris",
             "profile", "redirect_uris", "require_par", "scopes", "self_signed_tls_client_auth_thumbprints",
@@ -1032,7 +1191,7 @@ class ManagementSparseBodiesGeneratedTest {
     fun `every sparse body is covered`() {
         val cases = ManagementSparseBodiesGeneratedTest::class.java
             .declaredMethods.count { it.name.endsWith("sends only what was set") }
-        assertEquals(19, cases,
+        assertEquals(21, cases,
             "one case per sparse body the schema closure declares")
     }
 

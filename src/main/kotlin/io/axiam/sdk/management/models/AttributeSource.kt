@@ -12,54 +12,34 @@ import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 
 /**
- * Events that can trigger an admin notification.
+ * Where an attribute's value comes from. Every variant has a real source today; a variant with
+ * none (a telephone number the OIDC `phone` scope gates behind its own consent, say) is
+ * deliberately absent rather than mapped to an empty value.
  *
  * Each constant carries the spelling the server uses on the wire, so the Kotlin name can follow
  * Kotlin's conventions without changing what is sent.
  *
  * An **open** enum. A value this SDK's copy of the spec does not list decodes to
- * [NotificationEventType.UNKNOWN] rather than failing the response it arrived in (CONTRACT §27.11
- * rule 1). Its own wire spelling is the empty string, which no server value is: carrying an
+ * [AttributeSource.UNKNOWN] rather than failing the response it arrived in (CONTRACT §27.11 rule
+ * 1). Its own wire spelling is the empty string, which no server value is: carrying an
  * unrecognised value back into an update is refused by the server rather than silently written as
  * a spelling it never used. A `when` over these constants needs an `UNKNOWN` branch.
  */
-@Serializable(with = NotificationEventType.Companion.Serializer::class)
-enum class NotificationEventType(val wire: String) {
-    LOGIN_FAILURE("login_failure"),
+@Serializable(with = AttributeSource.Companion.Serializer::class)
+enum class AttributeSource(val wire: String) {
+    USERNAME("username"),
 
-    ACCOUNT_LOCKED("account_locked"),
+    EMAIL("email"),
 
-    MFA_ENROLLMENT_CHANGED("mfa_enrollment_changed"),
+    DISPLAY_NAME("display_name"),
 
-    PASSWORD_CHANGED("password_changed"),
+    GIVEN_NAME("given_name"),
 
-    PASSWORD_RESET_REQUESTED("password_reset_requested"),
+    FAMILY_NAME("family_name"),
 
-    ROLE_ASSIGNED("role_assigned"),
+    GROUPS("groups"),
 
-    ROLE_UNASSIGNED("role_unassigned"),
-
-    PERMISSION_GRANTED("permission_granted"),
-
-    PERMISSION_REVOKED("permission_revoked"),
-
-    CERTIFICATE_ISSUED("certificate_issued"),
-
-    CERTIFICATE_REVOKED("certificate_revoked"),
-
-    CA_CERTIFICATE_REVOKED("ca_certificate_revoked"),
-
-    USER_CREATED("user_created"),
-
-    USER_DELETED("user_deleted"),
-
-    USER_UPDATED("user_updated"),
-
-    SERVICE_ACCOUNT_CREATED("service_account_created"),
-
-    SERVICE_ACCOUNT_DELETED("service_account_deleted"),
-
-    SCIM_DELIVERY_FAILED("scim_delivery_failed"),
+    ROLES("roles"),
 
     /** A value this SDK's copy of the spec does not list; see the type's doc. */
     UNKNOWN("");
@@ -72,15 +52,15 @@ enum class NotificationEventType(val wire: String) {
          * outside the constants, which fails the WHOLE response — not just the
          * field. That is the failure §27.11 rule 1 exists to prevent.
          */
-        internal object Serializer : KSerializer<NotificationEventType> {
+        internal object Serializer : KSerializer<AttributeSource> {
             override val descriptor: SerialDescriptor =
-                PrimitiveSerialDescriptor("io.axiam.sdk.management.models.NotificationEventType", PrimitiveKind.STRING)
+                PrimitiveSerialDescriptor("io.axiam.sdk.management.models.AttributeSource", PrimitiveKind.STRING)
 
-            override fun serialize(encoder: Encoder, value: NotificationEventType) {
+            override fun serialize(encoder: Encoder, value: AttributeSource) {
                 encoder.encodeString(value.wire)
             }
 
-            override fun deserialize(decoder: Decoder): NotificationEventType {
+            override fun deserialize(decoder: Decoder): AttributeSource {
                 val raw = decoder.decodeString()
                 return entries.firstOrNull { it != UNKNOWN && it.wire == raw } ?: UNKNOWN
             }

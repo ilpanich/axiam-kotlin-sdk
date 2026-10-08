@@ -15,14 +15,18 @@ import kotlinx.serialization.Serializable
  * organization and never more permissive: * &#91;`Self::sensitive_scopes_enabled`&#93;, validated
  * **disable-only** — the mirror image of `mfa_enforced`, because releasing personal data is the
  * less-restrictive direction, so a tenant can turn its organization's decision off but never on. *
- * &#91;`Self::dynamic_registration`&#93;, on the ladder `disabled` → `initial_access_token` →
- * `anonymous`: a tenant may move down it and never up. * &#91;`Self::dcr_max_clients`&#93; and
- * &#91;`Self::dcr_unused_client_ttl_days`&#93;, on the ordinary `tenant <= org` rule — with the
- * wrinkle that `0` on the second means *never sweep*, which is the longest window of all and is
- * handled by &#91;`dcr_ttl_strictness`&#93;. **Not ordered**, therefore never validated against
- * the baseline and never clamped: * &#91;`Self::default_locale`&#93;. A language is a presentation
- * preference; there is no sense in which Italian is stricter than French. *
- * &#91;`Self::dcr_allowed_scopes`&#93;, &#91;`Self::dcr_allowed_redirect_hosts`&#93; and
+ * &#91;`Self::saml_idp_enabled`&#93;, validated **disable-only** exactly like
+ * &#91;`Self::sensitive_scopes_enabled`&#93; (D-20): a tenant may turn its organization's `true`
+ * off and never its `false` on. * &#91;`Self::ssf_enabled`&#93;, validated **disable-only** the
+ * same way (D-45). * &#91;`Self::dynamic_registration`&#93;, on the ladder `disabled` →
+ * `initial_access_token` → `anonymous`: a tenant may move down it and never up. *
+ * &#91;`Self::dcr_max_clients`&#93; and &#91;`Self::dcr_unused_client_ttl_days`&#93;, on the
+ * ordinary `tenant <= org` rule — with the wrinkle that `0` on the second means *never sweep*,
+ * which is the longest window of all and is handled by &#91;`dcr_ttl_strictness`&#93;. **Not
+ * ordered**, therefore never validated against the baseline and never clamped: *
+ * &#91;`Self::default_locale`&#93;. A language is a presentation preference; there is no sense in
+ * which Italian is stricter than French. * &#91;`Self::dcr_allowed_scopes`&#93;,
+ * &#91;`Self::dcr_allowed_redirect_hosts`&#93; and
  * &#91;`Self::external_client_allowed_resources`&#93;. Each names per-tenant resources — *this*
  * tenant's MCP servers, *this* tenant's callback hosts — and there is no sense in which one such
  * list is stricter than another. A subset rule would force an organization to enumerate every
@@ -83,6 +87,19 @@ import kotlinx.serialization.Serializable
  *     interlock exists: the empty list is not a safe default for an *open* registration endpoint,
  *     it is the most dangerous one. Shared with T5 (CIMD), which inherits the same list for the
  *     same reason.
+ * @property samlIdpEnabled G-2 / D-20 — whether this tenant may act as a SAML 2.0 identity
+ *     provider: publish IdP metadata and accept `AuthnRequest`s on
+ *     `/saml/v2/{tenant}/{metadata,sso,slo}`. **Off unless an organization turns it on.** A SAML
+ *     IdP issues assertions that other systems accept as proof of identity, so a deployment that
+ *     has never decided to be one issues none, and the three endpoints answer `404` as if they did
+ *     not exist. The switch lives on this policy, beside the other OpenID Provider surface
+ *     controls, because the SSO endpoint is the same browser login hop and OP session with a
+ *     different wire format. **Disable-only**, with the shape of
+ *     &#91;`Self::sensitive_scopes_enabled`&#93;: a tenant may turn its organization's `true` off
+ *     but never its `false` on, because the decision to issue identity assertions on behalf of the
+ *     organization's tenants is the organization's. A deployment built without the `saml` feature
+ *     answers `404` whatever this says; the setting is a capability, not a grant (each SP must
+ *     still be registered, and `allow_idp_initiated` is its own opt-in).
  * @property sensitiveScopesEnabled Whether `address` and `phone` may be registered on a
  *     client, requested at the authorization endpoint, and released at UserInfo (X7 G8). **Off
  *     unless an organization turns it on.** The two scopes release a postal address and a
@@ -93,6 +110,15 @@ import kotlinx.serialization.Serializable
  *     client still has to register the scope, the request still has to ask for it, and the user
  *     still has to have consented. It is the first of four gates, and it is the only one an
  *     operator can close for everybody at once.
+ * @property ssfEnabled G-5 / D-45 — whether the tenant is a Shared Signals Framework
+ *     transmitter: its `/.well-known/ssf-configuration` is served, its receivers can use the
+ *     stream management API, and events are signed and transmitted on its streams. Default
+ *     **`false`**. **Disable-only**, with the shape of &#91;`Self::saml_idp_enabled`&#93;: sending
+ *     security events about the organization's users to third parties is the organization's
+ *     decision. Streams can be registered while it is off; they carry nothing until it is on.
+ * @property ssfInactiveReason **Read-only**, D-55: set on a settings response when
+ *     `ssf_enabled` is on but the transmitter is inactive anyway, saying why — the deployment
+ *     holds more than one tenant and serves no per-tenant issuers. Never stored.
  */
 @Serializable
 data class OidcPolicy(
@@ -104,5 +130,8 @@ data class OidcPolicy(
     @SerialName("default_locale") val defaultLocale: String? = null,
     @SerialName("dynamic_registration") val dynamicRegistration: String? = null,
     @SerialName("external_client_allowed_resources") val externalClientAllowedResources: List<String>? = null,
+    @SerialName("saml_idp_enabled") val samlIdpEnabled: Boolean? = null,
     @SerialName("sensitive_scopes_enabled") val sensitiveScopesEnabled: Boolean,
+    @SerialName("ssf_enabled") val ssfEnabled: Boolean? = null,
+    @SerialName("ssf_inactive_reason") val ssfInactiveReason: String? = null,
 )

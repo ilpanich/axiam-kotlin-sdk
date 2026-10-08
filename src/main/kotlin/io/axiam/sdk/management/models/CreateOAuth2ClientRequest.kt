@@ -24,8 +24,23 @@ import kotlinx.serialization.Serializable
  *     reach no decision. `"honour"` opts in, and is **refused on a `fapi2` client** at both this
  *     gate and the authorization endpoint — the two are different answers to the same question
  *     about what a request from this client means.
+ * @property backchannelAuthenticationRequestSigningAlg G-7 — CIBA Core §4: `PS256`, `ES256` or
+ *     `EdDSA`. When set, every backchannel authentication request must be a signed `request` JWT
+ *     under this algorithm, verified against `jwks` or `jwks_uri` (exactly one is required; an
+ *     inline `jwks` must hold a key of the algorithm). Required for a `fapi2` client holding the
+ *     CIBA grant.
+ * @property backchannelClientNotificationEndpoint G-7 — CIBA Core §4: where a ping-mode client
+ *     is notified. Required in ping mode and refused in poll mode; an absolute `https` URL held to
+ *     the webhook address policy (no credentials, no fragment, no private, loopback or internal
+ *     host).
  * @property backchannelLogoutUri B5 — where OIDC back-channel logout tokens are delivered.
  *     Omit for a client that does not participate.
+ * @property backchannelTokenDeliveryMode G-7 — CIBA Core §4 `backchannel_token_delivery_mode`:
+ *     `poll` or `ping`. Required when `grant_types` holds `urn:openid:params:grant-type:ciba`,
+ *     refused otherwise; `push` is not offered. A CIBA client must be confidential; a `fapi2` one
+ *     must also register `backchannel_authentication_request_signing_alg`.
+ * @property backchannelUserCodeParameter G-7 — CIBA Core §4. `true` is **refused**: this
+ *     server holds no user code to verify.
  * @property browserSso X7.3 — whether an unauthenticated authorization request from this
  *     client may be answered with a redirect to the login page rather than the `401` AXIAM answers
  *     today. Accepted and stored, but **nothing reads it yet**: the login hop it gates is a later
@@ -85,7 +100,11 @@ import kotlinx.serialization.Serializable
 data class CreateOAuth2ClientRequest(
     @SerialName("allowed_resources") val allowedResources: List<String>? = null,
     @SerialName("authn_request_params") val authnRequestParams: AuthnRequestParamsMode? = null,
+    @SerialName("backchannel_authentication_request_signing_alg") val backchannelAuthenticationRequestSigningAlg: String? = null,
+    @SerialName("backchannel_client_notification_endpoint") val backchannelClientNotificationEndpoint: String? = null,
     @SerialName("backchannel_logout_uri") val backchannelLogoutUri: String? = null,
+    @SerialName("backchannel_token_delivery_mode") val backchannelTokenDeliveryMode: String? = null,
+    @SerialName("backchannel_user_code_parameter") val backchannelUserCodeParameter: Boolean? = null,
     @SerialName("browser_sso") val browserSso: Boolean? = null,
     @SerialName("dpop_bound_access_tokens") val dpopBoundAccessTokens: Boolean? = null,
     @SerialName("dpop_require_nonce") val dpopRequireNonce: Boolean? = null,
