@@ -64,6 +64,13 @@ internal object Retry {
     }
 
     /**
+     * Whether a response [status] is one §16.3's table retries: `408`, `429`
+     * and every `5xx`. Every other status — a `4xx` above all — is a decisive
+     * answer, and repeating the request cannot change it.
+     */
+    fun isRetryableStatus(status: Int): Boolean = status == 408 || status == 429 || status >= 500
+
+    /**
      * Runs [op] under the §16 policy.
      *
      * [op] receives the 1-based attempt number so it can label its §19 request

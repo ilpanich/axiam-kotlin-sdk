@@ -1589,6 +1589,107 @@ class AxiamClient private constructor(
     suspend fun tokenExchange(params: TokenExchangeParams): ExchangedToken =
         oidcSupport.tokenExchange(params)
 
+    // -- §28.12 RFC 7592 client configuration --------------------------------
+
+    private val clientRegistrations: io.axiam.sdk.oidc.ClientRegistrationSupport by lazy {
+        io.axiam.sdk.oidc.ClientRegistrationSupport(httpClient, baseUrl, retryEnabled, telemetry, jitter)
+    }
+
+    /**
+     * `GET registration_client_uri` (RFC 7592 §2.1, CONTRACT.md §28.12) — read
+     * this client's own registration.
+     *
+     * The result carries neither the token nor the client secret (the server
+     * never returns them on a read), but it does carry every member an update
+     * needs: the usual update is "read, `copy()` with a change, update".
+     *
+     * [registrationClientUri] is used verbatim, query included, and only at
+     * this client's configured AXIAM origin. The token travels as
+     * `Authorization: Bearer` on a request that carries none of this client's
+     * session — no access token, no cookie, no CSRF header, no redirect — and
+     * a `401` never refreshes the session (§28.12.2 rules 1–3).
+     *
+     * Retried per §16 on a transport failure, `408`, `429` or `5xx`; never on
+     * another `4xx`.
+     *
+     * @param registrationClientUri the URI `POST /oauth2/register` returned
+     * @param registrationAccessToken the registration's bearer token
+     * @return the registration
+     * @throws io.axiam.sdk.errors.ValidationError locally, before any request,
+     *   when the URI is not at the configured origin (or is `http` against a
+     *   non-loopback base URL); the message names no part of the URI
+     * @throws io.axiam.sdk.errors.OAuthProtocolError when the server answers
+     *   with an RFC 6749 error object — `invalid_token` (a `401`: an unknown
+     *   client, a wrong or rotated-away token, another tenant's client — the
+     *   server never says which) at any status
+     */
+    suspend fun readClientRegistration(
+        registrationClientUri: String,
+        registrationAccessToken: Sensitive<String>,
+    ): io.axiam.sdk.oidc.ClientRegistration {
+        ensureOpen()
+        return clientRegistrations.read(registrationClientUri, registrationAccessToken)
+    }
+
+    /**
+     * `PUT registration_client_uri` (RFC 7592 §2.2, CONTRACT.md §28.12) —
+     * **replace** this client's registration, and receive a **rotated** token.
+     *
+     * [metadata] is the **whole** registration: a member it omits is a member
+     * the server deletes. Start from [readClientRegistration]'s result (it
+     * keeps unknown members, `jwks` / `jwks_uri` included, in
+     * `ClientRegistration.extra`) and `copy()` in what you mean to change. The
+     * SDK sets `client_id` to `metadata.clientId` and never sends
+     * `registration_access_token`, `registration_client_uri`,
+     * `client_secret_expires_at`, `client_id_issued_at` or `client_secret`.
+     *
+     * **Persist the returned `registrationAccessToken` before doing anything
+     * else.** From the moment the server answers it is the only valid token:
+     * the one you presented is dead for every operation.
+     *
+     * **Never retried** — not on a transport error, not on a `5xx`. An update
+     * that reached the server and lost its response has already rotated the
+     * token; repeating it with the old one is a `401` that locks you out of
+     * your own registration. On a lost answer, read the registration with the
+     * token you hold: a `401` means the update landed.
+     *
+     * @param registrationClientUri the registration's URI
+     * @param registrationAccessToken the registration's current bearer token
+     * @param metadata the complete registration to store
+     * @return the stored registration, carrying the rotated token
+     * @throws io.axiam.sdk.errors.ValidationError locally, for an off-origin URI
+     * @throws io.axiam.sdk.errors.OAuthProtocolError for the server's refusals
+     *   (`invalid_client_metadata`, `invalid_redirect_uri`, `invalid_token`)
+     */
+    suspend fun updateClientRegistration(
+        registrationClientUri: String,
+        registrationAccessToken: Sensitive<String>,
+        metadata: io.axiam.sdk.oidc.ClientRegistration,
+    ): io.axiam.sdk.oidc.ClientRegistration {
+        ensureOpen()
+        return clientRegistrations.update(registrationClientUri, registrationAccessToken, metadata)
+    }
+
+    /**
+     * `DELETE registration_client_uri` (RFC 7592 §2.3, CONTRACT.md §28.12) —
+     * delete this client's registration. A `204` returns normally.
+     *
+     * **Never retried**: a retry after a lost `204` would read `401` and report
+     * a successful deletion as a failure.
+     *
+     * @param registrationClientUri the registration's URI
+     * @param registrationAccessToken the registration's bearer token
+     * @throws io.axiam.sdk.errors.ValidationError locally, for an off-origin URI
+     * @throws io.axiam.sdk.errors.OAuthProtocolError for the server's refusals
+     */
+    suspend fun deleteClientRegistration(
+        registrationClientUri: String,
+        registrationAccessToken: Sensitive<String>,
+    ) {
+        ensureOpen()
+        clientRegistrations.delete(registrationClientUri, registrationAccessToken)
+    }
+
     // -- §20 UMA 2.0 — Protection API and ticket grant ----------------------
 
     /**

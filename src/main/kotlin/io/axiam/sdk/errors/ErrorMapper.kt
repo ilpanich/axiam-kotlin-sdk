@@ -46,6 +46,46 @@ object ErrorMapper {
             else -> NetworkError.withSummary(message, sanitize(response))
         }
 
+    /**
+     * CONTRACT.md §2's `/oauth2/…` row in its any-status form (§28.12.3,
+     * §33.4): a response whose body is an error object with a non-empty
+     * `error` member is an [OAuthProtocolError] dispatched on `error` —
+     * whatever the status, a `401` and a `429 rate_limit_exceeded` included,
+     * and with `error_description` optional. Anything else falls back to
+     * [fromHttpStatus].
+     *
+     * The body is PEEKED, never consumed, and at most a few KB of it.
+     */
+    fun fromOAuth2ResponseAtAnyStatus(message: String, response: Response): AxiamException {
+        val parsed = try {
+            val text = response.peekBody(MAX_AUTHZ_BODY_PEEK_BYTES).string()
+            if (text.isBlank()) null else oauth2Error(text)
+        } catch (_: Exception) {
+            null
+        }
+        return parsed ?: fromHttpStatus(response.code, message, response)
+    }
+
+    /**
+     * Reads an RFC 6749 §5.2 error object out of [text], or `null` when it is
+     * not one (not JSON, not an object, or no non-empty string `error`).
+     */
+    internal fun oauth2Error(text: String): OAuthProtocolError? =
+        try {
+            val obj = json.parseToJsonElement(text).jsonObject
+            val error = (obj["error"] as? kotlinx.serialization.json.JsonPrimitive)
+                ?.takeIf { it.isString }?.content
+            if (error.isNullOrEmpty()) {
+                null
+            } else {
+                val description = (obj["error_description"] as? kotlinx.serialization.json.JsonPrimitive)
+                    ?.takeIf { it.isString }?.content ?: ""
+                OAuthProtocolError(error, description)
+            }
+        } catch (_: Exception) {
+            null
+        }
+
     private fun authzErrorFromBody(message: String, response: Response?): AuthzError {
         if (response == null || response.body == null) {
             return AuthzError(message)
