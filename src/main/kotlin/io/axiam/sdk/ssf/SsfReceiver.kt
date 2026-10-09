@@ -14,6 +14,7 @@ import io.axiam.sdk.errors.NotFoundError
 import io.axiam.sdk.errors.ValidationError
 import io.axiam.sdk.internal.Retry
 import io.axiam.sdk.internal.Sessionless
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -148,13 +149,25 @@ class SsfReceiver(private val client: AxiamClient, config: SsfReceiverConfig) {
      *
      * Retried per §16 on a transport failure, `408`, `429` or `5xx`; never on
      * another `4xx` (`400` → [ValidationError], `401` → [AuthError], `404` →
-     * [NotFoundError], `409` → [ConflictError]). A JWKS fetch failure while
-     * verifying aborts the poll with that error rather than refusing SETs it
-     * could not judge.
+     * [NotFoundError], `409` → [ConflictError]).
+     *
+     * **A SET is never recorded without being returned** (CONTRACT.md §34.2
+     * P1). A JWKS or discovery fetch that fails, or a [ReplayStore] that
+     * throws, is not a verdict on the SET being judged: that SET and every
+     * later one in the batch are left **unjudged** — in neither `events` nor
+     * `refused`, their `jti`s not recorded — so you neither acknowledge nor
+     * refuse them and the transmitter offers them again. When the batch had
+     * already accepted a SET, `poll` returns what it judged and lists the rest
+     * in [SsfPollResult.unjudged]; when it had accepted none, it raises the
+     * failure (a [NetworkError] for a fetch), having recorded nothing.
      *
      * @param streamId the stream's id (path-escaped)
      * @param options what to send
-     * @return the verified events and the refused SETs, apart
+     * @return the verified events and the refused SETs, apart, and any SETs
+     *   left unjudged
+     * @throws NetworkError when a key fetch failed before any SET of the batch
+     *   was accepted (a throwing [ReplayStore]'s own exception is raised the
+     *   same way)
      * @throws AuthError locally, without a request, when no access-token
      *   provider was configured
      */
@@ -195,19 +208,29 @@ class SsfReceiver(private val client: AxiamClient, config: SsfReceiverConfig) {
         val moreAvailable = (reply["moreAvailable"] as? JsonPrimitive)?.booleanOrNull ?: false
         val events = mutableListOf<SecurityEvent>()
         val refused = mutableListOf<RefusedSet>()
-        val sets = reply["sets"] as? JsonObject
-        if (sets != null) {
-            for ((jti, value) in sets) {
-                val compact = (value as? JsonPrimitive)?.takeIf { it.isString }?.content
-                if (compact == null) {
-                    refused += RefusedSet(jti, SetFailureReason.MALFORMED)
-                    continue
-                }
-                try {
-                    events += verify(compact, jti)
-                } catch (e: SetVerificationError) {
-                    refused += RefusedSet(jti, e.failureReason)
-                }
+        val sets = reply["sets"]?.let { it as? JsonObject }?.entries?.toList().orEmpty()
+        for ((index, entry) in sets.withIndex()) {
+            val (jti, value) = entry
+            val compact = (value as? JsonPrimitive)?.takeIf { it.isString }?.content
+            if (compact == null) {
+                refused += RefusedSet(jti, SetFailureReason.MALFORMED)
+                continue
+            }
+            try {
+                events += verify(compact, jti)
+            } catch (e: SetVerificationError) {
+                refused += RefusedSet(jti, e.failureReason)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // §34.2 P1/P3: a key fetch or a replay store that cannot answer
+                // is no verdict, and this SET and every one after it are left
+                // unjudged — not returned, not refused, not recorded. Nothing
+                // this poll recorded is dropped: with nothing accepted yet the
+                // failure is raised (nothing is recorded); otherwise the
+                // accepted SETs are returned and the rest listed as unjudged.
+                if (events.isEmpty()) throw e
+                return SsfPollResult(events, moreAvailable, refused, sets.drop(index).map { it.key })
             }
         }
         return SsfPollResult(events, moreAvailable, refused)

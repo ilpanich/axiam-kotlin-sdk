@@ -2128,6 +2128,11 @@ while (true) {
   seven days and cannot be shorter): one you neither acknowledge nor refuse comes back as `replayed`.
 - `poll` sends only the members you set and acknowledges nothing itself; it is retried per §16 on a
   transport failure or `5xx`, never on another `4xx`.
+- `poll` never records a `jti` it does not return (§34.2 P1). A JWKS or discovery fetch that fails,
+  or a replay store that throws, is not a verdict: that SET and the rest of the batch are left
+  **unjudged** — not recorded, in neither `events` nor `refused` — so you neither acknowledge nor
+  refuse them and the transmitter offers them again. If the batch had already accepted a SET, `poll`
+  returns what it judged and lists the rest in `result.unjudged`; otherwise it raises the failure.
 
 ## CIBA (§33)
 
