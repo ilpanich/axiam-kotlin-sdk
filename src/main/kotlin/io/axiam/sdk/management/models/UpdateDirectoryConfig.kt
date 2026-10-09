@@ -4,6 +4,7 @@
 package io.axiam.sdk.management.models
 
 import io.axiam.sdk.Sensitive
+import io.axiam.sdk.management.JsonNullable
 import kotlinx.serialization.Contextual
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -23,8 +24,12 @@ import kotlinx.serialization.Serializable
  *     stored secret, subject to the same P23W2-01 rule. -- SECRET: redacted from toString and from
  *     every rendering except the one request body it is sent in
  * @property enabled See &#91;`SetDirectoryConfig::enabled`&#93;.
- * @property groupBaseDn Explicit `null` clears it.
- * @property groupFilter Explicit `null` clears it.
+ * @property groupBaseDn Explicit `null` clears it. -- NULL IS NOT ABSENT (§27.4 rule 5):
+ *     `JsonNullable.Absent` (the default) is not sent and was not received, `JsonNullable.Null` is
+ *     an explicit `null`, `JsonNullable.Value(x)` carries x.
+ * @property groupFilter Explicit `null` clears it. -- NULL IS NOT ABSENT (§27.4 rule 5):
+ *     `JsonNullable.Absent` (the default) is not sent and was not received, `JsonNullable.Null` is
+ *     an explicit `null`, `JsonNullable.Value(x)` carries x.
  * @property groupMappings Replaces the whole table when present.
  * @property groupMemberAttribute See &#91;`SetDirectoryConfig::group_member_attribute`&#93;.
  * @property groupNestingDepth See &#91;`SetDirectoryConfig::group_nesting_depth`&#93;.
@@ -43,8 +48,8 @@ data class UpdateDirectoryConfig(
     @SerialName("bind_dn") val bindDn: String? = null,
     @SerialName("bind_secret") val bindSecret: @Contextual Sensitive<String>? = null,
     @SerialName("enabled") val enabled: Boolean? = null,
-    @SerialName("group_base_dn") val groupBaseDn: String? = null,
-    @SerialName("group_filter") val groupFilter: String? = null,
+    @SerialName("group_base_dn") val groupBaseDn: JsonNullable<String> = JsonNullable.Absent,
+    @SerialName("group_filter") val groupFilter: JsonNullable<String> = JsonNullable.Absent,
     @SerialName("group_mappings") val groupMappings: List<GroupMapping>? = null,
     @SerialName("group_member_attribute") val groupMemberAttribute: String? = null,
     @SerialName("group_nesting_depth") val groupNestingDepth: Int? = null,

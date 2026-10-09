@@ -1481,7 +1481,7 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
     fun `saml parse_sp_metadata`() = runTest {
         val body = "{\"service_provider\": {\"acs_urls\": [], \"display_name\": \"example\", \"entity_id\": \"example\"}, \"warnings\": []}"
         mount("POST", "/api/v1/tenants/$TENANT_ID/saml/parse-sp-metadata", 200, body)
-        val result = client.management().saml().parseSpMetadata(body = ParseSamlSpMetadata())
+        val result = client.management().saml().parseSpMetadata(body = ParseSamlSpMetadata.fromUrl("https://sp.example/metadata"))
         assertDecodedEveryField(result, SamlSpMetadataDraft.serializer(), body)
     }
 

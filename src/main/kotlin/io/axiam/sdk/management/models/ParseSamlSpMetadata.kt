@@ -22,4 +22,23 @@ import kotlinx.serialization.Serializable
 data class ParseSamlSpMetadata(
     @SerialName("metadata_url") val metadataUrl: String? = null,
     @SerialName("metadata_xml") val metadataXml: String? = null,
-)
+) {
+    companion object {
+        /**
+         * A request for the server to fetch the SP's metadata from an https URL, through its SSRF
+         * guard (§29.2).
+         *
+         * @param metadataUrl the value to send
+         * @return a ParseSamlSpMetadata carrying only [metadataUrl]
+         */
+        fun fromUrl(metadataUrl: String): ParseSamlSpMetadata = ParseSamlSpMetadata(metadataUrl = metadataUrl)
+
+        /**
+         * A request carrying the SP's metadata document itself, at most 512 KiB (§29.2).
+         *
+         * @param metadataXml the value to send
+         * @return a ParseSamlSpMetadata carrying only [metadataXml]
+         */
+        fun fromXml(metadataXml: String): ParseSamlSpMetadata = ParseSamlSpMetadata(metadataXml = metadataXml)
+    }
+}

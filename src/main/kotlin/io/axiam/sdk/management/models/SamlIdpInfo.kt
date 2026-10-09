@@ -3,6 +3,7 @@
 // `python3 scripts/gen_management.py`; CI verifies the committed output is current.
 package io.axiam.sdk.management.models
 
+import io.axiam.sdk.management.JsonNullable
 import io.axiam.sdk.management.UuidSerializer
 import java.util.UUID
 import kotlinx.serialization.SerialName
@@ -12,12 +13,16 @@ import kotlinx.serialization.Serializable
  * The tenant's SAML IdP, as the administrator needs to see it before and while switching it on:
  * what an SP will be given, and whether it answers yet.
  *
- * @property activeCredentialId The `active` credential, or null.
+ * @property activeCredentialId The `active` credential, or null. -- NULL IS NOT ABSENT (§27.4
+ *     rule 5): `JsonNullable.Absent` (the default) is not sent and was not received,
+ *     `JsonNullable.Null` is an explicit `null`, `JsonNullable.Value(x)` carries x.
  * @property entityId The IdP's entity id (the metadata URL itself).
  * @property metadataServed Whether `metadata_url` answers now: SAML is available, enabled for
  *     the tenant, and an `active` or `next` credential exists (D-40).
  * @property metadataUrl Where the IdP metadata is served.
- * @property nextCredentialId The `next` credential, or null.
+ * @property nextCredentialId The `next` credential, or null. -- NULL IS NOT ABSENT (§27.4 rule
+ *     5): `JsonNullable.Absent` (the default) is not sent and was not received,
+ *     `JsonNullable.Null` is an explicit `null`, `JsonNullable.Value(x)` carries x.
  * @property samlAvailable Whether this server build serves SAML at all (it was built with the
  *     `saml` feature).
  * @property samlIdpEnabled The tenant's **effective** `saml_idp_enabled` setting (D-20).
@@ -28,11 +33,11 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class SamlIdpInfo(
-    @SerialName("active_credential_id") val activeCredentialId: @Serializable(with = UuidSerializer::class) UUID? = null,
+    @SerialName("active_credential_id") val activeCredentialId: JsonNullable<@Serializable(with = UuidSerializer::class) UUID> = JsonNullable.Absent,
     @SerialName("entity_id") val entityId: String,
     @SerialName("metadata_served") val metadataServed: Boolean,
     @SerialName("metadata_url") val metadataUrl: String,
-    @SerialName("next_credential_id") val nextCredentialId: @Serializable(with = UuidSerializer::class) UUID? = null,
+    @SerialName("next_credential_id") val nextCredentialId: JsonNullable<@Serializable(with = UuidSerializer::class) UUID> = JsonNullable.Absent,
     @SerialName("saml_available") val samlAvailable: Boolean,
     @SerialName("saml_idp_enabled") val samlIdpEnabled: Boolean,
     @SerialName("slo_url") val sloUrl: String,

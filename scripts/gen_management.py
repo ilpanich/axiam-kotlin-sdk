@@ -62,6 +62,172 @@ IMPLICIT_TENANT_NAMESPACES = {
 # encode it (see emit_union).
 OPEN_UNIONS = {"ScimTargetAuth", "ScimTargetScope"}
 
+# Members where an explicit `null` is a different statement from an absent
+# member (§27.4 rule 5, "null is not absent"). §30.2 names exactly two on
+# `UpdateDirectoryConfig`: `null` clears the value, absence keeps it. They are
+# generated as `JsonNullable<T>` (hand-written, io.axiam.sdk.management):
+# `Absent` (the default) is not sent, `Null` sends `null`, `Value(x)` sends x.
+# A name list rather than a schema rule, because the export spells every
+# optional member `["string", "null"]` and cannot say which ones `null` clears.
+#
+# §29.8 test 8 asks the same of a *response*: `SamlIdpInfo`'s two credential
+# ids are null when the slot is empty, and that null must stay distinct from an
+# absent member, so a server that stopped sending the member is noticed.
+EXPLICIT_NULL_FIELDS = {
+    ("UpdateDirectoryConfig", "group_base_dn"),
+    ("UpdateDirectoryConfig", "group_filter"),
+    ("SamlIdpInfo", "active_credential_id"),
+    ("SamlIdpInfo", "next_credential_id"),
+}
+
+# Call-site documentation the contract makes an SDK repeat (§29.3, §30.3,
+# §31.3, §32.2). Generated rather than hand-written because the methods are
+# generated; keyed by the registry's namespace-qualified operation name.
+CALL_SITE_NOTES: dict[str, str] = {
+    "directory.set": (
+        "**Moving the connection requires the secret again** (§30.3 rule 2): a "
+        "`set` that changes `url`, `start_tls`, `bind_dn` or `trust_anchors_pem` "
+        "without `bind_secret` is refused `400` and changes nothing. The SDK holds "
+        "no copy of the secret and cannot re-send one for you. `bind_secret` is "
+        "required while the tenant has no configuration; otherwise absent keeps the "
+        "stored secret. Every other optional member left out is **reset to its "
+        "default**. An enabled directory and an effective `opaque_mode = required` "
+        "never coexist (`409`); without the deployment's directory key a write "
+        "carrying a secret is `503`. `DirectoryConfig.toInput()` turns a read into "
+        "the body (without the secret)."
+    ),
+    "directory.update": (
+        "**Moving the connection requires the secret again** (§30.3 rule 2): an "
+        "`update` that changes `url`, `start_tls`, `bind_dn` or `trust_anchors_pem` "
+        "without `bind_secret` is refused `400` and changes nothing; the SDK holds no "
+        "copy of the secret to re-send. A member left at its default (`null`, or "
+        "`JsonNullable.Absent`) is not sent and stays as stored; `groupBaseDn = "
+        "JsonNullable.Null` / `groupFilter = JsonNullable.Null` send `null` and clear "
+        "the value. An enabled directory and an effective `opaque_mode = required` "
+        "never coexist (`409`)."
+    ),
+    "directory.delete": (
+        "**Deleting stops the directory, and only that** (§30.3 rule 5): directory "
+        "accounts can no longer sign in with a password — there is no fallback to a "
+        "local hash — and the sync stops. Sessions, refresh tokens and passkeys those "
+        "accounts already hold keep working until they expire or the accounts are "
+        "deactivated. There is no unlink: a linked account stays a directory account."
+    ),
+    "directory.link_account": (
+        "**Signs the account's owner out everywhere** (§30.3 rule 6): linking "
+        "deletes the account's WebAuthn credentials and federation links, revokes "
+        "its `User` certificates, all its sessions and its OAuth2 refresh tokens "
+        "(TOTP is kept). The entry is found by the account's own username; a repeat "
+        "on an already-linked account answers `was_already_linked` and repeats the "
+        "revocations."
+    ),
+    "saml.create_service_provider": (
+        "`sp_signing_cert_pem` must be RSA (2048 bits or more) or ECDSA on P-256, "
+        "P-384 or P-521; an **ECDSA certificate verifies HTTP-POST requests only** — "
+        "the HTTP-Redirect binding is RSA-only (§29.3 rule 2). `encrypt_assertions: "
+        "true` is refused while encryption is unimplemented. `entity_id` is unique "
+        "per tenant (`409`) and immutable once created."
+    ),
+    "saml.update_service_provider": (
+        "An omitted member takes its **default**, not its stored value: `enabled` "
+        "and `sign_responses` default to `true`, `name_id_format` to `persistent`, "
+        "the other flags to `false`, certificates and `slo_url` / `slo_binding` to "
+        "null, the lists to empty (§29.2). Start from `getServiceProvider` "
+        "(`SamlServiceProvider.toInput()`). `entity_id` is immutable: changing it is "
+        "`400` — register a new service provider instead (§29.3 rule 3). An ECDSA "
+        "`sp_signing_cert_pem` verifies HTTP-POST requests only; HTTP-Redirect is "
+        "RSA-only."
+    ),
+    "saml.delete_service_provider": (
+        "Ends no session: users already signed in to the SP stay signed in there "
+        "until their SP session ends (§29.3 rule 5)."
+    ),
+    "saml.parse_sp_metadata": (
+        "**Parses and stores nothing** (§29.3 rule 6): the result is a draft to "
+        "review and pass to `createServiceProvider`. Exactly one of `metadata_xml` "
+        "and `metadata_url` must be set (`ParseSamlSpMetadata.fromXml` / "
+        "`fromUrl`); both or neither is refused locally with a `ValidationError`, "
+        "before any request. The metadata's own signature is not evaluated. `503` "
+        "in a server built without SAML."
+    ),
+    "saml.issue_idp_credential": (
+        "Generates an RSA-4096 key on the server, which takes seconds; the key is "
+        "never returned. An occupied slot is `409` (§29.3 rule 7)."
+    ),
+    "saml.promote_idp_credential": (
+        "`credential_id` must be the tenant's current `next` credential; in one "
+        "transaction the old `active` is retired — its key destroyed — and `next` "
+        "becomes `active` (§29.3 rule 7)."
+    ),
+    "saml.retire_idp_credential": (
+        "**Retiring the `active` credential with no successor stops SAML sign-on "
+        "for the whole tenant at once** (§29.3 rule 7) — it is the incident "
+        "response to a leaked key. The key is destroyed. The safe rotation is: issue "
+        "into `next`, wait until every SP has refreshed the metadata, then promote."
+    ),
+    "ssf.update_stream": (
+        "An omitted optional member takes its default (§32.2) — **except "
+        "`authorization_header`, which absent keeps the stored one** — unless the "
+        "update moves `endpoint_url` to another scheme, host or port while a header "
+        "is stored: then it must carry `authorization_header` again or "
+        "`clear_authorization_header: true`, else `400` (§32.3 rule 5). An update "
+        "overtaken by the receiver's own write is `409`: read the stream again. "
+        "`SsfStream.toInput()` turns a read into the body."
+    ),
+    "scim_targets.create": (
+        "`credential` is required here (§31.3 rule 2). It is write-only: no "
+        "response ever carries it, and the SDK keeps no copy."
+    ),
+    "scim_targets.update": (
+        "**The credential is bound to its URL** (§31.3 rule 2): absent `credential` "
+        "keeps the stored one — except that changing `base_url` of a bearer "
+        "target, `auth.token_url` or `base_url` of a client-credentials target, or "
+        "`auth.type`, without `credential` in the same write is refused `400` and "
+        "changes nothing. The SDK holds no credential to re-send. Every other member "
+        "left out takes its default (`ScimTargetResponse.toInput()` turns a read into "
+        "the body). An update overtaken by another administrator's write is `409` "
+        "(§31.3 rule 4): reload, then retry yourself."
+    ),
+    "scim_targets.delete": (
+        "**Deprovisions nothing downstream** (§31.3 rule 8): the users and groups "
+        "AXIAM created in the service provider stay there, and AXIAM no longer knows "
+        "them. To remove them, set `deprovision` to `delete`, let AXIAM push, and "
+        "only then delete the target."
+    ),
+    "scim_targets.reconcile": (
+        "Starts a reconciliation in the background and answers `202`; its outcome "
+        "is on the target's `state` (§31.3 rule 7). `409` while a run holds the "
+        "claim, within five minutes of the last one, or for a disabled target."
+    ),
+}
+
+# Local checks a generated operation runs before any I/O, by name of a function
+# in the hand-written `ManagementChecks` taking the operation name and the body.
+PRECHECKS: dict[str, str] = {
+    "saml.parse_sp_metadata": "parseSpMetadataExactlyOne",
+}
+
+# The body the generated surface test sends to an operation with a PRECHECK —
+# the minimal body every other case uses would be refused locally.
+PRECHECK_TEST_BODIES: dict[str, str] = {
+    "saml.parse_sp_metadata":
+        'io.axiam.sdk.management.models.ParseSamlSpMetadata.fromUrl("https://sp.example/metadata")',
+}
+
+# Companion factories added to a generated data class, where the contract asks
+# for a shape the constructor alone does not make obvious (§29.2: exactly one of
+# two members). (function, parameter, doc, constructor arguments)
+MODEL_FACTORIES: dict[str, list[tuple[str, str, str, str]]] = {
+    "ParseSamlSpMetadata": [
+        ("fromUrl", "metadataUrl",
+         "A request for the server to fetch the SP's metadata from an https URL, "
+         "through its SSRF guard (§29.2).", "metadataUrl = metadataUrl"),
+        ("fromXml", "metadataXml",
+         "A request carrying the SP's metadata document itself, at most 512 KiB "
+         "(§29.2).", "metadataXml = metadataXml"),
+    ],
+}
+
 # Schema names that would collide with a type this SDK already exports from its
 # package root. The generated surface is re-exported, so a duplicate name makes
 # one of the two unreachable.
@@ -472,6 +638,7 @@ def model_imports(rendered: str) -> list[str]:
         matched_against = matched_against.replace(call, "")
     wanted = [
         ("io.axiam.sdk.Sensitive", "Sensitive"),
+        ("io.axiam.sdk.management.JsonNullable", "JsonNullable"),
         ("io.axiam.sdk.management.InstantSerializer", "InstantSerializer"),
         ("io.axiam.sdk.management.UuidSerializer", "UuidSerializer"),
         ("kotlinx.serialization.Contextual", "@Contextual"),
@@ -591,13 +758,21 @@ def field_list(schema_name: str, secrets: set[str]) -> tuple[list[dict[str, Any]
         }
     fields = []
     for wire in sorted(props):
+        explicit_null = (schema_name, wire) in EXPLICIT_NULL_FIELDS
+        if wire in secrets:
+            rendered = "@Contextual Sensitive<String>"
+        elif explicit_null:
+            rendered = f"JsonNullable<{kotlin_type(props[wire])}>"
+        else:
+            rendered = kotlin_type(props[wire])
         fields.append({
             "wire": wire,
             "name": prop(wire),
-            "type": "@Contextual Sensitive<String>" if wire in secrets else kotlin_type(props[wire]),
+            "type": rendered,
             "required": wire in required,
             "doc": props[wire].get("description") or f"the server's {wire} field",
             "secret": wire in secrets,
+            "explicit_null": explicit_null,
         })
     return fields, required, description
 
@@ -705,6 +880,10 @@ def emit_data_class(name: str, secrets: set[str], replacement: bool) -> str:
         if f["secret"]:
             doc += (" -- SECRET: redacted from toString and from every rendering except the "
                     "one request body it is sent in")
+        if f.get("explicit_null"):
+            doc += (" -- NULL IS NOT ABSENT (§27.4 rule 5): `JsonNullable.Absent` (the "
+                    "default) is not sent and was not received, `JsonNullable.Null` is an "
+                    "explicit `null`, `JsonNullable.Value(x)` carries x.")
         if f["wire"] in DEFAULT_TRUE_FIELDS and f["required"]:
             doc += (" A server that omits this (older than contract 1.51) means `true` -- "
                     "reaches descendants -- which is this property's default rather than a "
@@ -723,11 +902,27 @@ def emit_data_class(name: str, secrets: set[str], replacement: bool) -> str:
             # §27.13 S-10 rule 3: required-on-the-wire, defaulted here -- see
             # DEFAULT_TRUE_FIELDS. Neither nullable nor a hard requirement.
             default, nullable = " = true", ""
+        elif f.get("explicit_null"):
+            # EXPLICIT_NULL_FIELDS: absent is the default, and it is not null.
+            default, nullable = " = JsonNullable.Absent", ""
         else:
             default = "" if f["required"] else " = null"
             nullable = "" if f["required"] else "?"
         body.append(f'    @SerialName("{f["wire"]}") val {f["name"]}: {f["type"]}{nullable}{default},')
-    body.append(")")
+    factories = MODEL_FACTORIES.get(name, [])
+    if not factories:
+        body.append(")")
+        return header("\n".join(body), MODELS_PACKAGE)
+    body.append(") {")
+    body.append("    companion object {")
+    for i, (fn, param, doc, args) in enumerate(factories):
+        if i:
+            body.append("")
+        body.extend(kdoc(doc, "        ", [f"@param {param} the value to send",
+                                         f"@return a {type_name} carrying only [{param}]"]))
+        body.append(f"        fun {fn}({param}: String): {type_name} = {type_name}({args})")
+    body.append("    }")
+    body.append("}")
     return header("\n".join(body), MODELS_PACKAGE)
 
 
@@ -1095,6 +1290,8 @@ def operation_doc(op: dict[str, Any], canonical: str) -> str:
         lines.append(
             "\n\nNot retried: §27.4 rule 8 makes every write on this surface single-shot, "
             "including the ones that look idempotent.")
+    if canonical in CALL_SITE_NOTES:
+        lines.append("\n\n" + escape(CALL_SITE_NOTES[canonical]))
     return "".join(lines)
 
 
@@ -1137,6 +1334,8 @@ def emit_operation(namespace: str, opname: str, op: dict[str, Any]) -> list[str]
     body_arg = ""
     if op["request_schema"]:
         schema = op["request_schema"].lstrip("[]")
+        if canonical in PRECHECKS:
+            lines.append(f'        ManagementChecks.{PRECHECKS[canonical]}("{canonical}", body)')
         lines.append(f'        val payload = ManagementSupport.encodeBody('
                      f'"{canonical}", {pascal(schema)}.serializer(), body)')
         body_arg = ", body = payload"
@@ -1446,7 +1645,11 @@ def call_arguments(namespace: str, opname: str, op: dict[str, Any],
         route = route.replace("{" + param + "}", "$EXAMPLE_ID")
     if op["request_schema"]:
         schema = op["request_schema"].lstrip("[]")
-        args.append(f"body = {literal_for(schema, secrets.get(schema, set()))}")
+        canonical = f"{namespace}.{opname}"
+        if canonical in PRECHECK_TEST_BODIES:
+            args.append(f"body = {PRECHECK_TEST_BODIES[canonical]}")
+        else:
+            args.append(f"body = {literal_for(schema, secrets.get(schema, set()))}")
     _, other = split_query(op)
     for query in other:
         args.append(f"{prop(query)} = null")
@@ -1693,6 +1896,8 @@ def emit_sparse_test() -> str:
         lines.append(f"    fun `{camel(name)} sends only what was set`() {{")
         for f in fields:
             literal = sparse_literal(props[f["wire"]], f["wire"], model_secrets)
+            if f.get("explicit_null"):
+                literal = f"JsonNullable.Value({literal})"
             lines.append(f"        assertKeys(")
             lines.append(f'            {MODELS_PACKAGE}.{type_name}({f["name"]} = {literal}),')
             lines.append(f'            {type_name}.serializer(), "{f["wire"]}",')
@@ -1701,6 +1906,8 @@ def emit_sparse_test() -> str:
         lines.append(f"            {MODELS_PACKAGE}.{type_name}(")
         for f in fields:
             literal = sparse_literal(props[f["wire"]], f["wire"], model_secrets)
+            if f.get("explicit_null"):
+                literal = f"JsonNullable.Value({literal})"
             lines.append(f"                {f['name']} = {literal},")
         lines.append("            ),")
         lines.append(f"            {type_name}.serializer(),")
@@ -1712,6 +1919,13 @@ def emit_sparse_test() -> str:
                 row = []
         lines.append("        )")
         lines.append(f"        assertKeys({MODELS_PACKAGE}.{type_name}(), {type_name}.serializer())")
+        for f in fields:
+            if f.get("explicit_null"):
+                # EXPLICIT_NULL_FIELDS: JsonNullable.Null is sent as `null`,
+                # which a plain nullable property can never be.
+                lines.append(f"        assertExplicitNull({MODELS_PACKAGE}.{type_name}("
+                             f"{f['name']} = JsonNullable.Null), {type_name}.serializer(), "
+                             f'"{f["wire"]}")')
         lines.append("    }")
         lines.append("")
 
@@ -1732,6 +1946,26 @@ def emit_sparse_test() -> str:
         "    ", ["@param body the request body to render",
                 "@param serializer that body's generated serializer",
                 "@param expected the wire keys it must carry"]))
+    if any(f.get("explicit_null") for _, fs in models for f in fs):
+        lines.extend(kdoc(
+            "Asserts the encoded body is exactly `{[wire]: null}` — an explicit null, "
+            "not an omission (§27.4 rule 5).", "    ",
+            ["@param body the request body to render",
+             "@param serializer that body's generated serializer",
+             "@param wire the one member that must be sent as null"]))
+        lines.append("    private fun <T> assertExplicitNull(")
+        lines.append("        body: T,")
+        lines.append("        serializer: kotlinx.serialization.KSerializer<T>,")
+        lines.append("        wire: String,")
+        lines.append("    ) {")
+        lines.append('        val text = ManagementSupport.encodeBody("test", serializer, body)')
+        lines.append("        assertEquals(")
+        lines.append("            kotlinx.serialization.json.JsonObject(mapOf(wire to kotlinx.serialization.json.JsonNull)),")
+        lines.append("            kotlinx.serialization.json.Json.parseToJsonElement(text),")
+        lines.append('            "$wire: JsonNullable.Null must be sent as an explicit null",')
+        lines.append("        )")
+        lines.append("    }")
+        lines.append("")
     lines.append("    private fun <T> assertKeys(")
     lines.append("        body: T,")
     lines.append("        serializer: kotlinx.serialization.KSerializer<T>,")

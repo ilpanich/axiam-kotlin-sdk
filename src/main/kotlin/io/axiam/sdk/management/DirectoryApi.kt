@@ -64,6 +64,15 @@ class DirectoryApi internal constructor(
      * Not retried: §27.4 rule 8 makes every write on this surface single-shot, including the ones
      * that look idempotent.
      *
+     * **Moving the connection requires the secret again** (§30.3 rule 2): a `set` that changes
+     * `url`, `start_tls`, `bind_dn` or `trust_anchors_pem` without `bind_secret` is refused `400`
+     * and changes nothing. The SDK holds no copy of the secret and cannot re-send one for you.
+     * `bind_secret` is required while the tenant has no configuration; otherwise absent keeps the
+     * stored secret. Every other optional member left out is **reset to its default**. An enabled
+     * directory and an effective `opaque_mode = required` never coexist (`409`); without the
+     * deployment's directory key a write carrying a secret is `503`. `DirectoryConfig.toInput()`
+     * turns a read into the body (without the secret).
+     *
      * @param body the request body
      * @return the server response
      */
@@ -88,6 +97,13 @@ class DirectoryApi internal constructor(
      *
      * Not retried: §27.4 rule 8 makes every write on this surface single-shot, including the ones
      * that look idempotent.
+     *
+     * **Moving the connection requires the secret again** (§30.3 rule 2): an `update` that changes
+     * `url`, `start_tls`, `bind_dn` or `trust_anchors_pem` without `bind_secret` is refused `400`
+     * and changes nothing; the SDK holds no copy of the secret to re-send. A member left at its
+     * default (`null`, or `JsonNullable.Absent`) is not sent and stays as stored; `groupBaseDn =
+     * JsonNullable.Null` / `groupFilter = JsonNullable.Null` send `null` and clear the value. An
+     * enabled directory and an effective `opaque_mode = required` never coexist (`409`).
      *
      * @param body the request body
      * @return the server response
@@ -115,6 +131,12 @@ class DirectoryApi internal constructor(
      *
      * Not retried: §27.4 rule 8 makes every write on this surface single-shot, including the ones
      * that look idempotent.
+     *
+     * **Deleting stops the directory, and only that** (§30.3 rule 5): directory accounts can no
+     * longer sign in with a password — there is no fallback to a local hash — and the sync stops.
+     * Sessions, refresh tokens and passkeys those accounts already hold keep working until they
+     * expire or the accounts are deactivated. There is no unlink: a linked account stays a
+     * directory account.
      */
     suspend fun delete() {
         val tenantId = ManagementSupport.resolveTenant(transport, scope, "directory.delete")
@@ -139,6 +161,12 @@ class DirectoryApi internal constructor(
      *
      * Not retried: §27.4 rule 8 makes every write on this surface single-shot, including the ones
      * that look idempotent.
+     *
+     * **Signs the account's owner out everywhere** (§30.3 rule 6): linking deletes the account's
+     * WebAuthn credentials and federation links, revokes its `User` certificates, all its sessions
+     * and its OAuth2 refresh tokens (TOTP is kept). The entry is found by the account's own
+     * username; a repeat on an already-linked account answers `was_already_linked` and repeats the
+     * revocations.
      *
      * @param body the request body
      * @return the server response

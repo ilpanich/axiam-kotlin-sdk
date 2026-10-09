@@ -466,11 +466,11 @@ class ManagementSparseBodiesGeneratedTest {
             UpdateDirectoryConfig.serializer(), "enabled",
         )
         assertKeys(
-            UpdateDirectoryConfig(groupBaseDn = "example"),
+            UpdateDirectoryConfig(groupBaseDn = JsonNullable.Value("example")),
             UpdateDirectoryConfig.serializer(), "group_base_dn",
         )
         assertKeys(
-            UpdateDirectoryConfig(groupFilter = "example"),
+            UpdateDirectoryConfig(groupFilter = JsonNullable.Value("example")),
             UpdateDirectoryConfig.serializer(), "group_filter",
         )
         assertKeys(
@@ -523,8 +523,8 @@ class ManagementSparseBodiesGeneratedTest {
                 bindDn = "example",
                 bindSecret = Sensitive.of("example"),
                 enabled = true,
-                groupBaseDn = "example",
-                groupFilter = "example",
+                groupBaseDn = JsonNullable.Value("example"),
+                groupFilter = JsonNullable.Value("example"),
                 groupMappings = emptyList(),
                 groupMemberAttribute = "example",
                 groupNestingDepth = 1,
@@ -544,6 +544,8 @@ class ManagementSparseBodiesGeneratedTest {
             "trust_anchors_pem", "url", "user_attribute_map", "user_filter",
         )
         assertKeys(UpdateDirectoryConfig(), UpdateDirectoryConfig.serializer())
+        assertExplicitNull(UpdateDirectoryConfig(groupBaseDn = JsonNullable.Null), UpdateDirectoryConfig.serializer(), "group_base_dn")
+        assertExplicitNull(UpdateDirectoryConfig(groupFilter = JsonNullable.Null), UpdateDirectoryConfig.serializer(), "group_filter")
     }
 
     /** §27.4 rule 5 for UpdateFederationConfigRequest: each property sets exactly its own key. */
@@ -1202,6 +1204,27 @@ class ManagementSparseBodiesGeneratedTest {
      * @param serializer that body's generated serializer
      * @param expected the wire keys it must carry
      */
+    /**
+     * Asserts the encoded body is exactly `{[wire]: null}` — an explicit null, not an omission
+     * (§27.4 rule 5).
+     *
+     * @param body the request body to render
+     * @param serializer that body's generated serializer
+     * @param wire the one member that must be sent as null
+     */
+    private fun <T> assertExplicitNull(
+        body: T,
+        serializer: kotlinx.serialization.KSerializer<T>,
+        wire: String,
+    ) {
+        val text = ManagementSupport.encodeBody("test", serializer, body)
+        assertEquals(
+            kotlinx.serialization.json.JsonObject(mapOf(wire to kotlinx.serialization.json.JsonNull)),
+            kotlinx.serialization.json.Json.parseToJsonElement(text),
+            "$wire: JsonNullable.Null must be sent as an explicit null",
+        )
+    }
+
     private fun <T> assertKeys(
         body: T,
         serializer: kotlinx.serialization.KSerializer<T>,

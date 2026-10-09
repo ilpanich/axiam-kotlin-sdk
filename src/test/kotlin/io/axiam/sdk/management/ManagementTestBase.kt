@@ -41,7 +41,10 @@ abstract class ManagementTestBase {
     private val unmatched = mutableListOf<String>()
 
     /** What one mounted route answered, and what actually reached it. */
-    class Route(private val status: Int, private val body: String) {
+    class Route(private val status: Int, private val bodies: List<String>) {
+        /** A route answering every request with [body]. */
+        constructor(status: Int, body: String) : this(status, listOf(body))
+
         internal val requests = mutableListOf<Recorded>()
 
         /** How many requests reached this route. */
@@ -51,6 +54,8 @@ abstract class ManagementTestBase {
         fun last(): Recorded = requests.lastOrNull() ?: throw AssertionError("route was never called")
 
         internal fun respond(): MockResponse {
+            // The n-th request gets the n-th body; the last one repeats.
+            val body = bodies[(requests.size - 1).coerceIn(0, bodies.size - 1)]
             val response = MockResponse().setResponseCode(status)
             if (body.isNotEmpty()) {
                 response.setHeader("Content-Type", "application/json").setBody(body)
@@ -154,6 +159,22 @@ abstract class ManagementTestBase {
      */
     protected fun mount(method: String, path: String, status: Int, body: String): Route {
         val route = Route(status, body)
+        routes["$method $path"] = route
+        return route
+    }
+
+    /**
+     * Mounts one route answering its n-th request with the n-th of [bodies]
+     * (the last one repeats) — for a paginated walk, whose pages differ.
+     *
+     * @param method the HTTP method to match
+     * @param path the exact path to match
+     * @param status the status to answer with
+     * @param bodies the bodies to answer with, in order
+     * @return the mounted route, for assertions
+     */
+    protected fun mountSequence(method: String, path: String, status: Int, bodies: List<String>): Route {
+        val route = Route(status, bodies)
         routes["$method $path"] = route
         return route
     }
