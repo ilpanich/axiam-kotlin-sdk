@@ -1690,6 +1690,15 @@ class AxiamClient private constructor(
         clientRegistrations.delete(registrationClientUri, registrationAccessToken)
     }
 
+    /** §16 switch, for the module's helpers outside this class (the §32.7 receiver). */
+    internal fun retryEnabledForHelpers(): Boolean = retryEnabled
+
+    /** §19 dispatcher, for the module's helpers outside this class. */
+    internal fun telemetryForHelpers(): TelemetryDispatcher = telemetry
+
+    /** §16 jitter draw, for the module's helpers outside this class. */
+    internal fun jitterForHelpers(): () -> Double = jitter
+
     // -- §20 UMA 2.0 — Protection API and ticket grant ----------------------
 
     /**
