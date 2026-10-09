@@ -72,7 +72,21 @@ import java.util.Base64
  *   below [MIN_REPLAY_WINDOW], the issuer or audience is blank, or a key
  *   source URL is neither `https` nor `http` on a loopback host
  */
-class SsfReceiver(private val client: AxiamClient, config: SsfReceiverConfig) {
+class SsfReceiver internal constructor(
+    private val client: AxiamClient,
+    config: SsfReceiverConfig,
+    /** The monotonic clock the key cache's lifetime and the refetch limit are measured on. */
+    private val nanoTime: () -> Long,
+) {
+
+    /**
+     * Builds a receiver for [client] under [config].
+     *
+     * @param client the client whose TLS policy fetches the keys and whose base
+     *   URL is the transmitter root [poll] calls
+     * @param config the receiver's issuer, audience, key source and replay policy
+     */
+    constructor(client: AxiamClient, config: SsfReceiverConfig) : this(client, config, System::nanoTime)
 
     private val issuer: String = config.issuer
     private val audience: String = config.audience
@@ -85,6 +99,7 @@ class SsfReceiver(private val client: AxiamClient, config: SsfReceiverConfig) {
     private val keyLock = Mutex()
     private var jwksUrl: HttpUrl? = null
     private var jwks: JWKSet? = null
+    private var jwksFetchedNanos: Long = 0L
     private var lastForcedRefetchNanos: Long? = null
 
     init {
@@ -111,8 +126,8 @@ class SsfReceiver(private val client: AxiamClient, config: SsfReceiverConfig) {
      *  2. `typ` `secevent+jwt` or `application/secevent+jwt`, any case
      *     [`invalid_type`];
      *  3. `alg` exactly `EdDSA` [`invalid_key`];
-     *  4. the `kid` in the configured JWKS — on a miss, ONE refetch, at most
-     *     once a minute [`invalid_key`];
+     *  4. the `kid` in the configured JWKS (cached for [JWKS_CACHE_LIFETIME])
+     *     — on a miss, ONE refetch, at most once a minute [`invalid_key`];
      *  5. the Ed25519 signature [`invalid_key`];
      *  6. `iss` equal to the configured issuer [`invalid_issuer`];
      *  7. `aud` equal to, or an array containing, the audience [`invalid_audience`];
@@ -320,19 +335,30 @@ class SsfReceiver(private val client: AxiamClient, config: SsfReceiverConfig) {
      * The Ed25519 key named [kid], from the cached JWKS; on a miss, ONE forced
      * refetch — no more often than once a minute (§32.7 step 4).
      *
+     * The cache lives [JWKS_CACHE_LIFETIME], as §10's JWKS cache does
+     * (CONTRACT.md §34.2 P6): an expired cache is filled again like an empty
+     * one, so a key the transmitter removed stops verifying within that
+     * lifetime even if no unknown `kid` ever arrives.
+     *
      * A fetch failure is a [NetworkError], never `null`: an unreachable JWKS is
      * not a verdict on the SET.
      */
     private suspend fun keyFor(kid: String): OctetKeyPair? = keyLock.withLock {
-        val cached = jwks ?: fetchJwks().also { jwks = it }
+        val current = jwks?.takeIf { nanoTime() - jwksFetchedNanos < JWKS_CACHE_LIFETIME.toNanos() }
+        val cached = current ?: store(fetchJwks())
         find(cached, kid)?.let { return@withLock it }
-        val now = System.nanoTime()
+        val now = nanoTime()
         val last = lastForcedRefetchNanos
         if (last != null && now - last < FORCED_REFETCH_INTERVAL.toNanos()) return@withLock null
         lastForcedRefetchNanos = now
-        val fresh = fetchJwks()
+        find(store(fetchJwks()), kid)
+    }
+
+    /** Caches [fresh] and starts its lifetime. */
+    private fun store(fresh: JWKSet): JWKSet {
         jwks = fresh
-        find(fresh, kid)
+        jwksFetchedNanos = nanoTime()
+        return fresh
     }
 
     private fun find(set: JWKSet, kid: String): OctetKeyPair? =
@@ -448,6 +474,12 @@ class SsfReceiver(private val client: AxiamClient, config: SsfReceiverConfig) {
          * transmitter can still re-send.
          */
         val MIN_REPLAY_WINDOW: Duration = Duration.ofDays(7)
+
+        /**
+         * How long a fetched JWKS is used before it is fetched again: 300 s, the
+         * lifetime of §10's JWKS cache (CONTRACT.md §34.2 P6).
+         */
+        val JWKS_CACHE_LIFETIME: Duration = Duration.ofSeconds(300)
 
         /** The shortest gap between two forced JWKS refetches (§32.7 step 4). */
         val FORCED_REFETCH_INTERVAL: Duration = Duration.ofSeconds(60)

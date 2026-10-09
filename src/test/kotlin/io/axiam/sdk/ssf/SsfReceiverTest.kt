@@ -322,6 +322,33 @@ class SsfReceiverTest {
         assertEquals(2, jwksHits.get(), "no refetch within the minute")
     }
 
+    /**
+     * §32.7 step 4 (contract 1.59, §34.2 P6): the key cache expires as §10's
+     * JWKS cache does, so a key the transmitter removed stops verifying.
+     */
+    @Test
+    fun `the JWKS cache expires and a removed key stops verifying`() = runBlocking {
+        val old = key()
+        jwksKeys = listOf(old)
+        var now = 0L
+        val r = SsfReceiver(
+            client(),
+            SsfReceiverConfig(issuer, audience, SsfKeySource.JwksUri(server.url("/oauth2/jwks").toString())),
+            nanoTime = { now },
+        )
+        r.verifySet(signSet(old, claims()))
+        assertEquals(1, jwksHits.get(), "primes the cache")
+
+        jwksKeys = listOf(key()) // the transmitter rotates and removes the old key
+        now += Duration.ofSeconds(299).toNanos()
+        r.verifySet(signSet(old, claims()))
+        assertEquals(1, jwksHits.get(), "within its lifetime the cache is used")
+
+        now += Duration.ofSeconds(2).toNanos()
+        assertEquals(SetFailureReason.INVALID_KEY, reason(r, signSet(old, claims())))
+        assertTrue(jwksHits.get() >= 2, "the expired cache was fetched again")
+    }
+
     // -- 8 ---------------------------------------------------------------------------
 
     @Test

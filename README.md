@@ -2123,7 +2123,9 @@ while (true) {
   `pushErrorCode()` maps `malformed`, `invalid_type` and `replayed` to `invalid_request`.
 - Keys come only from the configured JWKS (or a discovery document whose `issuer` matches), fetched
   over the client's TLS policy without its session; an unknown `kid` costs one refetch, at most once
-  a minute. A JWKS fetch failure is a `NetworkError`, not a verdict on the SET.
+  a minute. The fetched JWKS is cached for 300 s, the lifetime of §10's JWKS cache, so a key the
+  transmitter removed stops verifying (§34.2 P6). A JWKS fetch failure is a `NetworkError`, not a
+  verdict on the SET.
 - A verified SET is **recorded** in the replay store (in memory by default; pluggable; the window is
   seven days and cannot be shorter): one you neither acknowledge nor refuse comes back as `replayed`.
 - `poll` sends only the members you set and acknowledges nothing itself; it is retried per §16 on a
