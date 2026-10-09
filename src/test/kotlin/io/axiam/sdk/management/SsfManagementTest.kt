@@ -140,7 +140,8 @@ class SsfManagementTest : ManagementTestBase() {
         assertEquals(SsfDeliveryMethod.UNKNOWN, odd.deliveryMethod)
         assertEquals(SsfSubjectFormat.UNKNOWN, odd.subjectFormat)
         assertEquals(SsfStatusActor.UNKNOWN, odd.statusActor)
-        assertEquals(SsfEventType.UNKNOWN, odd.eventsAllowed[0])
+        // §32.2: event types SHOULD be strings, so an unseen URI keeps its value.
+        assertEquals("https://example.test/event-type/new", odd.eventsAllowed[0].wire)
 
         val inactive = decode(
             streamBody(
@@ -153,6 +154,29 @@ class SsfManagementTest : ManagementTestBase() {
         assertNull(decode(streamBody()).transmitterInactiveReason)
         // URI-valued constants are named by the URI's last segment; the URI is the wire value.
         assertEquals(revoked, SsfEventType.SESSION_REVOKED.wire)
+    }
+
+    /**
+     * §32.2 "MUST NOT send one it does not know", on the request path
+     * (contract 1.59, §34.2 P12.2): a decoded value this SDK does not know is
+     * refused locally — never sent as `""` or left to the server — and
+     * rendering it for a log line does not fail.
+     */
+    @Test
+    fun `a value this SDK does not know is refused before the request`() = runTest {
+        val id = UUID.randomUUID()
+        val route = mount("PUT", "$streams/$id", 200, streamBody())
+        val odd = decode(
+            streamBody(status = "quarantined", allowed = "https://example.test/event-type/new"),
+        )
+        val unknownEvent = input(null).copy(eventsAllowed = odd.eventsAllowed)
+        val unknownStatus = input(null).copy(status = odd.status)
+        for ((label, body) in listOf("event type" to unknownEvent, "status" to unknownStatus)) {
+            assertTrue(body.toString().isNotEmpty(), "$label: rendering never fails")
+            assertThrows<NetworkError> { runBlocking { client.ssf.updateStream(id, body) } }
+        }
+        assertEquals(0, route.calls(), "an unknown value never reached the wire")
+        assertTrue(odd.toString().contains("https://example.test/event-type/new"), "the value is kept for reading")
     }
 
     // -- 4. Pagination ------------------------------------------------------------------

@@ -100,8 +100,12 @@ class SamlTest : ManagementTestBase() {
         assertFalse(SamlServiceProvider::class.members.any { it.name == "signAssertions" })
         assertFalse(SamlServiceProviderInput::class.members.any { it.name == "signAssertions" })
 
-        // An unknown enum value decodes, but is never written back as-is:
-        // replace it before writing.
+        // An unknown enum value decodes, but is never written back as-is: it is
+        // refused locally, before the request (§29.2, §34.2 P12.2) — never sent
+        // as "" for the server to refuse. Replace it before writing.
+        assertTrue(sp.toInput().toString().contains("UNKNOWN"), "rendering it never fails")
+        assertThrows<NetworkError> { runBlocking { client.saml.updateServiceProvider(id, sp.toInput()) } }
+        assertEquals(0, route.calls(), "the unknown binding never reached the wire")
         val input = sp.toInput().let { it.copy(acsUrls = listOf(it.acsUrls[0].copy(binding = SamlBinding.HTTP_POST))) }
         client.saml.updateServiceProvider(id, input)
         val sent = route.last().json()

@@ -1902,9 +1902,11 @@ Eight things worth knowing:
   Generated enums also gained an `UNKNOWN` constant, decoded through a hand-rolled `KSerializer`.
   kotlinx.serialization's own enum serializer *throws* on a value outside the constants, which fails
   the whole response — taking down every record on the page over one field of one of them. A `when`
-  over these constants now needs an `UNKNOWN` branch. `UNKNOWN.wire` is the empty string, which no
-  server value is: carrying an unrecognised value back into an update is refused by the server
-  rather than silently written as a spelling it never used.
+  over these constants now needs an `UNKNOWN` branch. `UNKNOWN` is never sent: carrying an
+  unrecognised value back into a write is refused locally, before any request, rather than sent as
+  `""` for the server to refuse (contract 1.59, §34.2 P12.2). §32's event types are the exception to
+  the enum shape: `SsfEventType` is a string type with the six URIs as named constants (§32.2), so an
+  event-type URI this SDK has not seen decodes with its value in `wire` — and is likewise never sent.
 
 Worked end to end in [`examples/management-basics`](examples/management-basics).
 

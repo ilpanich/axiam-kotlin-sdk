@@ -54,7 +54,8 @@ fun DirectoryConfig.toInput(): SetDirectoryConfig = SetDirectoryConfig(
 /**
  * The `saml.update_service_provider` body that re-states this registration
  * (§29.2). An enum value this SDK does not know (`UNKNOWN`) is carried over
- * as-is and refused by the server: replace it before writing back.
+ * as-is, and writing it is refused locally, before any request (§34.2 P12.2):
+ * replace it before writing back.
  *
  * @return the replacement body
  */
