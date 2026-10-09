@@ -122,6 +122,30 @@ class ManagementCoreTest : ManagementTestBase() {
     }
 
     /**
+     * §7 rules 2 – 3 (contract 1.59 review, R-19): `expose()` is the one
+     * public path to a raw `Sensitive`. The writer that serializes one in the
+     * clear is the request path's own and reachable from no caller — not a
+     * Kotlin one (`internal`) and not a Java one (no public, non-synthetic
+     * accessor on the class or its companion).
+     */
+    @Test
+    fun `the clear-text writer is not public API`() {
+        val json = kotlinx.serialization.json.Json::class.java
+        for (type in listOf(ManagementTransport::class.java, ManagementTransport.Companion::class.java)) {
+            val getters = type.methods
+                .filter { it.returnType == json && !it.isSynthetic && java.lang.reflect.Modifier.isPublic(it.modifiers) }
+                .map { it.name }
+            assertEquals(
+                if (type == ManagementTransport::class.java) emptyList<String>() else listOf("getREADER"),
+                getters.sorted(),
+                "${type.simpleName}: only the redacting READER is public",
+            )
+            val fields = type.fields.filter { it.type == json }.map { it.name }
+            assertEquals(emptyList<String>(), fields, "${type.simpleName}: no public Json field")
+        }
+    }
+
+    /**
      * A model carrying a secret cannot be serialized by a caller's own `Json`.
      *
      * Fail-closed, and loudly. `Sensitive` is `@Contextual`, so a `Json` with

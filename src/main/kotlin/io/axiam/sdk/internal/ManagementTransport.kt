@@ -318,6 +318,13 @@ class ManagementTransport internal constructor(
         /**
          * The ONE writer that serializes a `Sensitive` in the clear.
          *
+         * `internal`, and hidden from Java as well (`@JvmSynthetic`): CONTRACT.md
+         * §7 rules 2 – 3 allow one explicit public path to a raw value,
+         * `Sensitive.expose()`, and a public writer that renders every
+         * `Sensitive` in the clear would be a second (contract 1.59, R-19). Only
+         * the request path — [io.axiam.sdk.management.ManagementSupport.encodeBody]
+         * — encodes with it.
+         *
          * `encodeDefaults = false` is what gives §27.4 rule 5 its teeth: a
          * sparse body's properties all default to `null`, so a property the
          * caller never named is absent from the JSON entirely rather than sent
@@ -325,7 +332,8 @@ class ManagementTransport internal constructor(
          * replacement body has no defaults, so every one of its fields is
          * written.
          */
-        val WIRE: Json = Json {
+        @get:JvmSynthetic
+        internal val WIRE: Json = Json {
             encodeDefaults = false
             explicitNulls = false
             serializersModule = kotlinx.serialization.modules.SerializersModule {
