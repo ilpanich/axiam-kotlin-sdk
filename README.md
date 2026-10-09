@@ -2184,7 +2184,8 @@ client.cibaInitiate(CibaInitiateParams(scope = "openid", hint = hint, signer = s
   notify a person. A success proves nothing about the user (§33.3 rule 4).
 - `cibaPoll` surfaces `authorization_pending`, `slow_down`, `access_denied`, `expired_token` and
   `invalid_grant` as `OAuthProtocolError`; it is retried per §16 within the call on a transport
-  failure, `5xx`, `408` or bodiless `429`. `cibaAwait` adds 5 s per `slow_down` for good, treats
+  failure, `5xx`, `408` or bodiless `429`. A `5xx` is transient whatever its body — AXIAM's own
+  `500 {"error":"server_error"}` is a `NetworkError` here, never a terminal answer (§34.2 P8). `cibaAwait` adds 5 s per `slow_down` for good, treats
   `rate_limit_exceeded` and surviving transient failures as one more interval, and raises
   `expired_token` locally rather than poll past `receivedAt + expiresIn`. It does not adopt the
   token set as the client's credential.
