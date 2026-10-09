@@ -5,6 +5,7 @@ package io.axiam.sdk.management.models
 
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.descriptors.PrimitiveKind
 import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
 import kotlinx.serialization.descriptors.SerialDescriptor
@@ -20,9 +21,10 @@ import kotlinx.serialization.encoding.Encoder
  *
  * An **open** enum. A value this SDK's copy of the spec does not list decodes to
  * [TenantStatus.UNKNOWN] rather than failing the response it arrived in (CONTRACT §27.11 rule 1).
- * Its own wire spelling is the empty string, which no server value is: carrying an unrecognised
- * value back into an update is refused by the server rather than silently written as a spelling it
- * never used. A `when` over these constants needs an `UNKNOWN` branch.
+ * [UNKNOWN] is never sent: carrying it back into a write is refused locally, before any request,
+ * because the SDK MUST NOT send a value it does not know (CONTRACT §34.2 P12.2) -- never written
+ * as an empty string for the server to refuse. Rendering it (`toString`) never fails. A `when`
+ * over these constants needs an `UNKNOWN` branch.
  */
 @Serializable(with = TenantStatus.Companion.Serializer::class)
 enum class TenantStatus(val wire: String) {
@@ -30,12 +32,13 @@ enum class TenantStatus(val wire: String) {
 
     SUSPENDED("Suspended"),
 
-    /** A value this SDK's copy of the spec does not list; see the type's doc. */
+    /** A value this SDK's copy of the spec does not list; never sent, see the type's doc. */
     UNKNOWN("");
 
     companion object {
         /**
-         * Decodes an unrecognised value to [UNKNOWN] instead of throwing.
+         * Decodes an unrecognised value to [UNKNOWN] instead of throwing, and
+         * refuses to encode [UNKNOWN].
          *
          * kotlinx.serialization's generated enum serializer raises on a value
          * outside the constants, which fails the WHOLE response — not just the
@@ -46,6 +49,12 @@ enum class TenantStatus(val wire: String) {
                 PrimitiveSerialDescriptor("io.axiam.sdk.management.models.TenantStatus", PrimitiveKind.STRING)
 
             override fun serialize(encoder: Encoder, value: TenantStatus) {
+                if (value == UNKNOWN) {
+                    throw SerializationException(
+                        "TenantStatus.UNKNOWN is a value this SDK does not know, so it is " +
+                            "never sent (CONTRACT §34.2 P12.2): replace it before writing",
+                    )
+                }
                 encoder.encodeString(value.wire)
             }
 

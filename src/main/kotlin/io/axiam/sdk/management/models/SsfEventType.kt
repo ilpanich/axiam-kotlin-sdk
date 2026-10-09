@@ -5,6 +5,7 @@ package io.axiam.sdk.management.models
 
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.descriptors.PrimitiveKind
 import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
 import kotlinx.serialization.descriptors.SerialDescriptor
@@ -15,52 +16,75 @@ import kotlinx.serialization.encoding.Encoder
  * The six event types AXIAM transmits (G-5). Stored and sent as their event-type URIs;
  * &#91;`Self::ALL`&#93; is the canonical order every list AXIAM returns is sorted in.
  *
- * Each constant carries the spelling the server uses on the wire, so the Kotlin name can follow
- * Kotlin's conventions without changing what is sent.
+ * A **string**, with the values this SDK's copy of the spec lists as named constants and in
+ * [SsfEventType.KNOWN] (CONTRACT §32.2). A value the spec does not list decodes with its spelling
+ * intact -- read it from [wire] -- rather than failing the response it arrived in or collapsing to
+ * a placeholder (CONTRACT §27.11 rule 1). Only a known value is ever sent: writing any other is
+ * refused locally, before any request (CONTRACT §34.2 P12.2). Rendering one (`toString`, which is
+ * the wire spelling) never fails.
  *
- * An **open** enum. A value this SDK's copy of the spec does not list decodes to
- * [SsfEventType.UNKNOWN] rather than failing the response it arrived in (CONTRACT §27.11 rule 1).
- * Its own wire spelling is the empty string, which no server value is: carrying an unrecognised
- * value back into an update is refused by the server rather than silently written as a spelling it
- * never used. A `when` over these constants needs an `UNKNOWN` branch.
+ * @property wire the value exactly as the server spells it
  */
 @Serializable(with = SsfEventType.Companion.Serializer::class)
-enum class SsfEventType(val wire: String) {
-    SESSION_REVOKED("https://schemas.openid.net/secevent/caep/event-type/session-revoked"),
+class SsfEventType(val wire: String) {
+    /** Whether this is one of [KNOWN] -- the only values ever sent. */
+    val isKnown: Boolean
+        get() = this in KNOWN
 
-    CREDENTIAL_CHANGE("https://schemas.openid.net/secevent/caep/event-type/credential-change"),
+    override fun equals(other: Any?): Boolean = other is SsfEventType && other.wire == wire
 
-    ASSURANCE_LEVEL_CHANGE("https://schemas.openid.net/secevent/caep/event-type/assurance-level-change"),
+    override fun hashCode(): Int = wire.hashCode()
 
-    ACCOUNT_DISABLED("https://schemas.openid.net/secevent/risc/event-type/account-disabled"),
-
-    ACCOUNT_ENABLED("https://schemas.openid.net/secevent/risc/event-type/account-enabled"),
-
-    ACCOUNT_PURGED("https://schemas.openid.net/secevent/risc/event-type/account-purged"),
-
-    /** A value this SDK's copy of the spec does not list; see the type's doc. */
-    UNKNOWN("");
+    override fun toString(): String = wire
 
     companion object {
+        /** `https://schemas.openid.net/secevent/caep/event-type/session-revoked` */
+        val SESSION_REVOKED: SsfEventType = SsfEventType("https://schemas.openid.net/secevent/caep/event-type/session-revoked")
+
+        /** `https://schemas.openid.net/secevent/caep/event-type/credential-change` */
+        val CREDENTIAL_CHANGE: SsfEventType = SsfEventType("https://schemas.openid.net/secevent/caep/event-type/credential-change")
+
+        /** `https://schemas.openid.net/secevent/caep/event-type/assurance-level-change` */
+        val ASSURANCE_LEVEL_CHANGE: SsfEventType = SsfEventType("https://schemas.openid.net/secevent/caep/event-type/assurance-level-change")
+
+        /** `https://schemas.openid.net/secevent/risc/event-type/account-disabled` */
+        val ACCOUNT_DISABLED: SsfEventType = SsfEventType("https://schemas.openid.net/secevent/risc/event-type/account-disabled")
+
+        /** `https://schemas.openid.net/secevent/risc/event-type/account-enabled` */
+        val ACCOUNT_ENABLED: SsfEventType = SsfEventType("https://schemas.openid.net/secevent/risc/event-type/account-enabled")
+
+        /** `https://schemas.openid.net/secevent/risc/event-type/account-purged` */
+        val ACCOUNT_PURGED: SsfEventType = SsfEventType("https://schemas.openid.net/secevent/risc/event-type/account-purged")
+
+        /** Every value this SDK's copy of the spec lists, in the spec's order. */
+        val KNOWN: List<SsfEventType> = listOf(
+            SESSION_REVOKED,
+            CREDENTIAL_CHANGE,
+            ASSURANCE_LEVEL_CHANGE,
+            ACCOUNT_DISABLED,
+            ACCOUNT_ENABLED,
+            ACCOUNT_PURGED,
+        )
+
         /**
-         * Decodes an unrecognised value to [UNKNOWN] instead of throwing.
-         *
-         * kotlinx.serialization's generated enum serializer raises on a value
-         * outside the constants, which fails the WHOLE response — not just the
-         * field. That is the failure §27.11 rule 1 exists to prevent.
+         * Decodes every string, keeping its spelling, and refuses to encode a
+         * value outside [KNOWN].
          */
         internal object Serializer : KSerializer<SsfEventType> {
             override val descriptor: SerialDescriptor =
                 PrimitiveSerialDescriptor("io.axiam.sdk.management.models.SsfEventType", PrimitiveKind.STRING)
 
             override fun serialize(encoder: Encoder, value: SsfEventType) {
+                if (!value.isKnown) {
+                    throw SerializationException(
+                        "SsfEventType \"${value.wire}\" is not one this SDK knows, so it is " +
+                            "never sent (CONTRACT §34.2 P12.2)",
+                    )
+                }
                 encoder.encodeString(value.wire)
             }
 
-            override fun deserialize(decoder: Decoder): SsfEventType {
-                val raw = decoder.decodeString()
-                return entries.firstOrNull { it != UNKNOWN && it.wire == raw } ?: UNKNOWN
-            }
+            override fun deserialize(decoder: Decoder): SsfEventType = SsfEventType(decoder.decodeString())
         }
     }
 }

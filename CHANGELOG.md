@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — contract 1.59 (follow-up F-59-08, ilpanich/axiam#583)
+
+- **Contract 1.59.** Re-vendored `CONTRACT.md` from `axiam` `fe369eb` (the merge carrying §34, the
+  cross-SDK review of the 1.53 – 1.58 ports); `openapi.json`, `management-registry.json` and
+  `proto/` were already identical. The README states conformance at 1.59 with the same section
+  list: §1–§7, §9–§13 and §12.7, §14, §15, §17, §19, §20, §21, §22, §23, §24, §25, §26, §27, §28
+  (including §6.1 mTLS), and §28.12, §29, §30, §31, §32 and §33, with §32.7 and §33.2 signed.
+- **R-17 (F-KT-03) — management writes are never re-sent by OkHttp** (§29.7, §30.7, §31.7, §32's
+  writes; §34.2 P11). Every management POST, PUT, PATCH and DELETE goes out on a client derived
+  from the shared one with `retryOnConnectionFailure(false)`; before, a write whose pooled
+  connection dropped after the server read it was silently sent a second time. The no-retry tests
+  now drop a reused connection, not only answer `503`.
+- **R-1 (F-KT-02) — `SsfReceiver.poll` never keeps a `jti` it does not return** (§32.7, §34.2 P1,
+  P3). A JWKS/discovery fetch or a `ReplayStore` that fails partway through a batch used to escape
+  `poll` with the earlier SETs already recorded — offered again, they read `replayed` and were lost.
+  **P1 form taken: the second** — return what was judged and leave the unjudged SETs unrecorded,
+  listing their keys in the new `SsfPollResult.unjudged` (default empty). When nothing in the batch
+  had been accepted yet, the failure is raised instead, with nothing recorded. §32.8 helper test 8
+  gains the two-SET batch whose second SET's refetch fails.
+- **R-8 (F-KT-10) — the receiver's JWKS cache expires** (§32.7 step 4, §34.2 P6): 300 s, the
+  lifetime of §10's JWKS cache (`SsfReceiver.JWKS_CACHE_LIFETIME`); a key the transmitter removed
+  stops verifying. The forced refetch on an unknown `kid` is unchanged.
+- **R-11 (F-KT-01) — a `5xx` on `cibaPoll` is transient whatever its body** (§33.4, §33.7 rule 5,
+  §34.2 P8). AXIAM's real `500 {"error":"server_error"}` (and a `503 temporarily_unavailable`) is
+  now a `NetworkError`, retried under §16, and never ends `cibaAwait`; it used to be a terminal
+  `OAuthProtocolError`. §33.8 test 8's `500` carries `{"error":"server_error"}`.
+- **R-19 (F-KT-04) — the clear-text writer is not public** (§7 rules 2 – 3).
+  `ManagementTransport.WIRE`, which serializes every `Sensitive` in the clear, is now `internal`
+  with a `@JvmSynthetic` getter; only the management request path uses it. **Breaking** for any
+  caller that reached for it (it was documented as unsupported plumbing).
+- **R-22 (F-KT-05, F-KT-06) — unknown values are refused locally; SSF event types are strings**
+  (§29.2, §31.2, §32.2, §34.2 P12.2). A generated open enum's `UNKNOWN` now refuses to encode, so
+  writing back a value this SDK does not know fails before any request instead of reaching the
+  server as `""`; rendering it still never fails. `SsfEventType` is generated as a string type
+  (`wire`, `isKnown`, `KNOWN`) with the six URIs as named constants, so an unseen event-type URI
+  keeps its value; only a known one is ever sent. **Source-breaking** for a `when` over
+  `SsfEventType` or a reference to `SsfEventType.UNKNOWN`, `entries` or `valueOf`.
+- **P10 anchor (no change):** `cibaAwait`'s deadline stays anchored at the instant the initiate
+  response was received (`CibaInitiateResponse.receivedAt`), one of the two anchors §34.2 P10
+  permits.
+
 ### Added
 
 - **Contract 1.58.** Re-vendored `CONTRACT.md`, `openapi.json` and `management-registry.json` from

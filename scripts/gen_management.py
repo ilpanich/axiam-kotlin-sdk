@@ -777,6 +777,84 @@ def field_list(schema_name: str, secrets: set[str]) -> tuple[list[dict[str, Any]
     return fields, required, description
 
 
+# String enums modelled as an open STRING type with the known values as named
+# constants, rather than as a Kotlin enum. CONTRACT §32.2: "An SDK SHOULD model
+# event types as strings with the six URIs as named constants" -- an enum maps
+# an event-type URI it has not seen to UNKNOWN and loses it (contract 1.59,
+# R-22). The value is kept for reading; only a known one is ever sent.
+OPEN_STRING_TYPES = {"SsfEventType"}
+
+
+def emit_open_string(name: str, schema: Any) -> str:
+    """An open string type for a string-enum schema in ``OPEN_STRING_TYPES``.
+
+    Decodes ANY string, keeping it in ``wire``; the spec's values are companion
+    constants (named as :func:`emit_enum` names them, so call sites read the
+    same); encoding refuses a value outside them, locally, before any request
+    (CONTRACT §34.2 P12.2).
+    """
+    type_name = pascal(name)
+    text = schema.get("description") or f"The {type_name} values the server uses."
+    values = [v for v in schema["enum"] if isinstance(v, str)]
+    body = kdoc(escape(text) + "\n\n"
+                "A **string**, with the values this SDK's copy of the spec lists as named "
+                f"constants and in [{type_name}.KNOWN] (CONTRACT §32.2). A value the spec does "
+                "not list decodes with its spelling intact -- read it from [wire] -- rather than "
+                "failing the response it arrived in or collapsing to a placeholder (CONTRACT "
+                "§27.11 rule 1). Only a known value is ever sent: writing any other is refused "
+                "locally, before any request (CONTRACT §34.2 P12.2). Rendering one (`toString`, "
+                "which is the wire spelling) never fails.\n\n"
+                "@property wire the value exactly as the server spells it")
+    body.append(f"@Serializable(with = {type_name}.Companion.Serializer::class)")
+    body.append(f"class {type_name}(val wire: String) {{")
+    body.append(f"    /** Whether this is one of [KNOWN] -- the only values ever sent. */")
+    body.append("    val isKnown: Boolean")
+    body.append("        get() = this in KNOWN")
+    body.append("")
+    body.append(f"    override fun equals(other: Any?): Boolean = other is {type_name} && other.wire == wire")
+    body.append("")
+    body.append("    override fun hashCode(): Int = wire.hashCode()")
+    body.append("")
+    body.append("    override fun toString(): String = wire")
+    body.append("")
+    body.append("    companion object {")
+    for value in values:
+        body.append(f'        /** `{value}` */')
+        body.append(f'        val {enum_constant(value)}: {type_name} = {type_name}("{value}")')
+        body.append("")
+    body.append("        /** Every value this SDK's copy of the spec lists, in the spec's order. */")
+    body.append(f"        val KNOWN: List<{type_name}> = listOf(")
+    for value in values:
+        body.append(f"            {enum_constant(value)},")
+    body.append("        )")
+    body.append("")
+    body.append("        /**")
+    body.append("         * Decodes every string, keeping its spelling, and refuses to encode a")
+    body.append("         * value outside [KNOWN].")
+    body.append("         */")
+    body.append(f"        internal object Serializer : KSerializer<{type_name}> {{")
+    body.append("            override val descriptor: SerialDescriptor =")
+    body.append(f'                PrimitiveSerialDescriptor("{MODELS_PACKAGE}.{type_name}", '
+                "PrimitiveKind.STRING)")
+    body.append("")
+    body.append(f"            override fun serialize(encoder: Encoder, value: {type_name}) {{")
+    body.append("                if (!value.isKnown) {")
+    body.append("                    throw SerializationException(")
+    body.append(f'                        "{type_name} \\"${{value.wire}}\\" is not one this SDK knows, so it is " +')
+    body.append('                            "never sent (CONTRACT §34.2 P12.2)",')
+    body.append("                    )")
+    body.append("                }")
+    body.append("                encoder.encodeString(value.wire)")
+    body.append("            }")
+    body.append("")
+    body.append(f"            override fun deserialize(decoder: Decoder): {type_name} = "
+                f"{type_name}(decoder.decodeString())")
+    body.append("        }")
+    body.append("    }")
+    body.append("}")
+    return header("\n".join(body), MODELS_PACKAGE)
+
+
 def emit_enum(name: str, schema: Any) -> str:
     """A Kotlin enum for a string-enum schema, with its wire spelling attached.
 
@@ -795,9 +873,10 @@ def emit_enum(name: str, schema: Any) -> str:
                 "changing what is sent.\n\n"
                 "An **open** enum. A value this SDK's copy of the spec does not list decodes "
                 f"to [{type_name}.UNKNOWN] rather than failing the response it arrived in "
-                "(CONTRACT §27.11 rule 1). Its own wire spelling is the empty string, which no "
-                "server value is: carrying an unrecognised value back into an update is refused "
-                "by the server rather than silently written as a spelling it never used. A "
+                "(CONTRACT §27.11 rule 1). [UNKNOWN] is never sent: carrying it back into a "
+                "write is refused locally, before any request, because the SDK MUST NOT send a "
+                "value it does not know (CONTRACT §34.2 P12.2) -- never written as an empty "
+                "string for the server to refuse. Rendering it (`toString`) never fails. A "
                 "`when` over these constants needs an `UNKNOWN` branch.")
     body.append(f"@Serializable(with = {type_name}.Companion.Serializer::class)")
     body.append(f"enum class {type_name}(val wire: String) {{")
@@ -805,12 +884,13 @@ def emit_enum(name: str, schema: Any) -> str:
     for value in values:
         body.append(f'    {enum_constant(value)}("{value}"),')
         body.append("")
-    body.append("    /** A value this SDK's copy of the spec does not list; see the type's doc. */")
+    body.append("    /** A value this SDK's copy of the spec does not list; never sent, see the type's doc. */")
     body.append('    UNKNOWN("");')
     body.append("")
     body.append("    companion object {")
     body.append("        /**")
-    body.append("         * Decodes an unrecognised value to [UNKNOWN] instead of throwing.")
+    body.append("         * Decodes an unrecognised value to [UNKNOWN] instead of throwing, and")
+    body.append("         * refuses to encode [UNKNOWN].")
     body.append("         *")
     body.append("         * kotlinx.serialization's generated enum serializer raises on a value")
     body.append("         * outside the constants, which fails the WHOLE response — not just the")
@@ -822,6 +902,12 @@ def emit_enum(name: str, schema: Any) -> str:
                 "PrimitiveKind.STRING)")
     body.append("")
     body.append(f"            override fun serialize(encoder: Encoder, value: {type_name}) {{")
+    body.append("                if (value == UNKNOWN) {")
+    body.append("                    throw SerializationException(")
+    body.append(f'                        "{type_name}.UNKNOWN is a value this SDK does not know, so it is " +')
+    body.append('                            "never sent (CONTRACT §34.2 P12.2): replace it before writing",')
+    body.append("                    )")
+    body.append("                }")
     body.append("                encoder.encodeString(value.wire)")
     body.append("            }")
     body.append("")
@@ -1136,7 +1222,8 @@ def emit_models() -> dict[str, str]:
     for name in schema_closure():
         schema = SCHEMAS[name]
         if "enum" in schema and schema.get("type") == "string":
-            files[f"{MODELS_DIR}/{pascal(name)}.kt"] = emit_enum(name, schema)
+            emit = emit_open_string if pascal(name) in OPEN_STRING_TYPES else emit_enum
+            files[f"{MODELS_DIR}/{pascal(name)}.kt"] = emit(name, schema)
             continue
         tagged = externally_tagged(schema)
         if tagged:

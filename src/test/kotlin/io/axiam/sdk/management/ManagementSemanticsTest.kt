@@ -278,12 +278,18 @@ class ManagementSemanticsTest : ManagementTestBase() {
      *
      * Fifteen of these enums appear in request bodies, so what happens when an
      * unrecognised value is carried back into an update matters. Its wire
-     * spelling is the empty string, which no server value is — so the server
-     * refuses it rather than accepting a spelling it never used.
+     * spelling is the empty string, which no server value is — and it is never
+     * sent at all: encoding it is refused locally (§34.2 P12.2).
      */
     @Test
     fun `an unknown enum value has no real wire spelling`() {
         assertEquals("", io.axiam.sdk.management.models.TenantKind.UNKNOWN.wire)
+        org.junit.jupiter.api.assertThrows<kotlinx.serialization.SerializationException> {
+            io.axiam.sdk.internal.ManagementTransport.WIRE.encodeToString(
+                io.axiam.sdk.management.models.TenantKind.serializer(),
+                io.axiam.sdk.management.models.TenantKind.UNKNOWN,
+            )
+        }
         for (known in io.axiam.sdk.management.models.TenantKind.entries) {
             if (known != io.axiam.sdk.management.models.TenantKind.UNKNOWN) {
                 assertTrue(

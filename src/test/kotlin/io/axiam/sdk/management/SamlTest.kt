@@ -100,8 +100,12 @@ class SamlTest : ManagementTestBase() {
         assertFalse(SamlServiceProvider::class.members.any { it.name == "signAssertions" })
         assertFalse(SamlServiceProviderInput::class.members.any { it.name == "signAssertions" })
 
-        // An unknown enum value decodes, but is never written back as-is:
-        // replace it before writing.
+        // An unknown enum value decodes, but is never written back as-is: it is
+        // refused locally, before the request (§29.2, §34.2 P12.2) — never sent
+        // as "" for the server to refuse. Replace it before writing.
+        assertTrue(sp.toInput().toString().contains("UNKNOWN"), "rendering it never fails")
+        assertThrows<NetworkError> { runBlocking { client.saml.updateServiceProvider(id, sp.toInput()) } }
+        assertEquals(0, route.calls(), "the unknown binding never reached the wire")
         val input = sp.toInput().let { it.copy(acsUrls = listOf(it.acsUrls[0].copy(binding = SamlBinding.HTTP_POST))) }
         client.saml.updateServiceProvider(id, input)
         val sent = route.last().json()
@@ -220,6 +224,33 @@ class SamlTest : ManagementTestBase() {
         assertThrows<NetworkError> { runBlocking { s.promoteIdpCredential(id) } }
         assertThrows<NetworkError> { runBlocking { s.retireIdpCredential(id) } }
         for (route in routes) assertEquals(1, route.calls(), "exactly one request")
+    }
+
+    @Test
+    fun `none of the seven writes is re-sent after a dropped connection`() = runTest {
+        val id = UUID.randomUUID()
+        val s = client.saml // the default client: retry ENABLED
+        assertSentOnceOverDroppedConnection("create", mountDropped("POST", "$saml/service-providers")) {
+            s.createServiceProvider(input())
+        }
+        assertSentOnceOverDroppedConnection("update", mountDropped("PUT", "$saml/service-providers/$id")) {
+            s.updateServiceProvider(id, input())
+        }
+        assertSentOnceOverDroppedConnection("delete", mountDropped("DELETE", "$saml/service-providers/$id")) {
+            s.deleteServiceProvider(id)
+        }
+        assertSentOnceOverDroppedConnection("parse", mountDropped("POST", "$saml/parse-sp-metadata")) {
+            s.parseSpMetadata(ParseSamlSpMetadata.fromUrl("https://m"))
+        }
+        assertSentOnceOverDroppedConnection("issue", mountDropped("POST", "$saml/idp-credentials")) {
+            s.issueIdpCredential(IssueSamlIdpCredential(UUID.randomUUID(), SamlIdpSlot.NEXT))
+        }
+        assertSentOnceOverDroppedConnection("promote", mountDropped("POST", "$saml/idp-credentials/$id/promote")) {
+            s.promoteIdpCredential(id)
+        }
+        assertSentOnceOverDroppedConnection("retire", mountDropped("POST", "$saml/idp-credentials/$id/retire")) {
+            s.retireIdpCredential(id)
+        }
     }
 
     // -- 7. Errors --------------------------------------------------------------------------------

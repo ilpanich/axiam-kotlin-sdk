@@ -164,6 +164,21 @@ class DirectoryTest : ManagementTestBase() {
         }
     }
 
+    @Test
+    fun `no write is re-sent after a dropped connection`() = runTest {
+        val d = client.directory // the default client: retry ENABLED
+        assertSentOnceOverDroppedConnection("set", mountDropped("PUT", directory)) {
+            d.set(setBody(Redaction.secret("bind-")))
+        }
+        assertSentOnceOverDroppedConnection("update", mountDropped("PATCH", directory)) {
+            d.update(UpdateDirectoryConfig())
+        }
+        assertSentOnceOverDroppedConnection("delete", mountDropped("DELETE", directory)) { d.delete() }
+        assertSentOnceOverDroppedConnection("link", mountDropped("POST", "$directory/links")) {
+            d.linkAccount(LinkDirectoryAccount(UUID.randomUUID()))
+        }
+    }
+
     // -- 6. Errors and link_account -----------------------------------------------------------
 
     @Test

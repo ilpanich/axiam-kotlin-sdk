@@ -24,13 +24,27 @@ Source: [ilpanich/axiam-kotlin-sdk](https://github.com/ilpanich/axiam-kotlin-sdk
 
 ## Contract conformance
 
-This SDK conforms to **contract 1.58**: CONTRACT.md §1–§7 (§1.1's `getUserInfo` and §1.1.1's
+This SDK conforms to **contract 1.59**: CONTRACT.md §1–§7 (§1.1's `getUserInfo` and §1.1.1's
 `validateToken`/`introspectToken` declined — gRPC-only, and this SDK ships no gRPC transport; see
 [Scope of this SDK (v1)](#scope-of-this-sdk-v1) below), §9–§13 and §12.7, §14, §15, §17, §19,
 §20, §21, §22, §23, §24, §25, §26, §27, §28 (including §6.1 mTLS), and §28.12, §29, §30, §31, §32
 and §33, with §32.7 and §33.2 signed. §12 is implemented in full at its
 1.38 shape: all **thirteen** operations, including the four public "Sign in with X" entry points,
 as `suspend` functions on the same `AxiamClient`.
+
+**Contract 1.59 — the §34 review's clarifications applied** (follow-up F-59-08). No section is
+added or dropped; the claim above holds at 1.59 with these fixes:
+
+- **§29.7, §30.7, §31.7, §32 writes (§34.2 P11)** — management writes go out with OkHttp's own
+  re-send after a dropped connection switched off, so a write is never sent twice.
+- **§32.7 `poll` (§34.2 P1)** — a `jti` is never recorded without being returned: a key fetch or
+  replay-store failure leaves the SET and the rest of the batch unjudged (`result.unjudged`).
+- **§32.7 step 4 (§34.2 P6)** — the receiver's JWKS cache expires after 300 s, as §10's does.
+- **§33.4 / §33.7 rule 5 (§34.2 P8)** — a `5xx` on `cibaPoll` is transient whatever its body.
+- **§7 rules 2 – 3** — the clear-text management writer is no longer public; `expose()` is the one
+  path to a raw `Sensitive`.
+- **§29.2, §31.2, §32.2 (§34.2 P12.2)** — a value this SDK does not know is refused locally, never
+  sent as `""`; §32's event types are strings with named constants.
 
 **Contract 1.53 – 1.58 additions:**
 
@@ -1902,9 +1916,11 @@ Eight things worth knowing:
   Generated enums also gained an `UNKNOWN` constant, decoded through a hand-rolled `KSerializer`.
   kotlinx.serialization's own enum serializer *throws* on a value outside the constants, which fails
   the whole response — taking down every record on the page over one field of one of them. A `when`
-  over these constants now needs an `UNKNOWN` branch. `UNKNOWN.wire` is the empty string, which no
-  server value is: carrying an unrecognised value back into an update is refused by the server
-  rather than silently written as a spelling it never used.
+  over these constants now needs an `UNKNOWN` branch. `UNKNOWN` is never sent: carrying an
+  unrecognised value back into a write is refused locally, before any request, rather than sent as
+  `""` for the server to refuse (contract 1.59, §34.2 P12.2). §32's event types are the exception to
+  the enum shape: `SsfEventType` is a string type with the six URIs as named constants (§32.2), so an
+  event-type URI this SDK has not seen decodes with its value in `wire` — and is likewise never sent.
 
 Worked end to end in [`examples/management-basics`](examples/management-basics).
 
@@ -2123,11 +2139,18 @@ while (true) {
   `pushErrorCode()` maps `malformed`, `invalid_type` and `replayed` to `invalid_request`.
 - Keys come only from the configured JWKS (or a discovery document whose `issuer` matches), fetched
   over the client's TLS policy without its session; an unknown `kid` costs one refetch, at most once
-  a minute. A JWKS fetch failure is a `NetworkError`, not a verdict on the SET.
+  a minute. The fetched JWKS is cached for 300 s, the lifetime of §10's JWKS cache, so a key the
+  transmitter removed stops verifying (§34.2 P6). A JWKS fetch failure is a `NetworkError`, not a
+  verdict on the SET.
 - A verified SET is **recorded** in the replay store (in memory by default; pluggable; the window is
   seven days and cannot be shorter): one you neither acknowledge nor refuse comes back as `replayed`.
 - `poll` sends only the members you set and acknowledges nothing itself; it is retried per §16 on a
   transport failure or `5xx`, never on another `4xx`.
+- `poll` never records a `jti` it does not return (§34.2 P1). A JWKS or discovery fetch that fails,
+  or a replay store that throws, is not a verdict: that SET and the rest of the batch are left
+  **unjudged** — not recorded, in neither `events` nor `refused` — so you neither acknowledge nor
+  refuse them and the transmitter offers them again. If the batch had already accepted a SET, `poll`
+  returns what it judged and lists the rest in `result.unjudged`; otherwise it raises the failure.
 
 ## CIBA (§33)
 
@@ -2179,7 +2202,8 @@ client.cibaInitiate(CibaInitiateParams(scope = "openid", hint = hint, signer = s
   notify a person. A success proves nothing about the user (§33.3 rule 4).
 - `cibaPoll` surfaces `authorization_pending`, `slow_down`, `access_denied`, `expired_token` and
   `invalid_grant` as `OAuthProtocolError`; it is retried per §16 within the call on a transport
-  failure, `5xx`, `408` or bodiless `429`. `cibaAwait` adds 5 s per `slow_down` for good, treats
+  failure, `5xx`, `408` or bodiless `429`. A `5xx` is transient whatever its body — AXIAM's own
+  `500 {"error":"server_error"}` is a `NetworkError` here, never a terminal answer (§34.2 P8). `cibaAwait` adds 5 s per `slow_down` for good, treats
   `rate_limit_exceeded` and surviving transient failures as one more interval, and raises
   `expired_token` locally rather than poll past `receivedAt + expiresIn`. It does not adopt the
   token set as the client's credential.

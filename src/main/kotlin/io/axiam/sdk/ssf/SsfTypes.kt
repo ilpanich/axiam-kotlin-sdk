@@ -181,11 +181,17 @@ data class SsfPollOptions(
  * @property events the SETs that verified, in the order the transmitter listed them
  * @property moreAvailable whether the transmitter holds more
  * @property refused the SETs that did not verify
+ * @property unjudged the keys of the SETs the poll could not judge — a JWKS or
+ *   discovery fetch, or the replay store, failed before their verdict
+ *   (CONTRACT.md §34.2 P1, P3). They are neither in [events] nor in
+ *   [refused], and their `jti`s are not recorded: neither acknowledge them nor
+ *   pass them in `setErrs`, and the transmitter offers them again.
  */
 data class SsfPollResult(
     val events: List<SecurityEvent>,
     val moreAvailable: Boolean,
     val refused: List<RefusedSet>,
+    val unjudged: List<String> = emptyList(),
 )
 
 /** Where the transmitter's signing keys come from (CONTRACT.md §32.7). */

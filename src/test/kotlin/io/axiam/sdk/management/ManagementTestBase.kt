@@ -8,6 +8,7 @@ import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
+import okhttp3.mockwebserver.SocketPolicy
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import java.net.URLDecoder
@@ -41,7 +42,11 @@ abstract class ManagementTestBase {
     private val unmatched = mutableListOf<String>()
 
     /** What one mounted route answered, and what actually reached it. */
-    class Route(private val status: Int, private val bodies: List<String>) {
+    class Route(
+        private val status: Int,
+        private val bodies: List<String>,
+        private val dropConnection: Boolean = false,
+    ) {
         /** A route answering every request with [body]. */
         constructor(status: Int, body: String) : this(status, listOf(body))
 
@@ -54,6 +59,11 @@ abstract class ManagementTestBase {
         fun last(): Recorded = requests.lastOrNull() ?: throw AssertionError("route was never called")
 
         internal fun respond(): MockResponse {
+            if (dropConnection) {
+                // The whole request is read (and recorded), then the socket is
+                // closed with no response: a connection dropped mid-exchange.
+                return MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST)
+            }
             // The n-th request gets the n-th body; the last one repeats.
             val body = bodies[(requests.size - 1).coerceIn(0, bodies.size - 1)]
             val response = MockResponse().setResponseCode(status)
@@ -161,6 +171,56 @@ abstract class ManagementTestBase {
         val route = Route(status, body)
         routes["$method $path"] = route
         return route
+    }
+
+    /**
+     * Mounts one route that reads each request in full and then drops the
+     * connection without answering.
+     *
+     * Used with [warmConnection] for CONTRACT.md §34.2 P11: a write that "MUST
+     * NOT be retried" includes the HTTP library's own transparent re-send of a
+     * request whose pooled connection died, which a `503` never exercises.
+     *
+     * @param method the HTTP method to match
+     * @param path the exact path to match
+     * @return the mounted route, for assertions
+     */
+    protected fun mountDropped(method: String, path: String): Route {
+        val route = Route(0, listOf(""), dropConnection = true)
+        routes["$method $path"] = route
+        return route
+    }
+
+    /**
+     * Leaves a kept-alive connection in [client]'s pool by logging in again,
+     * so the next request rides a REUSED connection — the case in which
+     * OkHttp's `retryOnConnectionFailure` silently re-sends a request after
+     * the connection drops (a fresh connection that fails is not re-sent).
+     */
+    protected suspend fun warmConnection() {
+        login(client)
+    }
+
+    /**
+     * CONTRACT.md §34.2 P11: [call] — a management write — goes out over a
+     * reused connection that [route] drops after reading the request, and
+     * reaches the server exactly once: neither §16 nor OkHttp re-sends it.
+     *
+     * @param name the operation, for the failure message
+     * @param route a route mounted with [mountDropped]
+     * @param call the write
+     */
+    protected suspend fun assertSentOnceOverDroppedConnection(name: String, route: Route, call: suspend () -> Unit) {
+        warmConnection()
+        val before = route.calls()
+        org.junit.jupiter.api.assertThrows<io.axiam.sdk.errors.NetworkError> {
+            kotlinx.coroutines.runBlocking { call() }
+        }
+        org.junit.jupiter.api.Assertions.assertEquals(
+            before + 1,
+            route.calls(),
+            "$name: the server received the write ${route.calls() - before} times after a dropped connection",
+        )
     }
 
     /**

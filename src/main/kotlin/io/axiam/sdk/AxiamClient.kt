@@ -1743,7 +1743,10 @@ class AxiamClient private constructor(
      * nonce).
      *
      * Retried per §16 within the call on a transport failure, `5xx`, `408` or a
-     * bodiless `429`; never on a protocol answer or another `4xx`. **Store the
+     * bodiless `429`; never on a protocol answer or another `4xx`. A `5xx` is
+     * transient **whatever its body** — AXIAM's own `500 {"error":"server_error"}`
+     * included — and surfaces as a `NetworkError`, never an `OAuthProtocolError`
+     * (§33.4, §34.2 P8). **Store the
      * returned tokens before anything else**: a request is redeemed once, and a
      * second `cibaPoll` for it is `invalid_grant` (§33.7 rule 7).
      *
@@ -1764,8 +1767,9 @@ class AxiamClient private constructor(
      *    polling earlier only earns `slow_down` and a longer wait.
      *  - `slow_down` adds 5 s to the interval, cumulatively and permanently;
      *    `authorization_pending` never lowers it.
-     *  - A transport failure, `5xx` or `429` that outlived §16 is not terminal:
-     *    the loop waits the interval and polls again.
+     *  - A transport failure, `5xx` (with or without an `error` body) or `429`
+     *    that outlived §16 is not terminal: the loop waits the interval and
+     *    polls again.
      *  - Polling stops at `receivedAt + expiresIn`, even if the server has not
      *    said `expired_token`; the same `expired_token` is then raised locally,
      *    without a request.

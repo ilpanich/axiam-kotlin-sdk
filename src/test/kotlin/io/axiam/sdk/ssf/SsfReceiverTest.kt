@@ -61,6 +61,9 @@ class SsfReceiverTest {
     private var pollAnswer: () -> MockResponse = { MockResponse().setResponseCode(501) }
     private var discovery: String? = null
 
+    /** When set, every JWKS fetch after the first [jwksFailAfter] answers `503`. */
+    private var jwksFailAfter: Int? = null
+
     @BeforeEach
     fun setUp() {
         server = MockWebServer()
@@ -69,8 +72,13 @@ class SsfReceiverTest {
                 val path = request.requestUrl?.encodedPath ?: ""
                 return when {
                     path == "/oauth2/jwks" -> {
-                        jwksHits.incrementAndGet()
-                        json(200, JWKSet(jwksKeys.map { it.toPublicJWK() }).toString())
+                        val hit = jwksHits.incrementAndGet()
+                        val failAfter = jwksFailAfter
+                        if (failAfter != null && hit > failAfter) {
+                            MockResponse().setResponseCode(503)
+                        } else {
+                            json(200, JWKSet(jwksKeys.map { it.toPublicJWK() }).toString())
+                        }
                     }
                     path == "/.well-known/ssf-configuration" && discovery != null -> json(200, discovery!!)
                     path.startsWith("/ssf/v1/poll/") -> {
@@ -130,6 +138,31 @@ class SsfReceiverTest {
 
     private fun JsonObject.with(name: String, value: JsonElement) = JsonObject(this + (name to value))
     private fun JsonObject.without(name: String) = JsonObject(this - name)
+
+    /** A [ReplayStore] the test can read back, failing on the jtis in [failOn]. */
+    private class RecordingStore(private val failOn: Set<String> = emptySet()) : ReplayStore {
+        val recorded: MutableSet<String> = Collections.synchronizedSet(mutableSetOf())
+        override fun checkAndRecord(jti: String, window: Duration): Boolean {
+            if (jti in failOn) throw IllegalStateException("the replay store cannot answer")
+            return recorded.add(jti)
+        }
+    }
+
+    private fun receiverWith(store: ReplayStore): SsfReceiver {
+        val token = "cc-" + UUID.randomUUID().toString().replace("-", "")
+        return SsfReceiver(
+            client(),
+            SsfReceiverConfig(
+                issuer,
+                audience,
+                SsfKeySource.JwksUri(server.url("/oauth2/jwks").toString()),
+                accessTokenProvider = { Sensitive.of(token) },
+                replayStore = store,
+            ),
+        )
+    }
+
+    private fun jtiOf(c: JsonObject) = (c["jti"] as JsonPrimitive).content
 
     private fun client(): AxiamClient = AxiamClient.builder(server.url("/").toString(), UUID.randomUUID().toString()).build()
 
@@ -289,6 +322,33 @@ class SsfReceiverTest {
         assertEquals(2, jwksHits.get(), "no refetch within the minute")
     }
 
+    /**
+     * §32.7 step 4 (contract 1.59, §34.2 P6): the key cache expires as §10's
+     * JWKS cache does, so a key the transmitter removed stops verifying.
+     */
+    @Test
+    fun `the JWKS cache expires and a removed key stops verifying`() = runBlocking {
+        val old = key()
+        jwksKeys = listOf(old)
+        var now = 0L
+        val r = SsfReceiver(
+            client(),
+            SsfReceiverConfig(issuer, audience, SsfKeySource.JwksUri(server.url("/oauth2/jwks").toString())),
+            nanoTime = { now },
+        )
+        r.verifySet(signSet(old, claims()))
+        assertEquals(1, jwksHits.get(), "primes the cache")
+
+        jwksKeys = listOf(key()) // the transmitter rotates and removes the old key
+        now += Duration.ofSeconds(299).toNanos()
+        r.verifySet(signSet(old, claims()))
+        assertEquals(1, jwksHits.get(), "within its lifetime the cache is used")
+
+        now += Duration.ofSeconds(2).toNanos()
+        assertEquals(SetFailureReason.INVALID_KEY, reason(r, signSet(old, claims())))
+        assertTrue(jwksHits.get() >= 2, "the expired cache was fetched again")
+    }
+
     // -- 8 ---------------------------------------------------------------------------
 
     @Test
@@ -357,6 +417,76 @@ class SsfReceiverTest {
         val result = r.poll("s-1")
         assertEquals(3, polls.size, "the 503 was retried once")
         assertTrue(result.events.isEmpty() && !result.moreAvailable)
+    }
+
+    /**
+     * §32.8 helper test 8's two-SET batch (contract 1.59, §34.2 P1): the
+     * second SET names an unknown kid while the refetch fails. Afterwards the
+     * first SET's jti is not in the store, or the first SET is returned.
+     */
+    @Test
+    fun `a batch whose second SET fails its key fetch loses neither SET`() = runBlocking {
+        val k = key()
+        jwksKeys = listOf(k)
+        jwksFailAfter = 1 // the cold fill succeeds, the unknown kid's refetch answers 503
+        val first = claims()
+        val second = claims()
+        val reply = buildJsonObject {
+            put("sets", buildJsonObject {
+                put(jtiOf(first), signSet(k, first))
+                put(jtiOf(second), signSet(key(), second))
+            })
+        }.toString()
+        pollAnswer = { json(200, reply) }
+        val store = RecordingStore()
+        val outcome = runCatching { receiverWith(store).poll("s-1") }
+
+        val returned = outcome.getOrNull()?.events.orEmpty().map { it.jti }
+        assertTrue(
+            jtiOf(first) in returned || jtiOf(first) !in store.recorded,
+            "P1: a recorded jti is returned (outcome: ${outcome.exceptionOrNull() ?: "returned $returned"})",
+        )
+        assertEquals(2, jwksHits.get(), "the cold fill and the one refetch")
+        // This SDK's form: what was judged is returned, the unjudged SET is listed and unrecorded.
+        val result = outcome.getOrThrow()
+        assertEquals(listOf(jtiOf(first)), returned)
+        assertTrue(result.refused.isEmpty(), "a failed key fetch is no verdict")
+        assertEquals(listOf(jtiOf(second)), result.unjudged)
+        assertFalse(jtiOf(second) in store.recorded, "the unjudged SET is not recorded")
+        assertEquals(setOf(jtiOf(first)), store.recorded.toSet())
+    }
+
+    @Test
+    fun `a store that cannot answer leaves its SET and the rest unjudged`() = runBlocking {
+        val k = key()
+        jwksKeys = listOf(k)
+        val first = claims()
+        val second = claims()
+        val third = claims()
+        val reply = buildJsonObject {
+            put("sets", buildJsonObject {
+                for (c in listOf(first, second, third)) put(jtiOf(c), signSet(k, c))
+            })
+        }.toString()
+        pollAnswer = { json(200, reply) }
+        val store = RecordingStore(failOn = setOf(jtiOf(second)))
+        val result = receiverWith(store).poll("s-1")
+        assertEquals(listOf(jtiOf(first)), result.events.map { it.jti })
+        assertEquals(listOf(jtiOf(second), jtiOf(third)), result.unjudged)
+        assertEquals(setOf(jtiOf(first)), store.recorded.toSet())
+    }
+
+    @Test
+    fun `a key fetch failure before anything was accepted is raised with nothing recorded`() {
+        val k = key()
+        jwksKeys = listOf(k)
+        jwksFailAfter = 0 // the JWKS is down
+        val c = claims()
+        val reply = buildJsonObject { put("sets", buildJsonObject { put(jtiOf(c), signSet(k, c)) }) }.toString()
+        pollAnswer = { json(200, reply) }
+        val store = RecordingStore()
+        assertThrows<NetworkError> { runBlocking { receiverWith(store).poll("s-1") } }
+        assertTrue(store.recorded.isEmpty())
     }
 
     @Test

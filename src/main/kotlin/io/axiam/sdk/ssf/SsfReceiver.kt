@@ -14,6 +14,7 @@ import io.axiam.sdk.errors.NotFoundError
 import io.axiam.sdk.errors.ValidationError
 import io.axiam.sdk.internal.Retry
 import io.axiam.sdk.internal.Sessionless
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -71,7 +72,21 @@ import java.util.Base64
  *   below [MIN_REPLAY_WINDOW], the issuer or audience is blank, or a key
  *   source URL is neither `https` nor `http` on a loopback host
  */
-class SsfReceiver(private val client: AxiamClient, config: SsfReceiverConfig) {
+class SsfReceiver internal constructor(
+    private val client: AxiamClient,
+    config: SsfReceiverConfig,
+    /** The monotonic clock the key cache's lifetime and the refetch limit are measured on. */
+    private val nanoTime: () -> Long,
+) {
+
+    /**
+     * Builds a receiver for [client] under [config].
+     *
+     * @param client the client whose TLS policy fetches the keys and whose base
+     *   URL is the transmitter root [poll] calls
+     * @param config the receiver's issuer, audience, key source and replay policy
+     */
+    constructor(client: AxiamClient, config: SsfReceiverConfig) : this(client, config, System::nanoTime)
 
     private val issuer: String = config.issuer
     private val audience: String = config.audience
@@ -84,6 +99,7 @@ class SsfReceiver(private val client: AxiamClient, config: SsfReceiverConfig) {
     private val keyLock = Mutex()
     private var jwksUrl: HttpUrl? = null
     private var jwks: JWKSet? = null
+    private var jwksFetchedNanos: Long = 0L
     private var lastForcedRefetchNanos: Long? = null
 
     init {
@@ -110,8 +126,8 @@ class SsfReceiver(private val client: AxiamClient, config: SsfReceiverConfig) {
      *  2. `typ` `secevent+jwt` or `application/secevent+jwt`, any case
      *     [`invalid_type`];
      *  3. `alg` exactly `EdDSA` [`invalid_key`];
-     *  4. the `kid` in the configured JWKS — on a miss, ONE refetch, at most
-     *     once a minute [`invalid_key`];
+     *  4. the `kid` in the configured JWKS (cached for [JWKS_CACHE_LIFETIME])
+     *     — on a miss, ONE refetch, at most once a minute [`invalid_key`];
      *  5. the Ed25519 signature [`invalid_key`];
      *  6. `iss` equal to the configured issuer [`invalid_issuer`];
      *  7. `aud` equal to, or an array containing, the audience [`invalid_audience`];
@@ -148,13 +164,25 @@ class SsfReceiver(private val client: AxiamClient, config: SsfReceiverConfig) {
      *
      * Retried per §16 on a transport failure, `408`, `429` or `5xx`; never on
      * another `4xx` (`400` → [ValidationError], `401` → [AuthError], `404` →
-     * [NotFoundError], `409` → [ConflictError]). A JWKS fetch failure while
-     * verifying aborts the poll with that error rather than refusing SETs it
-     * could not judge.
+     * [NotFoundError], `409` → [ConflictError]).
+     *
+     * **A SET is never recorded without being returned** (CONTRACT.md §34.2
+     * P1). A JWKS or discovery fetch that fails, or a [ReplayStore] that
+     * throws, is not a verdict on the SET being judged: that SET and every
+     * later one in the batch are left **unjudged** — in neither `events` nor
+     * `refused`, their `jti`s not recorded — so you neither acknowledge nor
+     * refuse them and the transmitter offers them again. When the batch had
+     * already accepted a SET, `poll` returns what it judged and lists the rest
+     * in [SsfPollResult.unjudged]; when it had accepted none, it raises the
+     * failure (a [NetworkError] for a fetch), having recorded nothing.
      *
      * @param streamId the stream's id (path-escaped)
      * @param options what to send
-     * @return the verified events and the refused SETs, apart
+     * @return the verified events and the refused SETs, apart, and any SETs
+     *   left unjudged
+     * @throws NetworkError when a key fetch failed before any SET of the batch
+     *   was accepted (a throwing [ReplayStore]'s own exception is raised the
+     *   same way)
      * @throws AuthError locally, without a request, when no access-token
      *   provider was configured
      */
@@ -195,19 +223,29 @@ class SsfReceiver(private val client: AxiamClient, config: SsfReceiverConfig) {
         val moreAvailable = (reply["moreAvailable"] as? JsonPrimitive)?.booleanOrNull ?: false
         val events = mutableListOf<SecurityEvent>()
         val refused = mutableListOf<RefusedSet>()
-        val sets = reply["sets"] as? JsonObject
-        if (sets != null) {
-            for ((jti, value) in sets) {
-                val compact = (value as? JsonPrimitive)?.takeIf { it.isString }?.content
-                if (compact == null) {
-                    refused += RefusedSet(jti, SetFailureReason.MALFORMED)
-                    continue
-                }
-                try {
-                    events += verify(compact, jti)
-                } catch (e: SetVerificationError) {
-                    refused += RefusedSet(jti, e.failureReason)
-                }
+        val sets = reply["sets"]?.let { it as? JsonObject }?.entries?.toList().orEmpty()
+        for ((index, entry) in sets.withIndex()) {
+            val (jti, value) = entry
+            val compact = (value as? JsonPrimitive)?.takeIf { it.isString }?.content
+            if (compact == null) {
+                refused += RefusedSet(jti, SetFailureReason.MALFORMED)
+                continue
+            }
+            try {
+                events += verify(compact, jti)
+            } catch (e: SetVerificationError) {
+                refused += RefusedSet(jti, e.failureReason)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // §34.2 P1/P3: a key fetch or a replay store that cannot answer
+                // is no verdict, and this SET and every one after it are left
+                // unjudged — not returned, not refused, not recorded. Nothing
+                // this poll recorded is dropped: with nothing accepted yet the
+                // failure is raised (nothing is recorded); otherwise the
+                // accepted SETs are returned and the rest listed as unjudged.
+                if (events.isEmpty()) throw e
+                return SsfPollResult(events, moreAvailable, refused, sets.drop(index).map { it.key })
             }
         }
         return SsfPollResult(events, moreAvailable, refused)
@@ -297,19 +335,30 @@ class SsfReceiver(private val client: AxiamClient, config: SsfReceiverConfig) {
      * The Ed25519 key named [kid], from the cached JWKS; on a miss, ONE forced
      * refetch — no more often than once a minute (§32.7 step 4).
      *
+     * The cache lives [JWKS_CACHE_LIFETIME], as §10's JWKS cache does
+     * (CONTRACT.md §34.2 P6): an expired cache is filled again like an empty
+     * one, so a key the transmitter removed stops verifying within that
+     * lifetime even if no unknown `kid` ever arrives.
+     *
      * A fetch failure is a [NetworkError], never `null`: an unreachable JWKS is
      * not a verdict on the SET.
      */
     private suspend fun keyFor(kid: String): OctetKeyPair? = keyLock.withLock {
-        val cached = jwks ?: fetchJwks().also { jwks = it }
+        val current = jwks?.takeIf { nanoTime() - jwksFetchedNanos < JWKS_CACHE_LIFETIME.toNanos() }
+        val cached = current ?: store(fetchJwks())
         find(cached, kid)?.let { return@withLock it }
-        val now = System.nanoTime()
+        val now = nanoTime()
         val last = lastForcedRefetchNanos
         if (last != null && now - last < FORCED_REFETCH_INTERVAL.toNanos()) return@withLock null
         lastForcedRefetchNanos = now
-        val fresh = fetchJwks()
+        find(store(fetchJwks()), kid)
+    }
+
+    /** Caches [fresh] and starts its lifetime. */
+    private fun store(fresh: JWKSet): JWKSet {
         jwks = fresh
-        find(fresh, kid)
+        jwksFetchedNanos = nanoTime()
+        return fresh
     }
 
     private fun find(set: JWKSet, kid: String): OctetKeyPair? =
@@ -425,6 +474,12 @@ class SsfReceiver(private val client: AxiamClient, config: SsfReceiverConfig) {
          * transmitter can still re-send.
          */
         val MIN_REPLAY_WINDOW: Duration = Duration.ofDays(7)
+
+        /**
+         * How long a fetched JWKS is used before it is fetched again: 300 s, the
+         * lifetime of §10's JWKS cache (CONTRACT.md §34.2 P6).
+         */
+        val JWKS_CACHE_LIFETIME: Duration = Duration.ofSeconds(300)
 
         /** The shortest gap between two forced JWKS refetches (§32.7 step 4). */
         val FORCED_REFETCH_INTERVAL: Duration = Duration.ofSeconds(60)

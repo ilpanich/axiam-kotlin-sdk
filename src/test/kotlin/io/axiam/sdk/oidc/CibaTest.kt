@@ -362,12 +362,13 @@ class CibaTest {
     // -- 8. Transient failure is not terminal ------------------------------------------------------------
 
     @Test
-    fun `t08 a 500 and a 429 mid-loop are survived`() {
+    fun `t08 a 500 server_error and a 429 mid-loop are survived`() {
         val client = client()
         val c = TestClock().also { clock = it }
         tokenScript = listOf(
             { json(400, oauthError("authorization_pending")) },
-            { MockResponse().setResponseCode(500) },
+            // §34.2 P8: the body AXIAM's token endpoint really sends on an internal failure.
+            { json(500, """{"error":"server_error"}""") },
             { json(429, """{"error":"rate_limit_exceeded"}""") },
             { tokens() },
         )
@@ -376,6 +377,19 @@ class CibaTest {
         assertNotNull(set.idToken)
         assertNotNull(set.idClaims)
         assertEquals(4, polls.size)
+    }
+
+    @Test
+    fun `t08b a 5xx with an error body is retried inside cibaPoll`() = runBlocking {
+        val client = client() // retry ENABLED
+        tokenScript = listOf(
+            { json(503, """{"error":"temporarily_unavailable"}""") },
+            { json(500, """{"error":"server_error"}""") },
+            { tokens() },
+        )
+        val set = client.cibaPoll(CibaPollParams(Sensitive.of(random()), configuration = client.oidcDiscover()))
+        assertTrue(set.accessToken.expose().isNotEmpty())
+        assertEquals(3, polls.size, "§33.7 rule 5 / P8: a 5xx is transient whatever its body")
     }
 
     // -- 9. Single use ---------------------------------------------------------------------------------------

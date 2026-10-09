@@ -1253,7 +1253,8 @@ internal class OidcSupport(
             random = jitter,
             // §33.7 rule 5: transport failures, 5xx, 408 and a bodiless 429 are
             // retried; a protocol answer (an OAuthProtocolError, which is not a
-            // NetworkError) and any other 4xx are decisive.
+            // NetworkError) and any other 4xx are decisive. A 5xx is a
+            // NetworkError whatever its body (below).
             retryable = { trace.lastStatus.let { it == null || io.axiam.sdk.internal.Retry.isRetryableStatus(it) } },
         ) { _ ->
             trace.lastStatus = null
@@ -1261,6 +1262,16 @@ internal class OidcSupport(
             val response = executeRequest(request)
             response.use {
                 trace.lastStatus = it.code
+                if (it.code >= 500) {
+                    // §33.4 / §33.7 rule 5 (contract 1.59, §34.2 P8): on ciba_poll a
+                    // 5xx is transient WHATEVER its body — AXIAM's own token
+                    // endpoint answers `500 {"error":"server_error"}`, and a
+                    // `503 {"error":"temporarily_unavailable"}` is the same kind of
+                    // answer. Mapped by status, so §16 retries it and cibaAwait
+                    // never ends on it; rule 5 prevails over the any-status
+                    // OAuthProtocolError dispatch for this operation only.
+                    throw ErrorMapper.fromHttpStatus(it.code, "cibaPoll request failed", it)
+                }
                 if (!it.isSuccessful) {
                     throw ErrorMapper.fromOAuth2ResponseAtAnyStatus("cibaPoll request failed", it)
                 }
