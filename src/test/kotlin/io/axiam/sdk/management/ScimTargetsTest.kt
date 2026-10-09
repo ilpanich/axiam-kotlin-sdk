@@ -186,6 +186,20 @@ class ScimTargetsTest : ManagementTestBase() {
         for (route in routes) assertEquals(1, route.calls())
     }
 
+    @Test
+    fun `no write is re-sent after a dropped connection`() = runTest {
+        val id = UUID.randomUUID()
+        val t = client.scimTargets // the default client: retry ENABLED
+        assertSentOnceOverDroppedConnection("create", mountDropped("POST", targets)) {
+            t.create(input(Redaction.secret("scim-")))
+        }
+        assertSentOnceOverDroppedConnection("update", mountDropped("PUT", "$targets/$id")) { t.update(id, input(null)) }
+        assertSentOnceOverDroppedConnection("delete", mountDropped("DELETE", "$targets/$id")) { t.delete(id) }
+        assertSentOnceOverDroppedConnection("reconcile", mountDropped("POST", "$targets/$id/reconcile")) {
+            t.reconcile(id)
+        }
+    }
+
     // -- 6. Errors and reconcile ------------------------------------------------------------------
 
     @Test

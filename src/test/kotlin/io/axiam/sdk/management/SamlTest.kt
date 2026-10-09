@@ -222,6 +222,33 @@ class SamlTest : ManagementTestBase() {
         for (route in routes) assertEquals(1, route.calls(), "exactly one request")
     }
 
+    @Test
+    fun `none of the seven writes is re-sent after a dropped connection`() = runTest {
+        val id = UUID.randomUUID()
+        val s = client.saml // the default client: retry ENABLED
+        assertSentOnceOverDroppedConnection("create", mountDropped("POST", "$saml/service-providers")) {
+            s.createServiceProvider(input())
+        }
+        assertSentOnceOverDroppedConnection("update", mountDropped("PUT", "$saml/service-providers/$id")) {
+            s.updateServiceProvider(id, input())
+        }
+        assertSentOnceOverDroppedConnection("delete", mountDropped("DELETE", "$saml/service-providers/$id")) {
+            s.deleteServiceProvider(id)
+        }
+        assertSentOnceOverDroppedConnection("parse", mountDropped("POST", "$saml/parse-sp-metadata")) {
+            s.parseSpMetadata(ParseSamlSpMetadata.fromUrl("https://m"))
+        }
+        assertSentOnceOverDroppedConnection("issue", mountDropped("POST", "$saml/idp-credentials")) {
+            s.issueIdpCredential(IssueSamlIdpCredential(UUID.randomUUID(), SamlIdpSlot.NEXT))
+        }
+        assertSentOnceOverDroppedConnection("promote", mountDropped("POST", "$saml/idp-credentials/$id/promote")) {
+            s.promoteIdpCredential(id)
+        }
+        assertSentOnceOverDroppedConnection("retire", mountDropped("POST", "$saml/idp-credentials/$id/retire")) {
+            s.retireIdpCredential(id)
+        }
+    }
+
     // -- 7. Errors --------------------------------------------------------------------------------
 
     @Test

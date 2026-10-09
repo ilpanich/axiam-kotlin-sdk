@@ -187,6 +187,15 @@ class SsfManagementTest : ManagementTestBase() {
         for (route in routes) assertEquals(1, route.calls())
     }
 
+    @Test
+    fun `none of the three writes is re-sent after a dropped connection`() = runTest {
+        val id = UUID.randomUUID()
+        val s = client.ssf // the default client: retry ENABLED
+        assertSentOnceOverDroppedConnection("create", mountDropped("POST", streams)) { s.createStream(input(headerValue())) }
+        assertSentOnceOverDroppedConnection("update", mountDropped("PUT", "$streams/$id")) { s.updateStream(id, input(null)) }
+        assertSentOnceOverDroppedConnection("delete", mountDropped("DELETE", "$streams/$id")) { s.deleteStream(id) }
+    }
+
     // -- 6. Errors -------------------------------------------------------------------------
 
     @Test

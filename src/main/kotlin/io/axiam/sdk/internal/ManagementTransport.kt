@@ -55,6 +55,22 @@ class ManagementTransport internal constructor(
     private val actingTenant: java.util.UUID? = null,
 ) {
 
+    /**
+     * The transport every POST, PUT, PATCH and DELETE goes out on: [http] with
+     * OkHttp's own silent retry on a connection failure switched off.
+     *
+     * §27.4 rule 8 (and §29.7, §30.7, §31.7, §32's writes) forbids retrying a
+     * write on any status or transport error, and CONTRACT.md §34.2 P11
+     * (contract 1.59) makes explicit that this includes the HTTP library's
+     * transparent re-send: left on, OkHttp re-sends a write whose pooled
+     * connection dropped after the server had read it — a second credential,
+     * a second stream, a `409` that reads like a failure of the first. Built
+     * from [http], so it shares its pool, interceptors, cookie jar and TLS.
+     */
+    private val writeHttp: OkHttpClient by lazy {
+        http.newBuilder().retryOnConnectionFailure(false).build()
+    }
+
     /** The session every management call rides on; read for §27.4 rule 3. */
     fun session(): SessionState = sessionState
 
@@ -176,7 +192,8 @@ class ManagementTransport internal constructor(
     private suspend fun execute(operation: String, request: Request): Response =
         withContext(Dispatchers.IO) {
             try {
-                http.newCall(request).execute()
+                val transport = if (request.method == "GET") http else writeHttp
+                transport.newCall(request).execute()
             } catch (e: IOException) {
                 throw NetworkError("$operation: request failed: ${e.message}", e)
             }
