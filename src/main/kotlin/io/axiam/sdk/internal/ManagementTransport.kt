@@ -28,10 +28,10 @@ import java.io.IOException
  * The one request path every CONTRACT.md §27 management operation goes through.
  *
  * §27.8 is explicit that the generated layer MUST sit on the SDK's existing
- * request path and MUST NOT build its own. That is what this class is: 147
+ * request path and MUST NOT build its own. That is what this class is: 190
  * generated operations all funnel into [send], so they inherit §3 (CSRF), §4
  * (the cookie jar), §5 (`X-Tenant-Id`), §6 (TLS), §16 (retry) and §19
- * (telemetry) by construction rather than by 147 opportunities to forget one —
+ * (telemetry) by construction rather than by 190 opportunities to forget one —
  * the first four because every request goes through the same decorated
  * [OkHttpClient] the rest of the SDK uses.
  *
@@ -81,8 +81,10 @@ class ManagementTransport internal constructor(
         requireSession(operation)
 
         // §27.4 rule 8: every GET here is read-only and retry-eligible under
-        // §16.2; every POST, PUT and DELETE is not — including the ones that
-        // look idempotent. certificates.generate twice mints two certificates.
+        // §16.2; every POST, PUT, PATCH and DELETE is not — including the ones
+        // that look idempotent. certificates.generate twice mints two
+        // certificates; directory.update (the surface's first PATCH) is a write
+        // like any other.
         if (method != "GET") {
             return attempt(operation, method, pathTemplate, path, query, body, 1)
         }
@@ -99,7 +101,7 @@ class ManagementTransport internal constructor(
     /**
      * §27.4 rule 1: no session means no wire call.
      *
-     * Refused here, once, rather than in 147 generated operations — and refused
+     * Refused here, once, rather than in 190 generated operations — and refused
      * BEFORE the socket, so an unauthenticated caller gets a message naming the
      * missing session instead of a 401 they have to interpret.
      */

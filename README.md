@@ -24,12 +24,27 @@ Source: [ilpanich/axiam-kotlin-sdk](https://github.com/ilpanich/axiam-kotlin-sdk
 
 ## Contract conformance
 
-This SDK conforms to **contract 1.52**: CONTRACT.md §1–§7 (§1.1's `getUserInfo` and §1.1.1's
+This SDK conforms to **contract 1.58**: CONTRACT.md §1–§7 (§1.1's `getUserInfo` and §1.1.1's
 `validateToken`/`introspectToken` declined — gRPC-only, and this SDK ships no gRPC transport; see
 [Scope of this SDK (v1)](#scope-of-this-sdk-v1) below), §9–§13 and §12.7, §14, §15, §17, §19,
-§20, §21, §22, §23, §24, §25, §26, §27, §28 (including §6.1 mTLS). §12 is implemented in full at its
+§20, §21, §22, §23, §24, §25, §26, §27, §28 (including §6.1 mTLS), and §28.12, §29, §30, §31, §32
+and §33, with §32.7 and §33.2 signed. §12 is implemented in full at its
 1.38 shape: all **thirteen** operations, including the four public "Sign in with X" entry points,
 as `suspend` functions on the same `AxiamClient`.
+
+**Contract 1.53 – 1.58 additions:**
+
+- **§28.12 — RFC 7592 client configuration.** `readClientRegistration` /
+  `updateClientRegistration` / `deleteClientRegistration` on the client. See
+  [RFC 7592 client configuration](#rfc-7592-client-configuration-2812) below.
+- **§29, §30, §31, §32 — four new §27 namespaces**: `saml`, `directory`, `scimTargets`, `ssf`. See
+  [Directory, SAML, SSF and SCIM targets](#directory-saml-ssf-and-scim-targets-29--32) below.
+- **§32.7 — the SSF receiver helper** (`io.axiam.sdk.ssf.SsfReceiver`). See
+  [SSF receiver](#ssf-receiver-327) below.
+- **§33 — CIBA**, including the §33.2 signed request form for `PS256`, `ES256` and `EdDSA` (a MAY
+  for this SDK; shipped in full, no carve-out). See [CIBA](#ciba-33) below.
+- **§21.3.1 (amended in 1.58)** — `mtls_endpoint_aliases` carries a seventh member,
+  `backchannel_authentication_endpoint`, and vector A is pinned with it.
 
 **Contract 1.51 additions:**
 
@@ -49,8 +64,8 @@ as `suspend` functions on the same `AxiamClient`.
   `GroupSpec.roles` / `UserSpec.roles` is **breaking** for any manifest built from the record
   constructors directly (the `Builder` stays source-compatible).
 
-§12.7, §14, §15, §20, §22, §23, §24, §25, §26, §27 and §28 are named rather than folded into the
-range because they landed after this SDK already stated its coverage: widening the range silently
+§12.7, §14, §15, §20, §22, §23, §24, §25, §26, §27, §28 and the 1.53 – 1.58 sections are named
+rather than folded into the range because they landed after this SDK already stated its coverage: widening the range silently
 would turn a statement that was true when written into a different claim without anyone editing it.
 
 **§28 (MCP resource-server helpers)** shipped in `1.0.0-beta17`, when `CONTRACT.md`, `openapi.json`
@@ -60,7 +75,7 @@ branch, where contract 1.48 landed before that phase merged. `CONTRACT.md`, `ope
 SDK now tracks `main`, not a branch ahead of it. See
 [MCP resource-server helpers](#mcp-resource-server-helpers-ioaxiamsdkmcp-28-opt-in) below.
 
-**§27 is the Management API** — all 162 operations across 24 namespaces, with the §27.6 declarative
+**§27 is the Management API** — all 190 operations across 28 namespaces, with the §27.6 declarative
 layer. See [Management API](#management-api-27) below.
 
 **§24.6b — the linked-API ceremony helper — is deliberately absent, and this is not a capability
@@ -1796,13 +1811,14 @@ Worked end to end in [`examples/par-login`](examples/par-login) (`./gradlew runP
 
 ## Management API (§27)
 
-The administrative surface: 162 operations across 24 namespaces — users, groups, roles,
+The administrative surface: 190 operations across 28 namespaces — users, groups, roles,
 permissions, resources, scopes, service accounts, certificates, CA certificates, PGP keys, webhooks,
 OAuth2 clients, federation, notification rules, e-mail config, settings, SCIM tokens, reactors,
-WebAuthn policy, audit, privacy, organizations, tenants and platform.
+WebAuthn policy, audit, privacy, organizations, tenants, platform, and (contract 1.54 – 1.57)
+directory, SAML, SCIM targets and SSF streams.
 
 The namespace handles sit **directly on the client** as properties — `client.serviceAccounts
-.rotateSecret(id)`, the form §27.3's Kotlin row shows — and the same 24 handles are also reachable
+.rotateSecret(id)`, the form §27.3's Kotlin row shows — and the same 28 handles are also reachable
 behind one accessor, `client.management()` (§27.2 rule 4), which reads better where a call site is
 already dense with §1 methods. The two forms are **equivalent**: the direct properties delegate to
 `management()`, so rule 4's "where an SDK offers both, the two MUST return equivalent handles" holds
@@ -1989,6 +2005,192 @@ is never sent (§27.13 S-10 rule 1).
 namespace is SHOULD-level and 1.51 does not require an SDK to cover it. `ManagementManifest` has no
 `webhook(...)` builder call; use the imperative `client.management().webhooks` (§27's ordinary
 CRUD — `list`/`create`/`get`/`update`/`delete`) instead.
+
+## RFC 7592 client configuration (§28.12)
+
+A client that registered itself through `POST /oauth2/register` received, once, a
+`registration_client_uri` and a `registration_access_token`. With those it can read, replace and
+delete **its own** registration:
+
+```kotlin
+val token = Sensitive.of(storedRegistrationToken)
+val current = client.readClientRegistration(registrationClientUri, token)
+
+// An update is a FULL replacement: start from the read (it keeps unknown members,
+// jwks / jwks_uri and the CIBA backchannel_* members included, in `extra`).
+val updated = client.updateClientRegistration(
+    registrationClientUri,
+    token,
+    current.copy(clientName = "Agent v2"),
+)
+// The token rotated. Persist it BEFORE doing anything else: the old one is dead.
+store(updated.registrationAccessToken!!)
+
+client.deleteClientRegistration(registrationClientUri, Sensitive.of(loadRegistrationToken()))
+```
+
+- The URI is used verbatim (query included) and **only at this client's configured origin**:
+  another scheme, host or port — or `http` against a base URL that is not `http` on a loopback
+  host — is a local `ValidationError` before any request, and the message names no part of the URI.
+- The token travels as `Authorization: Bearer` only, on a transport that carries **none** of the
+  SDK's session: no session cookie, no access token, no CSRF header, and no redirect following. A
+  `401` never enters the §9 refresh guard.
+- `updateClientRegistration` drops `registration_access_token`, `registration_client_uri`,
+  `client_secret_expires_at`, `client_id_issued_at` and `client_secret`, and sets `client_id`.
+- **Writes are never retried** (an update that lost its answer already rotated the token); the
+  read is retried per §16 on a transport failure, `408`, `429` or `5xx` only.
+- A body with an `error` member is an `OAuthProtocolError` at any status (`invalid_token`,
+  `invalid_client_metadata`, …); `error_description` is optional.
+
+## Directory, SAML, SSF and SCIM targets (§29 – §32)
+
+Four §27 namespaces arrived with contract 1.54 – 1.57: `client.directory` (§30, LDAP / Active
+Directory), `client.saml` (§29, SAML service-provider registry and IdP credentials),
+`client.scimTargets` (§31, outbound SCIM) and `client.ssf` (§32, SSF stream registration). They are
+generated like the rest of §27; the tenant in their paths defaults from the client.
+
+```kotlin
+// §30: a sparse update. Unset members are not sent; JsonNullable.Null sends `null` and CLEARS.
+client.directory.update(UpdateDirectoryConfig(groupFilter = JsonNullable.Null))
+
+// Moving the connection needs the bind secret again (§30.3 rule 2): the SDK keeps no copy.
+client.directory.update(
+    UpdateDirectoryConfig(url = "ldaps://dc2.corp.example", bindSecret = Sensitive.of(bindSecret)),
+)
+
+// §29: parse an SP's metadata into a draft (stores nothing), review it, then create.
+val draft = client.saml.parseSpMetadata(ParseSamlSpMetadata.fromUrl("https://sp.example/metadata"))
+client.saml.createServiceProvider(draft.serviceProvider)
+
+// §31 / §32 updates are replacements in which an omitted member takes its DEFAULT:
+// read, convert, change, write. toInput() leaves the secret absent (absent keeps it).
+val target = client.scimTargets.get(targetId)
+client.scimTargets.update(targetId, target.toInput().copy(enabled = false))
+
+val stream = client.ssf.getStream(streamId)
+client.ssf.updateStream(streamId, stream.toInput().copy(statusReason = "maintenance"))
+```
+
+- `bind_secret`, `credential` and `authorization_header` are `Sensitive` on the inputs; no response
+  type declares a secret member, and one a server (wrongly) sent is dropped on decode.
+- `ParseSamlSpMetadata` takes exactly one of `metadataUrl` / `metadataXml`; both or neither is a
+  local `ValidationError`.
+- `ScimTargetAuth` / `ScimTargetScope` are open: an unknown `type` decodes to `.Unknown(type)`, and
+  encoding that arm fails locally — it is never sent.
+- Every write is single-shot (§27.4 rule 8), the `PATCH` included. The KDoc of each operation
+  carries the contract's call-site warnings (secret-on-move, `link_account` signing the owner out,
+  retiring the active SAML credential, …).
+
+## SSF receiver (§32.7)
+
+`io.axiam.sdk.ssf.SsfReceiver` is for the **relying party** that receives AXIAM's Security Event
+Tokens.
+
+```kotlin
+val receiver = SsfReceiver(
+    client,
+    SsfReceiverConfig(
+        issuer = "https://iam.example.com/t/$tenantId",
+        audience = "https://rp.example.com",
+        keys = SsfKeySource.JwksUri("https://iam.example.com/oauth2/jwks"),
+        accessTokenProvider = { client.loginClientCredentials().accessToken }, // ssf.manage
+    ),
+)
+
+// Push (RFC 8935): verify, then answer 202 — or 400 {"err": …} on a refusal.
+try {
+    val event = receiver.verifySet(body)
+    handle(event.eventType, event.subId, event.event)
+} catch (e: SetVerificationError) {
+    respond(400, """{"err":"${e.failureReason.pushErrorCode()}"}""")
+}
+
+// Poll (RFC 8936): acknowledge what you processed, refuse what failed.
+var ack = emptyList<String>()
+var errs = emptyMap<String, SetErr>()
+while (true) {
+    val result = receiver.poll(streamId, SsfPollOptions(ack = ack, setErrs = errs, returnImmediately = true))
+    result.events.forEach { handle(it.eventType, it.subId, it.event) }
+    ack = result.events.map { it.jti }
+    errs = result.refused.associate { it.jti to SetErr.fromReason(it.reason) }
+    if (!result.moreAvailable && ack.isEmpty() && errs.isEmpty()) break
+}
+```
+
+- Verification follows §32.7's nine steps in order and refuses at the first failure with a
+  `SetVerificationError` (an `AuthError`) whose `failureReason` is `malformed`, `invalid_type`,
+  `invalid_key`, `invalid_issuer`, `invalid_audience`, `invalid_request` or `replayed`.
+  `pushErrorCode()` maps `malformed`, `invalid_type` and `replayed` to `invalid_request`.
+- Keys come only from the configured JWKS (or a discovery document whose `issuer` matches), fetched
+  over the client's TLS policy without its session; an unknown `kid` costs one refetch, at most once
+  a minute. A JWKS fetch failure is a `NetworkError`, not a verdict on the SET.
+- A verified SET is **recorded** in the replay store (in memory by default; pluggable; the window is
+  seven days and cannot be shorter): one you neither acknowledge nor refuse comes back as `replayed`.
+- `poll` sends only the members you set and acknowledges nothing itself; it is retried per §16 on a
+  transport failure or `5xx`, never on another `4xx`.
+
+## CIBA (§33)
+
+Client-initiated backchannel authentication: authenticate a user **on another device**. The client
+always authenticates — `oidcClientSecret(...)` (`client_secret_post`) or a §6.1 client certificate
+(`tls_client_auth`, which sends `client_id` only and uses the `mtls_endpoint_aliases` entry).
+
+```kotlin
+// Poll mode.
+val initiated = client.cibaInitiate(
+    CibaInitiateParams(
+        scope = "openid",
+        hint = CibaUserHint.LoginHint("ada@example.com"),
+        bindingMessage = "W4SCT",
+    ),
+)
+try {
+    val tokens = client.cibaAwait(initiated)          // waits `interval` before the first poll
+    store(tokens)                                      // redeemed once: store before anything else
+} catch (e: OAuthProtocolError) {
+    when {
+        e.isAccessDenied -> userRefused()
+        e.isExpiredToken -> nobodyAnswered()           // also raised locally at the deadline
+        else -> throw e
+    }
+}
+
+// Ping mode: register a notification endpoint and send a token with the request.
+val notificationToken = Sensitive.of(randomToken())
+val pending = client.cibaInitiate(
+    CibaInitiateParams(
+        scope = "openid",
+        hint = CibaUserHint.LoginHint("ada@example.com"),
+        delivery = CibaDelivery.Ping(notificationToken),
+    ),
+)
+// In the handler of POST /ciba/notify — pure, no I/O:
+val authReqId = client.cibaHandlePing(request.headers, request.body, notificationToken)
+respond(204)                                           // answer first, then poll once
+val tokens = client.cibaPoll(CibaPollParams(authReqId))
+// No ping by expiresIn / 2? Fall back to client.cibaAwait(pending).
+
+// The signed form (§33.2), for a client registered with a signing algorithm:
+val signer = CibaRequestSigner.fromPem(CibaSigningAlg.EDDSA, Sensitive.of(pkcs8Pem), kid = "key-1")
+client.cibaInitiate(CibaInitiateParams(scope = "openid", hint = hint, signer = signer))
+```
+
+- `cibaInitiate` is **never retried**, on any status or transport error: each accepted call may
+  notify a person. A success proves nothing about the user (§33.3 rule 4).
+- `cibaPoll` surfaces `authorization_pending`, `slow_down`, `access_denied`, `expired_token` and
+  `invalid_grant` as `OAuthProtocolError`; it is retried per §16 within the call on a transport
+  failure, `5xx`, `408` or bodiless `429`. `cibaAwait` adds 5 s per `slow_down` for good, treats
+  `rate_limit_exceeded` and surviving transient failures as one more interval, and raises
+  `expired_token` locally rather than poll past `receivedAt + expiresIn`. It does not adopt the
+  token set as the client's credential.
+- `cibaHandlePing` accepts exactly one `Authorization: Bearer <token>` (scheme in any case),
+  compares the token with `MessageDigest.isEqual`, and returns the body's `auth_req_id` as
+  `Sensitive`; it never answers the request or calls the token endpoint.
+- The signer takes the key **and** the algorithm (`PS256`, `ES256` or `EdDSA`) from the caller, with
+  no default, and probe-signs at construction; the signed form carries only the client
+  authentication and `request` (claims: every member set, `iss` = client id, `aud` = issuer,
+  `iat` = `nbf`, `exp` = +5 min, a fresh 256-bit `jti`). `auth_req_id`, the notification token, the
+  key and the `request` string are `Sensitive` / never rendered.
 
 ## Building from source
 

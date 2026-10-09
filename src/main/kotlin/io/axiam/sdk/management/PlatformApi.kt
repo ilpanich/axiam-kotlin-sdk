@@ -21,6 +21,10 @@ class PlatformApi internal constructor(
 ) {
 
     /**
+     * Also states the deployment profile (`full` | `minimal`) and, in `minimal`, what that profile
+     * does not provide. The state is optional so the route stays a liveness probe that answers
+     * even when mounted without it (`full`).
+     *
      * Issues `GET /health`.
      *
      * @return the server response

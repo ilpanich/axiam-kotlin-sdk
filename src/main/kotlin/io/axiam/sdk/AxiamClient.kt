@@ -327,6 +327,10 @@ class AxiamClient private constructor(
                         // token a prior authenticateDevice() had adopted.
                         session.clearDeviceToken()
                     },
+                    // §33.7 rule 5: cibaPoll follows §16 like any read.
+                    retryEnabled = b.retryEnabled,
+                    telemetry = telemetry,
+                    jitter = b.jitterSource,
                 )
 
                 return Core(
@@ -476,7 +480,7 @@ class AxiamClient private constructor(
     // Each delegates to management(), so rule 4's "where an SDK offers both, the two
     // MUST return equivalent handles" holds structurally rather than by two code paths
     // agreeing to stay in step. A `get()` rather than a stored `val`: §27.2 rule 1 says
-    // acquiring a handle performs no I/O, and a stored property would build all 24 of
+    // acquiring a handle performs no I/O, and a stored property would build all 28 of
     // them -- and a ManagementTransport apiece -- when a client is constructed.
 
     /**
@@ -694,6 +698,42 @@ class AxiamClient private constructor(
      */
     val platform: io.axiam.sdk.management.PlatformApi
         get() = management().platform()
+
+    /**
+     * The directory operations.
+     *
+     * Acquiring the handle performs no I/O (§27.2 rule 1). The same handle as
+     * `management().directory()` (§27.2 rule 4).
+     */
+    val directory: io.axiam.sdk.management.DirectoryApi
+        get() = management().directory()
+
+    /**
+     * The saml operations.
+     *
+     * Acquiring the handle performs no I/O (§27.2 rule 1). The same handle as
+     * `management().saml()` (§27.2 rule 4).
+     */
+    val saml: io.axiam.sdk.management.SamlApi
+        get() = management().saml()
+
+    /**
+     * The ssf operations.
+     *
+     * Acquiring the handle performs no I/O (§27.2 rule 1). The same handle as
+     * `management().ssf()` (§27.2 rule 4).
+     */
+    val ssf: io.axiam.sdk.management.SsfApi
+        get() = management().ssf()
+
+    /**
+     * The scim_targets operations.
+     *
+     * Acquiring the handle performs no I/O (§27.2 rule 1). The same handle as
+     * `management().scimTargets()` (§27.2 rule 4).
+     */
+    val scimTargets: io.axiam.sdk.management.ScimTargetsApi
+        get() = management().scimTargets()
 
     /**
      * The organization UUID this client can address, if one has resolved.
@@ -1552,6 +1592,264 @@ class AxiamClient private constructor(
      */
     suspend fun tokenExchange(params: TokenExchangeParams): ExchangedToken =
         oidcSupport.tokenExchange(params)
+
+    // -- §28.12 RFC 7592 client configuration --------------------------------
+
+    private val clientRegistrations: io.axiam.sdk.oidc.ClientRegistrationSupport by lazy {
+        io.axiam.sdk.oidc.ClientRegistrationSupport(httpClient, baseUrl, retryEnabled, telemetry, jitter)
+    }
+
+    /**
+     * `GET registration_client_uri` (RFC 7592 §2.1, CONTRACT.md §28.12) — read
+     * this client's own registration.
+     *
+     * The result carries neither the token nor the client secret (the server
+     * never returns them on a read), but it does carry every member an update
+     * needs: the usual update is "read, `copy()` with a change, update".
+     *
+     * [registrationClientUri] is used verbatim, query included, and only at
+     * this client's configured AXIAM origin. The token travels as
+     * `Authorization: Bearer` on a request that carries none of this client's
+     * session — no access token, no cookie, no CSRF header, no redirect — and
+     * a `401` never refreshes the session (§28.12.2 rules 1–3).
+     *
+     * Retried per §16 on a transport failure, `408`, `429` or `5xx`; never on
+     * another `4xx`.
+     *
+     * @param registrationClientUri the URI `POST /oauth2/register` returned
+     * @param registrationAccessToken the registration's bearer token
+     * @return the registration
+     * @throws io.axiam.sdk.errors.ValidationError locally, before any request,
+     *   when the URI is not at the configured origin (or is `http` against a
+     *   non-loopback base URL); the message names no part of the URI
+     * @throws io.axiam.sdk.errors.OAuthProtocolError when the server answers
+     *   with an RFC 6749 error object — `invalid_token` (a `401`: an unknown
+     *   client, a wrong or rotated-away token, another tenant's client — the
+     *   server never says which) at any status
+     */
+    suspend fun readClientRegistration(
+        registrationClientUri: String,
+        registrationAccessToken: Sensitive<String>,
+    ): io.axiam.sdk.oidc.ClientRegistration {
+        ensureOpen()
+        return clientRegistrations.read(registrationClientUri, registrationAccessToken)
+    }
+
+    /**
+     * `PUT registration_client_uri` (RFC 7592 §2.2, CONTRACT.md §28.12) —
+     * **replace** this client's registration, and receive a **rotated** token.
+     *
+     * [metadata] is the **whole** registration: a member it omits is a member
+     * the server deletes. Start from [readClientRegistration]'s result (it
+     * keeps unknown members, `jwks` / `jwks_uri` included, in
+     * `ClientRegistration.extra`) and `copy()` in what you mean to change. The
+     * SDK sets `client_id` to `metadata.clientId` and never sends
+     * `registration_access_token`, `registration_client_uri`,
+     * `client_secret_expires_at`, `client_id_issued_at` or `client_secret`.
+     *
+     * **Persist the returned `registrationAccessToken` before doing anything
+     * else.** From the moment the server answers it is the only valid token:
+     * the one you presented is dead for every operation.
+     *
+     * **Never retried** — not on a transport error, not on a `5xx`. An update
+     * that reached the server and lost its response has already rotated the
+     * token; repeating it with the old one is a `401` that locks you out of
+     * your own registration. On a lost answer, read the registration with the
+     * token you hold: a `401` means the update landed.
+     *
+     * @param registrationClientUri the registration's URI
+     * @param registrationAccessToken the registration's current bearer token
+     * @param metadata the complete registration to store
+     * @return the stored registration, carrying the rotated token
+     * @throws io.axiam.sdk.errors.ValidationError locally, for an off-origin URI
+     * @throws io.axiam.sdk.errors.OAuthProtocolError for the server's refusals
+     *   (`invalid_client_metadata`, `invalid_redirect_uri`, `invalid_token`)
+     */
+    suspend fun updateClientRegistration(
+        registrationClientUri: String,
+        registrationAccessToken: Sensitive<String>,
+        metadata: io.axiam.sdk.oidc.ClientRegistration,
+    ): io.axiam.sdk.oidc.ClientRegistration {
+        ensureOpen()
+        return clientRegistrations.update(registrationClientUri, registrationAccessToken, metadata)
+    }
+
+    /**
+     * `DELETE registration_client_uri` (RFC 7592 §2.3, CONTRACT.md §28.12) —
+     * delete this client's registration. A `204` returns normally.
+     *
+     * **Never retried**: a retry after a lost `204` would read `401` and report
+     * a successful deletion as a failure.
+     *
+     * @param registrationClientUri the registration's URI
+     * @param registrationAccessToken the registration's bearer token
+     * @throws io.axiam.sdk.errors.ValidationError locally, for an off-origin URI
+     * @throws io.axiam.sdk.errors.OAuthProtocolError for the server's refusals
+     */
+    suspend fun deleteClientRegistration(
+        registrationClientUri: String,
+        registrationAccessToken: Sensitive<String>,
+    ) {
+        ensureOpen()
+        clientRegistrations.delete(registrationClientUri, registrationAccessToken)
+    }
+
+    // -- §33 CIBA — client-initiated backchannel authentication --------------
+
+    /**
+     * `POST /oauth2/bc-authorize` (CIBA Core §7, CONTRACT.md §33.1) — ask AXIAM
+     * to authenticate a user **on another device**.
+     *
+     * The client always authenticates, by the credential this SDK was built
+     * with: `client_secret_post`, or the §6.1 client certificate for a
+     * `tls_client_auth` client (which sends `client_id` only, and prefers the
+     * `mtls_endpoint_aliases` entry). `tenant_id` goes in the query, never the
+     * body. With [io.axiam.sdk.oidc.CibaInitiateParams.signer] set, the form carries only the
+     * client authentication and one signed `request` (§33.2).
+     *
+     * **Never retried** — not on a transport error, a `5xx` or a `429`
+     * (§33.7 rule 1): every accepted call stores a request and may notify a
+     * person. On a lost answer, let it expire and ask again deliberately.
+     *
+     * **A success proves nothing about the user** (§33.3 rule 4): AXIAM answers
+     * a hint that names nobody, a locked user and a real one identically. The
+     * only signal that a user did not answer is `expired_token`.
+     *
+     * @param params the request
+     * @return the `auth_req_id` (Sensitive), its lifetime and the poll interval
+     * @throws AuthError locally, without a request, when the client has neither
+     *   a secret nor a client certificate, or when discovery advertises no
+     *   `backchannel_authentication_endpoint`
+     * @throws io.axiam.sdk.errors.ValidationError locally, for a ping-mode
+     *   request without a `client_notification_token`
+     * @throws io.axiam.sdk.errors.OAuthProtocolError for the server's refusals
+     *   at any status — `invalid_binding_message` with its description, a `429
+     *   rate_limit_exceeded` too
+     */
+    suspend fun cibaInitiate(params: io.axiam.sdk.oidc.CibaInitiateParams): io.axiam.sdk.oidc.CibaInitiateResponse {
+        ensureOpen()
+        return oidcSupport.cibaInitiate(params)
+    }
+
+    /**
+     * `POST /oauth2/token` with `grant_type=urn:openid:params:grant-type:ciba`
+     * (CIBA Core §10.1, CONTRACT.md §33.1) — **one** token request.
+     *
+     * The answers of §33.3 rule 6 surface as
+     * [io.axiam.sdk.errors.OAuthProtocolError]: `authorization_pending` and
+     * `slow_down` (non-terminal), `access_denied` and `expired_token` (terminal,
+     * and told apart by `isAccessDenied` / `isExpiredToken`), `invalid_grant`.
+     * A `200` is validated like every other grant's token response (§12.4; no
+     * nonce).
+     *
+     * Retried per §16 within the call on a transport failure, `5xx`, `408` or a
+     * bodiless `429`; never on a protocol answer or another `4xx`. **Store the
+     * returned tokens before anything else**: a request is redeemed once, and a
+     * second `cibaPoll` for it is `invalid_grant` (§33.7 rule 7).
+     *
+     * @param params the `auth_req_id` and routing
+     * @return the token set; not adopted as this client's credential
+     */
+    suspend fun cibaPoll(params: io.axiam.sdk.oidc.CibaPollParams): OidcTokenSet {
+        ensureOpen()
+        return oidcSupport.cibaPoll(params)
+    }
+
+    /**
+     * Polls for [initiated]'s outcome until it is decided or expires
+     * (CONTRACT.md §33.1, §33.7). Surfaces nothing to the user — AXIAM
+     * notified them.
+     *
+     *  - The first poll waits one `interval` (5 s when the response had none);
+     *    polling earlier only earns `slow_down` and a longer wait.
+     *  - `slow_down` adds 5 s to the interval, cumulatively and permanently;
+     *    `authorization_pending` never lowers it.
+     *  - A transport failure, `5xx` or `429` that outlived §16 is not terminal:
+     *    the loop waits the interval and polls again.
+     *  - Polling stops at `receivedAt + expiresIn`, even if the server has not
+     *    said `expired_token`; the same `expired_token` is then raised locally,
+     *    without a request.
+     *
+     * Returns the token set without adopting it as this client's credential —
+     * the posture of [deviceLogin] and [loginClientCredentials].
+     *
+     * **Ping mode:** do not loop. From the handler that received the ping,
+     * answer it ([cibaHandlePing], then `204`), call [cibaPoll] once — once
+     * more after `interval` if that said `authorization_pending` or
+     * `slow_down` — and fall back to this loop only once half of `expiresIn`
+     * has passed without a ping (§33.7 rule 6).
+     *
+     * @param initiated what [cibaInitiate] returned
+     * @param params routing and the injectable clock
+     * @return the token set
+     * @throws io.axiam.sdk.errors.OAuthProtocolError for every terminal
+     *   outcome — `access_denied`, `expired_token`, `invalid_grant`, …
+     */
+    suspend fun cibaAwait(
+        initiated: io.axiam.sdk.oidc.CibaInitiateResponse,
+        params: io.axiam.sdk.oidc.CibaAwaitParams = io.axiam.sdk.oidc.CibaAwaitParams(),
+    ): OidcTokenSet {
+        ensureOpen()
+        return oidcSupport.cibaAwait(initiated, params)
+    }
+
+    /**
+     * Checks a ping AXIAM delivered to your notification endpoint and returns
+     * the `auth_req_id` it names (CIBA Core §10.2, CONTRACT.md §33.1). **No
+     * I/O**, and synchronous.
+     *
+     *  1. Exactly one `Authorization` header: `Bearer` (any case), one space,
+     *     and [expectedToken] — compared in constant time. Anything else is an
+     *     [AuthError] whose message names no value.
+     *  2. A JSON object with a non-empty string `auth_req_id`; other members
+     *     are ignored. Anything else is a [io.axiam.sdk.errors.ValidationError].
+     *
+     * It neither answers the HTTP request nor calls the token endpoint: answer
+     * `204` as soon as this returns, **then** call [cibaPoll] — AXIAM retries a
+     * ping that is not answered quickly. Nor does it check that the
+     * `auth_req_id` is one you issued: the token endpoint answers
+     * `invalid_grant` for any other.
+     *
+     * @param headers the request's headers as (name, value) pairs, one pair per
+     *   header line — duplicates included
+     * @param body the raw request body
+     * @param expectedToken the `client_notification_token` sent with the request
+     * @return the `auth_req_id`, Sensitive
+     */
+    fun cibaHandlePing(
+        headers: Iterable<Pair<String, String>>,
+        body: String,
+        expectedToken: Sensitive<String>,
+    ): Sensitive<String> = io.axiam.sdk.oidc.CibaPing.handle(headers, body, expectedToken)
+
+    /**
+     * [cibaHandlePing] over a multi-valued header map (the shape most HTTP
+     * frameworks expose): every value of every `Authorization` entry counts,
+     * so two values are refused like two header lines.
+     *
+     * @param headers the request's headers, name to values
+     * @param body the raw request body
+     * @param expectedToken the `client_notification_token` sent with the request
+     * @return the `auth_req_id`, Sensitive
+     */
+    fun cibaHandlePing(
+        headers: Map<String, List<String>>,
+        body: String,
+        expectedToken: Sensitive<String>,
+    ): Sensitive<String> = cibaHandlePing(
+        headers.flatMap { (name, values) -> values.map { name to it } },
+        body,
+        expectedToken,
+    )
+
+    /** §16 switch, for the module's helpers outside this class (the §32.7 receiver). */
+    internal fun retryEnabledForHelpers(): Boolean = retryEnabled
+
+    /** §19 dispatcher, for the module's helpers outside this class. */
+    internal fun telemetryForHelpers(): TelemetryDispatcher = telemetry
+
+    /** §16 jitter draw, for the module's helpers outside this class. */
+    internal fun jitterForHelpers(): () -> Double = jitter
 
     // -- §20 UMA 2.0 — Protection API and ticket grant ----------------------
 

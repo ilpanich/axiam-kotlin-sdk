@@ -7,11 +7,19 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
- * The HealthResponse schema from the server's OpenAPI document.
+ * Response body for `GET /health`. `profile` and `unavailable` are additive (G-8, D-59): a client
+ * that reads only `status` is unaffected.
  *
+ * @property profile The messaging profile this process runs: `full` (RabbitMQ is used) or
+ *     `minimal` (`AXIAM__AMQP__ENABLED=false`, no broker).
  * @property status the server's status field
+ * @property unavailable Present only in the `minimal` profile: the capabilities it does not
+ *     provide — `reactors`, `amqp_authz`, `amqp_audit_ingestion` and `decision_cache_broadcast`.
+ *     Absent in `full`.
  */
 @Serializable
 data class HealthResponse(
+    @SerialName("profile") val profile: String,
     @SerialName("status") val status: String,
+    @SerialName("unavailable") val unavailable: List<String>? = null,
 )

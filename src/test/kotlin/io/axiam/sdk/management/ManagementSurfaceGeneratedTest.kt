@@ -38,6 +38,10 @@ import io.axiam.sdk.management.models.CreateServiceAccountRequest
 import io.axiam.sdk.management.models.CreateTenantRequest
 import io.axiam.sdk.management.models.CreateUserRequest
 import io.axiam.sdk.management.models.CreateWebhookRequest
+import io.axiam.sdk.management.models.DirectoryConfig
+import io.axiam.sdk.management.models.DirectoryKind
+import io.axiam.sdk.management.models.DirectoryLinkResult
+import io.axiam.sdk.management.models.DirectorySyncStatus
 import io.axiam.sdk.management.models.EmailConfig
 import io.axiam.sdk.management.models.EmailConfigOverride
 import io.axiam.sdk.management.models.EmailTestResult
@@ -53,7 +57,9 @@ import io.axiam.sdk.management.models.GrantScopeConsent
 import io.axiam.sdk.management.models.Group
 import io.axiam.sdk.management.models.HealthResponse
 import io.axiam.sdk.management.models.ImportCaCertificateRequest
+import io.axiam.sdk.management.models.IssueSamlIdpCredential
 import io.axiam.sdk.management.models.KeyAlgorithm
+import io.axiam.sdk.management.models.LinkDirectoryAccount
 import io.axiam.sdk.management.models.MdsRefreshOutcome
 import io.axiam.sdk.management.models.MdsStatusResponse
 import io.axiam.sdk.management.models.MfaMethodResponse
@@ -67,6 +73,7 @@ import io.axiam.sdk.management.models.OidcAuthorizeResponse
 import io.axiam.sdk.management.models.OidcCallbackRequest
 import io.axiam.sdk.management.models.OidcCallbackResponse
 import io.axiam.sdk.management.models.Organization
+import io.axiam.sdk.management.models.ParseSamlSpMetadata
 import io.axiam.sdk.management.models.Permission
 import io.axiam.sdk.management.models.PgpKey
 import io.axiam.sdk.management.models.PgpKeyAlgorithm
@@ -86,12 +93,25 @@ import io.axiam.sdk.management.models.RoleGroupAssignment
 import io.axiam.sdk.management.models.RoleServiceAccountAssignment
 import io.axiam.sdk.management.models.RoleUserAssignment
 import io.axiam.sdk.management.models.RotateSecretResponse
+import io.axiam.sdk.management.models.SamlIdpCredential
+import io.axiam.sdk.management.models.SamlIdpCredentialPromotion
+import io.axiam.sdk.management.models.SamlIdpInfo
+import io.axiam.sdk.management.models.SamlIdpSlot
+import io.axiam.sdk.management.models.SamlServiceProvider
+import io.axiam.sdk.management.models.SamlServiceProviderInput
+import io.axiam.sdk.management.models.SamlSpMetadataDraft
+import io.axiam.sdk.management.models.ScimReconcileAccepted
+import io.axiam.sdk.management.models.ScimTargetAuthBearer
+import io.axiam.sdk.management.models.ScimTargetInput
+import io.axiam.sdk.management.models.ScimTargetResponse
+import io.axiam.sdk.management.models.ScimTargetScopeAllUsers
 import io.axiam.sdk.management.models.ScimTokenResponse
 import io.axiam.sdk.management.models.Scope
 import io.axiam.sdk.management.models.SecuritySettings
 import io.axiam.sdk.management.models.ServiceAccountCreatedResponse
 import io.axiam.sdk.management.models.ServiceAccountResponse
 import io.axiam.sdk.management.models.SessionResponse
+import io.axiam.sdk.management.models.SetDirectoryConfig
 import io.axiam.sdk.management.models.SetMtlsTrustAnchor
 import io.axiam.sdk.management.models.SetOrgEmailConfig
 import io.axiam.sdk.management.models.SetOrgSettings
@@ -99,8 +119,12 @@ import io.axiam.sdk.management.models.SignAuditBatchRequest
 import io.axiam.sdk.management.models.SignCertificateCsrRequest
 import io.axiam.sdk.management.models.SignIntermediateCsrRequest
 import io.axiam.sdk.management.models.SignedAuditBatch
+import io.axiam.sdk.management.models.SsfDeliveryMethod
+import io.axiam.sdk.management.models.SsfStream
+import io.axiam.sdk.management.models.SsfStreamInput
 import io.axiam.sdk.management.models.Tenant
 import io.axiam.sdk.management.models.TenantSettingsOverride
+import io.axiam.sdk.management.models.UpdateDirectoryConfig
 import io.axiam.sdk.management.models.UpdateFederationConfigRequest
 import io.axiam.sdk.management.models.UpdateGroup
 import io.axiam.sdk.management.models.UpdateNotificationRuleRequest
@@ -1343,6 +1367,264 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
         assertDecodedEveryField(result, EmailTestResult.serializer(), body)
     }
 
+    /** Exercises directory.get. */
+    @Test
+    fun `directory get`() = runTest {
+        val body = "{\"base_dn\": \"example\", \"bind_dn\": \"example\", \"created_at\": \"2026-08-26T00:00:00Z\", \"enabled\": true, \"group_mappings\": [], \"group_member_attribute\": \"example\", \"group_nesting_depth\": 1, \"id\": \"11111111-1111-4111-8111-111111111111\", \"jit_provisioning\": true, \"kind\": \"open_ldap\", \"start_tls\": true, \"sync_interval_secs\": 1, \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"trust_anchors_pem\": [], \"updated_at\": \"2026-08-26T00:00:00Z\", \"url\": \"example\", \"user_attribute_map\": {\"display_name\": \"example\", \"email\": \"example\", \"external_id\": \"example\", \"username\": \"example\"}, \"user_filter\": \"example\"}"
+        mount("GET", "/api/v1/tenants/$TENANT_ID/directory", 200, body)
+        val result = client.management().directory().get()
+        assertDecodedEveryField(result, DirectoryConfig.serializer(), body)
+    }
+
+    /** Exercises directory.set. */
+    @Test
+    fun `directory set`() = runTest {
+        val body = "{\"base_dn\": \"example\", \"bind_dn\": \"example\", \"created_at\": \"2026-08-26T00:00:00Z\", \"enabled\": true, \"group_mappings\": [], \"group_member_attribute\": \"example\", \"group_nesting_depth\": 1, \"id\": \"11111111-1111-4111-8111-111111111111\", \"jit_provisioning\": true, \"kind\": \"open_ldap\", \"start_tls\": true, \"sync_interval_secs\": 1, \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"trust_anchors_pem\": [], \"updated_at\": \"2026-08-26T00:00:00Z\", \"url\": \"example\", \"user_attribute_map\": {\"display_name\": \"example\", \"email\": \"example\", \"external_id\": \"example\", \"username\": \"example\"}, \"user_filter\": \"example\"}"
+        mount("PUT", "/api/v1/tenants/$TENANT_ID/directory", 200, body)
+        val result = client.management().directory().set(body = SetDirectoryConfig(baseDn = "example", bindDn = "example", bindSecret = Sensitive.of("example"), enabled = true, kind = DirectoryKind.OPEN_LDAP, startTls = true, url = "example", userFilter = "example"))
+        assertDecodedEveryField(result, DirectoryConfig.serializer(), body)
+    }
+
+    /** Exercises directory.update. */
+    @Test
+    fun `directory update`() = runTest {
+        val body = "{\"base_dn\": \"example\", \"bind_dn\": \"example\", \"created_at\": \"2026-08-26T00:00:00Z\", \"enabled\": true, \"group_mappings\": [], \"group_member_attribute\": \"example\", \"group_nesting_depth\": 1, \"id\": \"11111111-1111-4111-8111-111111111111\", \"jit_provisioning\": true, \"kind\": \"open_ldap\", \"start_tls\": true, \"sync_interval_secs\": 1, \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"trust_anchors_pem\": [], \"updated_at\": \"2026-08-26T00:00:00Z\", \"url\": \"example\", \"user_attribute_map\": {\"display_name\": \"example\", \"email\": \"example\", \"external_id\": \"example\", \"username\": \"example\"}, \"user_filter\": \"example\"}"
+        mount("PATCH", "/api/v1/tenants/$TENANT_ID/directory", 200, body)
+        val result = client.management().directory().update(body = UpdateDirectoryConfig(bindSecret = Sensitive.of("example")))
+        assertDecodedEveryField(result, DirectoryConfig.serializer(), body)
+    }
+
+    /** Exercises directory.delete. */
+    @Test
+    fun `directory delete`() = runTest {
+        val body = ""
+        mount("DELETE", "/api/v1/tenants/$TENANT_ID/directory", 204, body)
+        client.management().directory().delete()
+    }
+
+    /** Exercises directory.link_account. */
+    @Test
+    fun `directory link_account`() = runTest {
+        val body = "{\"certificates_revoked\": 1, \"directory_external_id\": \"example\", \"user_id\": \"11111111-1111-4111-8111-111111111111\", \"was_already_linked\": true, \"webauthn_credentials_deleted\": 1}"
+        mount("POST", "/api/v1/tenants/$TENANT_ID/directory/links", 200, body)
+        val result = client.management().directory().linkAccount(body = LinkDirectoryAccount(userId = EXAMPLE_ID))
+        assertDecodedEveryField(result, DirectoryLinkResult.serializer(), body)
+    }
+
+    /** Exercises directory.get_sync_status. */
+    @Test
+    fun `directory get_sync_status`() = runTest {
+        val body = "{\"full_required\": true, \"has_watermark\": true}"
+        mount("GET", "/api/v1/tenants/$TENANT_ID/directory/sync-status", 200, body)
+        val result = client.management().directory().getSyncStatus()
+        assertDecodedEveryField(result, DirectorySyncStatus.serializer(), body)
+    }
+
+    /** Exercises saml.get_idp. */
+    @Test
+    fun `saml get_idp`() = runTest {
+        val body = "{\"entity_id\": \"example\", \"metadata_served\": true, \"metadata_url\": \"example\", \"saml_available\": true, \"saml_idp_enabled\": true, \"slo_url\": \"example\", \"sso_url\": \"example\", \"tenant_id\": \"11111111-1111-4111-8111-111111111111\"}"
+        mount("GET", "/api/v1/tenants/$TENANT_ID/saml/idp", 200, body)
+        val result = client.management().saml().getIdp()
+        assertDecodedEveryField(result, SamlIdpInfo.serializer(), body)
+    }
+
+    /** Exercises saml.list_service_providers. */
+    @Test
+    fun `saml list_service_providers`() = runTest {
+        val body = "{\"items\": [{\"acs_urls\": [], \"allow_idp_initiated\": true, \"allowed_groups\": [], \"attribute_mappings\": [], \"created_at\": \"2026-08-26T00:00:00Z\", \"display_name\": \"example\", \"enabled\": true, \"encrypt_assertions\": true, \"entity_id\": \"example\", \"id\": \"11111111-1111-4111-8111-111111111111\", \"name_id_format\": \"persistent\", \"sign_responses\": true, \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"updated_at\": \"2026-08-26T00:00:00Z\", \"want_authn_requests_signed\": true}], \"total\": 1, \"offset\": 0, \"limit\": 200}"
+        mount("GET", "/api/v1/tenants/$TENANT_ID/saml/service-providers", 200, body)
+        val result = client.management().saml().listServiceProviders(page = PageRequest.of(50))
+        val item = (Json.parseToJsonElement(body) as JsonObject)["items"]!!.jsonArray.first().toString()
+        assertDecodedEveryField(result.items.first(), SamlServiceProvider.serializer(), item)
+        client.management().saml().listServiceProvidersAll(start = PageRequest.of(50))
+        client.management().saml().listServiceProvidersAll()
+    }
+
+    /** Exercises saml.create_service_provider. */
+    @Test
+    fun `saml create_service_provider`() = runTest {
+        val body = "{\"acs_urls\": [], \"allow_idp_initiated\": true, \"allowed_groups\": [], \"attribute_mappings\": [], \"created_at\": \"2026-08-26T00:00:00Z\", \"display_name\": \"example\", \"enabled\": true, \"encrypt_assertions\": true, \"entity_id\": \"example\", \"id\": \"11111111-1111-4111-8111-111111111111\", \"name_id_format\": \"persistent\", \"sign_responses\": true, \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"updated_at\": \"2026-08-26T00:00:00Z\", \"want_authn_requests_signed\": true}"
+        mount("POST", "/api/v1/tenants/$TENANT_ID/saml/service-providers", 201, body)
+        val result = client.management().saml().createServiceProvider(body = SamlServiceProviderInput(acsUrls = emptyList(), displayName = "example", entityId = "example"))
+        assertDecodedEveryField(result, SamlServiceProvider.serializer(), body)
+    }
+
+    /** Exercises saml.get_service_provider. */
+    @Test
+    fun `saml get_service_provider`() = runTest {
+        val body = "{\"acs_urls\": [], \"allow_idp_initiated\": true, \"allowed_groups\": [], \"attribute_mappings\": [], \"created_at\": \"2026-08-26T00:00:00Z\", \"display_name\": \"example\", \"enabled\": true, \"encrypt_assertions\": true, \"entity_id\": \"example\", \"id\": \"11111111-1111-4111-8111-111111111111\", \"name_id_format\": \"persistent\", \"sign_responses\": true, \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"updated_at\": \"2026-08-26T00:00:00Z\", \"want_authn_requests_signed\": true}"
+        mount("GET", "/api/v1/tenants/$TENANT_ID/saml/service-providers/$EXAMPLE_ID", 200, body)
+        val result = client.management().saml().getServiceProvider(spId = EXAMPLE_ID)
+        assertDecodedEveryField(result, SamlServiceProvider.serializer(), body)
+    }
+
+    /** Exercises saml.update_service_provider. */
+    @Test
+    fun `saml update_service_provider`() = runTest {
+        val body = "{\"acs_urls\": [], \"allow_idp_initiated\": true, \"allowed_groups\": [], \"attribute_mappings\": [], \"created_at\": \"2026-08-26T00:00:00Z\", \"display_name\": \"example\", \"enabled\": true, \"encrypt_assertions\": true, \"entity_id\": \"example\", \"id\": \"11111111-1111-4111-8111-111111111111\", \"name_id_format\": \"persistent\", \"sign_responses\": true, \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"updated_at\": \"2026-08-26T00:00:00Z\", \"want_authn_requests_signed\": true}"
+        mount("PUT", "/api/v1/tenants/$TENANT_ID/saml/service-providers/$EXAMPLE_ID", 200, body)
+        val result = client.management().saml().updateServiceProvider(spId = EXAMPLE_ID, body = SamlServiceProviderInput(acsUrls = emptyList(), displayName = "example", entityId = "example"))
+        assertDecodedEveryField(result, SamlServiceProvider.serializer(), body)
+    }
+
+    /** Exercises saml.delete_service_provider. */
+    @Test
+    fun `saml delete_service_provider`() = runTest {
+        val body = ""
+        mount("DELETE", "/api/v1/tenants/$TENANT_ID/saml/service-providers/$EXAMPLE_ID", 204, body)
+        client.management().saml().deleteServiceProvider(spId = EXAMPLE_ID)
+    }
+
+    /** Exercises saml.parse_sp_metadata. */
+    @Test
+    fun `saml parse_sp_metadata`() = runTest {
+        val body = "{\"service_provider\": {\"acs_urls\": [], \"display_name\": \"example\", \"entity_id\": \"example\"}, \"warnings\": []}"
+        mount("POST", "/api/v1/tenants/$TENANT_ID/saml/parse-sp-metadata", 200, body)
+        val result = client.management().saml().parseSpMetadata(body = ParseSamlSpMetadata.fromUrl("https://sp.example/metadata"))
+        assertDecodedEveryField(result, SamlSpMetadataDraft.serializer(), body)
+    }
+
+    /** Exercises saml.list_idp_credentials. */
+    @Test
+    fun `saml list_idp_credentials`() = runTest {
+        val body = "[{\"certificate_pem\": \"example\", \"created_at\": \"2026-08-26T00:00:00Z\", \"fingerprint\": \"example\", \"id\": \"11111111-1111-4111-8111-111111111111\", \"issuer_ca_id\": \"11111111-1111-4111-8111-111111111111\", \"not_after\": \"2026-08-26T00:00:00Z\", \"not_before\": \"2026-08-26T00:00:00Z\", \"serial\": \"example\", \"status\": \"active\", \"tenant_id\": \"11111111-1111-4111-8111-111111111111\"}]"
+        mount("GET", "/api/v1/tenants/$TENANT_ID/saml/idp-credentials", 200, body)
+        val result = client.management().saml().listIdpCredentials()
+        val item = Json.parseToJsonElement(body).jsonArray.first().toString()
+        assertDecodedEveryField(result.first(), SamlIdpCredential.serializer(), item)
+    }
+
+    /** Exercises saml.issue_idp_credential. */
+    @Test
+    fun `saml issue_idp_credential`() = runTest {
+        val body = "{\"certificate_pem\": \"example\", \"created_at\": \"2026-08-26T00:00:00Z\", \"fingerprint\": \"example\", \"id\": \"11111111-1111-4111-8111-111111111111\", \"issuer_ca_id\": \"11111111-1111-4111-8111-111111111111\", \"not_after\": \"2026-08-26T00:00:00Z\", \"not_before\": \"2026-08-26T00:00:00Z\", \"serial\": \"example\", \"status\": \"active\", \"tenant_id\": \"11111111-1111-4111-8111-111111111111\"}"
+        mount("POST", "/api/v1/tenants/$TENANT_ID/saml/idp-credentials", 201, body)
+        val result = client.management().saml().issueIdpCredential(body = IssueSamlIdpCredential(issuerCaId = EXAMPLE_ID, slot = SamlIdpSlot.ACTIVE))
+        assertDecodedEveryField(result, SamlIdpCredential.serializer(), body)
+    }
+
+    /** Exercises saml.promote_idp_credential. */
+    @Test
+    fun `saml promote_idp_credential`() = runTest {
+        val body = "{\"active\": {\"certificate_pem\": \"example\", \"created_at\": \"2026-08-26T00:00:00Z\", \"fingerprint\": \"example\", \"id\": \"11111111-1111-4111-8111-111111111111\", \"issuer_ca_id\": \"11111111-1111-4111-8111-111111111111\", \"not_after\": \"2026-08-26T00:00:00Z\", \"not_before\": \"2026-08-26T00:00:00Z\", \"serial\": \"example\", \"status\": \"active\", \"tenant_id\": \"11111111-1111-4111-8111-111111111111\"}}"
+        mount("POST", "/api/v1/tenants/$TENANT_ID/saml/idp-credentials/$EXAMPLE_ID/promote", 200, body)
+        val result = client.management().saml().promoteIdpCredential(credentialId = EXAMPLE_ID)
+        assertDecodedEveryField(result, SamlIdpCredentialPromotion.serializer(), body)
+    }
+
+    /** Exercises saml.retire_idp_credential. */
+    @Test
+    fun `saml retire_idp_credential`() = runTest {
+        val body = "{\"certificate_pem\": \"example\", \"created_at\": \"2026-08-26T00:00:00Z\", \"fingerprint\": \"example\", \"id\": \"11111111-1111-4111-8111-111111111111\", \"issuer_ca_id\": \"11111111-1111-4111-8111-111111111111\", \"not_after\": \"2026-08-26T00:00:00Z\", \"not_before\": \"2026-08-26T00:00:00Z\", \"serial\": \"example\", \"status\": \"active\", \"tenant_id\": \"11111111-1111-4111-8111-111111111111\"}"
+        mount("POST", "/api/v1/tenants/$TENANT_ID/saml/idp-credentials/$EXAMPLE_ID/retire", 200, body)
+        val result = client.management().saml().retireIdpCredential(credentialId = EXAMPLE_ID)
+        assertDecodedEveryField(result, SamlIdpCredential.serializer(), body)
+    }
+
+    /** Exercises ssf.list_streams. */
+    @Test
+    fun `ssf list_streams`() = runTest {
+        val body = "{\"items\": [{\"audience\": \"example\", \"authorization_header_set\": true, \"created_at\": \"2026-08-26T00:00:00Z\", \"delivery_method\": \"push\", \"events_allowed\": [], \"events_delivered\": [], \"events_requested\": [], \"id\": \"11111111-1111-4111-8111-111111111111\", \"receiver_client_id\": \"example\", \"status\": \"enabled\", \"status_actor\": \"admin\", \"subject_format\": \"iss_sub\", \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"transmitter_active\": true, \"updated_at\": \"2026-08-26T00:00:00Z\"}], \"total\": 1, \"offset\": 0, \"limit\": 200}"
+        mount("GET", "/api/v1/tenants/$TENANT_ID/ssf/streams", 200, body)
+        val result = client.management().ssf().listStreams(page = PageRequest.of(50))
+        val item = (Json.parseToJsonElement(body) as JsonObject)["items"]!!.jsonArray.first().toString()
+        assertDecodedEveryField(result.items.first(), SsfStream.serializer(), item)
+        client.management().ssf().listStreamsAll(start = PageRequest.of(50))
+        client.management().ssf().listStreamsAll()
+    }
+
+    /** Exercises ssf.create_stream. */
+    @Test
+    fun `ssf create_stream`() = runTest {
+        val body = "{\"audience\": \"example\", \"authorization_header_set\": true, \"created_at\": \"2026-08-26T00:00:00Z\", \"delivery_method\": \"push\", \"events_allowed\": [], \"events_delivered\": [], \"events_requested\": [], \"id\": \"11111111-1111-4111-8111-111111111111\", \"receiver_client_id\": \"example\", \"status\": \"enabled\", \"status_actor\": \"admin\", \"subject_format\": \"iss_sub\", \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"transmitter_active\": true, \"updated_at\": \"2026-08-26T00:00:00Z\"}"
+        mount("POST", "/api/v1/tenants/$TENANT_ID/ssf/streams", 201, body)
+        val result = client.management().ssf().createStream(body = SsfStreamInput(audience = "example", authorizationHeader = Sensitive.of("example"), deliveryMethod = SsfDeliveryMethod.PUSH, eventsAllowed = emptyList(), receiverClientId = "example"))
+        assertDecodedEveryField(result, SsfStream.serializer(), body)
+    }
+
+    /** Exercises ssf.get_stream. */
+    @Test
+    fun `ssf get_stream`() = runTest {
+        val body = "{\"audience\": \"example\", \"authorization_header_set\": true, \"created_at\": \"2026-08-26T00:00:00Z\", \"delivery_method\": \"push\", \"events_allowed\": [], \"events_delivered\": [], \"events_requested\": [], \"id\": \"11111111-1111-4111-8111-111111111111\", \"receiver_client_id\": \"example\", \"status\": \"enabled\", \"status_actor\": \"admin\", \"subject_format\": \"iss_sub\", \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"transmitter_active\": true, \"updated_at\": \"2026-08-26T00:00:00Z\"}"
+        mount("GET", "/api/v1/tenants/$TENANT_ID/ssf/streams/$EXAMPLE_ID", 200, body)
+        val result = client.management().ssf().getStream(streamId = EXAMPLE_ID)
+        assertDecodedEveryField(result, SsfStream.serializer(), body)
+    }
+
+    /** Exercises ssf.update_stream. */
+    @Test
+    fun `ssf update_stream`() = runTest {
+        val body = "{\"audience\": \"example\", \"authorization_header_set\": true, \"created_at\": \"2026-08-26T00:00:00Z\", \"delivery_method\": \"push\", \"events_allowed\": [], \"events_delivered\": [], \"events_requested\": [], \"id\": \"11111111-1111-4111-8111-111111111111\", \"receiver_client_id\": \"example\", \"status\": \"enabled\", \"status_actor\": \"admin\", \"subject_format\": \"iss_sub\", \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"transmitter_active\": true, \"updated_at\": \"2026-08-26T00:00:00Z\"}"
+        mount("PUT", "/api/v1/tenants/$TENANT_ID/ssf/streams/$EXAMPLE_ID", 200, body)
+        val result = client.management().ssf().updateStream(streamId = EXAMPLE_ID, body = SsfStreamInput(audience = "example", authorizationHeader = Sensitive.of("example"), deliveryMethod = SsfDeliveryMethod.PUSH, eventsAllowed = emptyList(), receiverClientId = "example"))
+        assertDecodedEveryField(result, SsfStream.serializer(), body)
+    }
+
+    /** Exercises ssf.delete_stream. */
+    @Test
+    fun `ssf delete_stream`() = runTest {
+        val body = ""
+        mount("DELETE", "/api/v1/tenants/$TENANT_ID/ssf/streams/$EXAMPLE_ID", 204, body)
+        client.management().ssf().deleteStream(streamId = EXAMPLE_ID)
+    }
+
+    /** Exercises scim_targets.list. */
+    @Test
+    fun `scim_targets list`() = runTest {
+        val body = "{\"items\": [{\"auth\": {\"type\": \"bearer\"}, \"base_url\": \"example\", \"created_at\": \"2026-08-26T00:00:00Z\", \"deprovision\": \"deactivate\", \"enabled\": true, \"id\": \"11111111-1111-4111-8111-111111111111\", \"name\": \"example\", \"push_groups\": true, \"scope\": {\"type\": \"all_users\"}, \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"updated_at\": \"2026-08-26T00:00:00Z\", \"user_name_from\": \"username\"}], \"total\": 1, \"offset\": 0, \"limit\": 200}"
+        mount("GET", "/api/v1/scim-targets", 200, body)
+        val result = client.management().scimTargets().list(page = PageRequest.of(50))
+        val item = (Json.parseToJsonElement(body) as JsonObject)["items"]!!.jsonArray.first().toString()
+        assertDecodedEveryField(result.items.first(), ScimTargetResponse.serializer(), item)
+        client.management().scimTargets().listAll(start = PageRequest.of(50))
+        client.management().scimTargets().listAll()
+    }
+
+    /** Exercises scim_targets.create. */
+    @Test
+    fun `scim_targets create`() = runTest {
+        val body = "{\"auth\": {\"type\": \"bearer\"}, \"base_url\": \"example\", \"created_at\": \"2026-08-26T00:00:00Z\", \"deprovision\": \"deactivate\", \"enabled\": true, \"id\": \"11111111-1111-4111-8111-111111111111\", \"name\": \"example\", \"push_groups\": true, \"scope\": {\"type\": \"all_users\"}, \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"updated_at\": \"2026-08-26T00:00:00Z\", \"user_name_from\": \"username\"}"
+        mount("POST", "/api/v1/scim-targets", 201, body)
+        val result = client.management().scimTargets().create(body = ScimTargetInput(auth = ScimTargetAuthBearer(), baseUrl = "example", credential = Sensitive.of("example"), name = "example", scope = ScimTargetScopeAllUsers()))
+        assertDecodedEveryField(result, ScimTargetResponse.serializer(), body)
+    }
+
+    /** Exercises scim_targets.get. */
+    @Test
+    fun `scim_targets get`() = runTest {
+        val body = "{\"auth\": {\"type\": \"bearer\"}, \"base_url\": \"example\", \"created_at\": \"2026-08-26T00:00:00Z\", \"deprovision\": \"deactivate\", \"enabled\": true, \"id\": \"11111111-1111-4111-8111-111111111111\", \"name\": \"example\", \"push_groups\": true, \"scope\": {\"type\": \"all_users\"}, \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"updated_at\": \"2026-08-26T00:00:00Z\", \"user_name_from\": \"username\"}"
+        mount("GET", "/api/v1/scim-targets/$EXAMPLE_ID", 200, body)
+        val result = client.management().scimTargets().get(id = EXAMPLE_ID)
+        assertDecodedEveryField(result, ScimTargetResponse.serializer(), body)
+    }
+
+    /** Exercises scim_targets.update. */
+    @Test
+    fun `scim_targets update`() = runTest {
+        val body = "{\"auth\": {\"type\": \"bearer\"}, \"base_url\": \"example\", \"created_at\": \"2026-08-26T00:00:00Z\", \"deprovision\": \"deactivate\", \"enabled\": true, \"id\": \"11111111-1111-4111-8111-111111111111\", \"name\": \"example\", \"push_groups\": true, \"scope\": {\"type\": \"all_users\"}, \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"updated_at\": \"2026-08-26T00:00:00Z\", \"user_name_from\": \"username\"}"
+        mount("PUT", "/api/v1/scim-targets/$EXAMPLE_ID", 200, body)
+        val result = client.management().scimTargets().update(id = EXAMPLE_ID, body = ScimTargetInput(auth = ScimTargetAuthBearer(), baseUrl = "example", credential = Sensitive.of("example"), name = "example", scope = ScimTargetScopeAllUsers()))
+        assertDecodedEveryField(result, ScimTargetResponse.serializer(), body)
+    }
+
+    /** Exercises scim_targets.delete. */
+    @Test
+    fun `scim_targets delete`() = runTest {
+        val body = ""
+        mount("DELETE", "/api/v1/scim-targets/$EXAMPLE_ID", 204, body)
+        client.management().scimTargets().delete(id = EXAMPLE_ID)
+    }
+
+    /** Exercises scim_targets.reconcile. */
+    @Test
+    fun `scim_targets reconcile`() = runTest {
+        val body = "{\"status\": \"example\", \"target_id\": \"11111111-1111-4111-8111-111111111111\"}"
+        mount("POST", "/api/v1/scim-targets/$EXAMPLE_ID/reconcile", 202, body)
+        val result = client.management().scimTargets().reconcile(id = EXAMPLE_ID)
+        assertDecodedEveryField(result, ScimReconcileAccepted.serializer(), body)
+    }
+
     /** Exercises settings.get_org. */
     @Test
     fun `settings get_org`() = runTest {
@@ -1602,7 +1884,7 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
     /** Exercises platform.health. */
     @Test
     fun `platform health`() = runTest {
-        val body = "{\"status\": \"example\"}"
+        val body = "{\"profile\": \"example\", \"status\": \"example\"}"
         mount("GET", "/health", 200, body)
         val result = client.management().platform().health()
         assertDecodedEveryField(result, HealthResponse.serializer(), body)
@@ -1711,6 +1993,51 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
     }
 
     /**
+     * §27.4 rule 3: directory.forTenant(...) reaches the named scope, and leaves the handle it
+     * came from alone.
+     */
+    @Test
+    fun `directory forTenant changes the path`() = runTest {
+        val scoped = mount("GET", "/api/v1/tenants/$overrideId/directory", 200, "{\"base_dn\": \"example\", \"bind_dn\": \"example\", \"created_at\": \"2026-08-26T00:00:00Z\", \"enabled\": true, \"group_mappings\": [], \"group_member_attribute\": \"example\", \"group_nesting_depth\": 1, \"id\": \"11111111-1111-4111-8111-111111111111\", \"jit_provisioning\": true, \"kind\": \"open_ldap\", \"start_tls\": true, \"sync_interval_secs\": 1, \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"trust_anchors_pem\": [], \"updated_at\": \"2026-08-26T00:00:00Z\", \"url\": \"example\", \"user_attribute_map\": {\"display_name\": \"example\", \"email\": \"example\", \"external_id\": \"example\", \"username\": \"example\"}, \"user_filter\": \"example\"}")
+        val inherited = mount("GET", "/api/v1/tenants/$TENANT_ID/directory", 200, "{\"base_dn\": \"example\", \"bind_dn\": \"example\", \"created_at\": \"2026-08-26T00:00:00Z\", \"enabled\": true, \"group_mappings\": [], \"group_member_attribute\": \"example\", \"group_nesting_depth\": 1, \"id\": \"11111111-1111-4111-8111-111111111111\", \"jit_provisioning\": true, \"kind\": \"open_ldap\", \"start_tls\": true, \"sync_interval_secs\": 1, \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"trust_anchors_pem\": [], \"updated_at\": \"2026-08-26T00:00:00Z\", \"url\": \"example\", \"user_attribute_map\": {\"display_name\": \"example\", \"email\": \"example\", \"external_id\": \"example\", \"username\": \"example\"}, \"user_filter\": \"example\"}")
+        val handle = client.management().directory()
+        handle.forTenant(overrideId).get()
+        handle.get()
+        assertEquals(1, scoped.calls(), "the override must reach the named scope")
+        assertEquals(1, inherited.calls(), "and must not have mutated the handle it came from")
+    }
+
+    /**
+     * §27.4 rule 3: saml.forTenant(...) reaches the named scope, and leaves the handle it came
+     * from alone.
+     */
+    @Test
+    fun `saml forTenant changes the path`() = runTest {
+        val scoped = mount("GET", "/api/v1/tenants/$overrideId/saml/idp", 200, "{\"entity_id\": \"example\", \"metadata_served\": true, \"metadata_url\": \"example\", \"saml_available\": true, \"saml_idp_enabled\": true, \"slo_url\": \"example\", \"sso_url\": \"example\", \"tenant_id\": \"11111111-1111-4111-8111-111111111111\"}")
+        val inherited = mount("GET", "/api/v1/tenants/$TENANT_ID/saml/idp", 200, "{\"entity_id\": \"example\", \"metadata_served\": true, \"metadata_url\": \"example\", \"saml_available\": true, \"saml_idp_enabled\": true, \"slo_url\": \"example\", \"sso_url\": \"example\", \"tenant_id\": \"11111111-1111-4111-8111-111111111111\"}")
+        val handle = client.management().saml()
+        handle.forTenant(overrideId).getIdp()
+        handle.getIdp()
+        assertEquals(1, scoped.calls(), "the override must reach the named scope")
+        assertEquals(1, inherited.calls(), "and must not have mutated the handle it came from")
+    }
+
+    /**
+     * §27.4 rule 3: ssf.forTenant(...) reaches the named scope, and leaves the handle it came from
+     * alone.
+     */
+    @Test
+    fun `ssf forTenant changes the path`() = runTest {
+        val scoped = mount("GET", "/api/v1/tenants/$overrideId/ssf/streams", 200, "{\"items\": [{\"audience\": \"example\", \"authorization_header_set\": true, \"created_at\": \"2026-08-26T00:00:00Z\", \"delivery_method\": \"push\", \"events_allowed\": [], \"events_delivered\": [], \"events_requested\": [], \"id\": \"11111111-1111-4111-8111-111111111111\", \"receiver_client_id\": \"example\", \"status\": \"enabled\", \"status_actor\": \"admin\", \"subject_format\": \"iss_sub\", \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"transmitter_active\": true, \"updated_at\": \"2026-08-26T00:00:00Z\"}], \"total\": 1, \"offset\": 0, \"limit\": 200}")
+        val inherited = mount("GET", "/api/v1/tenants/$TENANT_ID/ssf/streams", 200, "{\"items\": [{\"audience\": \"example\", \"authorization_header_set\": true, \"created_at\": \"2026-08-26T00:00:00Z\", \"delivery_method\": \"push\", \"events_allowed\": [], \"events_delivered\": [], \"events_requested\": [], \"id\": \"11111111-1111-4111-8111-111111111111\", \"receiver_client_id\": \"example\", \"status\": \"enabled\", \"status_actor\": \"admin\", \"subject_format\": \"iss_sub\", \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"transmitter_active\": true, \"updated_at\": \"2026-08-26T00:00:00Z\"}], \"total\": 1, \"offset\": 0, \"limit\": 200}")
+        val handle = client.management().ssf()
+        handle.forTenant(overrideId).listStreams(page = PageRequest.of(50))
+        handle.listStreams(page = PageRequest.of(50))
+        assertEquals(1, scoped.calls(), "the override must reach the named scope")
+        assertEquals(1, inherited.calls(), "and must not have mutated the handle it came from")
+    }
+
+    /**
      * §27.4 rule 3: settings.inOrg(...) reaches the named scope, and leaves the handle it came
      * from alone.
      */
@@ -1756,7 +2083,7 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
     }
 
     /**
-     * §27.9: a partial regeneration must fail here, not ship 140 of 147.
+     * §27.9: a partial regeneration must fail here, not ship 183 of 190.
      *
      * Asserting the whole set rather than the count catches a regeneration that dropped one
      * operation and gained another.
@@ -1781,6 +2108,12 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
             "certificates.list",
             "certificates.revoke",
             "certificates.sign_csr",
+            "directory.delete",
+            "directory.get",
+            "directory.get_sync_status",
+            "directory.link_account",
+            "directory.set",
+            "directory.update",
             "email_config.delete_org",
             "email_config.delete_tenant",
             "email_config.get_org",
@@ -1877,6 +2210,23 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
             "roles.unassign_from_service_account",
             "roles.unassign_from_user",
             "roles.update",
+            "saml.create_service_provider",
+            "saml.delete_service_provider",
+            "saml.get_idp",
+            "saml.get_service_provider",
+            "saml.issue_idp_credential",
+            "saml.list_idp_credentials",
+            "saml.list_service_providers",
+            "saml.parse_sp_metadata",
+            "saml.promote_idp_credential",
+            "saml.retire_idp_credential",
+            "saml.update_service_provider",
+            "scim_targets.create",
+            "scim_targets.delete",
+            "scim_targets.get",
+            "scim_targets.list",
+            "scim_targets.reconcile",
+            "scim_targets.update",
             "scim_tokens.create",
             "scim_tokens.list",
             "scim_tokens.revoke",
@@ -1901,6 +2251,11 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
             "settings.set_effective",
             "settings.set_org",
             "settings.set_tenant_override",
+            "ssf.create_stream",
+            "ssf.delete_stream",
+            "ssf.get_stream",
+            "ssf.list_streams",
+            "ssf.update_stream",
             "tenants.create",
             "tenants.delete",
             "tenants.export_audit",
@@ -1927,7 +2282,7 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
             "webhooks.list",
             "webhooks.update",
         )
-        assertEquals(162, exercised.size,
+        assertEquals(190, exercised.size,
             "the generated surface must reach every operation the registry declares")
         assertEquals(expectedSurface(), exercised,
             "the generated surface and the registry must name the same operations")

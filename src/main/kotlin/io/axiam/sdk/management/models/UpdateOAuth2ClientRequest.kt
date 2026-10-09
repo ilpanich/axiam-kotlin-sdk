@@ -18,8 +18,12 @@ import kotlinx.serialization.Serializable
  *     &#91;`CreateOAuth2ClientRequest::allowed_resources`&#93;. A whole-list replacement;
  *     `&#91;&#93;` withdraws every target.
  * @property authnRequestParams the server's authn_request_params field
+ * @property backchannelAuthenticationRequestSigningAlg G-7 — see the create DTO. `""` clears.
+ * @property backchannelClientNotificationEndpoint G-7 — see the create DTO. `""` clears.
  * @property backchannelLogoutUri Pass an empty string to clear a previously registered URI —
  *     the one edit an operator makes when an RP is decommissioned.
+ * @property backchannelTokenDeliveryMode G-7 — see the create DTO. `""` clears.
+ * @property backchannelUserCodeParameter G-7 — `true` refused, as on create.
  * @property browserSso X7.3 — see &#91;`CreateOAuth2ClientRequest::browser_sso`&#93;.
  * @property dpopBoundAccessTokens the server's dpop_bound_access_tokens field
  * @property dpopRequireNonce the server's dpop_require_nonce field
@@ -47,7 +51,11 @@ import kotlinx.serialization.Serializable
 data class UpdateOAuth2ClientRequest(
     @SerialName("allowed_resources") val allowedResources: List<String>? = null,
     @SerialName("authn_request_params") val authnRequestParams: AuthnRequestParamsMode? = null,
+    @SerialName("backchannel_authentication_request_signing_alg") val backchannelAuthenticationRequestSigningAlg: String? = null,
+    @SerialName("backchannel_client_notification_endpoint") val backchannelClientNotificationEndpoint: String? = null,
     @SerialName("backchannel_logout_uri") val backchannelLogoutUri: String? = null,
+    @SerialName("backchannel_token_delivery_mode") val backchannelTokenDeliveryMode: String? = null,
+    @SerialName("backchannel_user_code_parameter") val backchannelUserCodeParameter: Boolean? = null,
     @SerialName("browser_sso") val browserSso: Boolean? = null,
     @SerialName("dpop_bound_access_tokens") val dpopBoundAccessTokens: Boolean? = null,
     @SerialName("dpop_require_nonce") val dpopRequireNonce: Boolean? = null,

@@ -6,14 +6,14 @@ package io.axiam.sdk.management
 import io.axiam.sdk.internal.ManagementTransport
 
 /**
- * The CONTRACT.md §27 management API: 147 operations across 24 namespaces.
+ * The CONTRACT.md §27 management API: 190 operations across 28 namespaces.
  *
  * Obtained from `client.management()`. Each accessor returns a namespace handle, which is a view
  * over the same session — acquiring one performs no I/O (§27.2 rule 1).
  *
  * The namespaces are grouped behind this one accessor rather than added to `AxiamClient` directly:
- * §27.2's own argument for handles is that a flat surface of 147 functions buries the twenty a
- * given caller needs, and hanging 24 more functions off the client would do to `AxiamClient`
+ * §27.2's own argument for handles is that a flat surface of 190 functions buries the twenty a
+ * given caller needs, and hanging 28 more functions off the client would do to `AxiamClient`
  * exactly what the handles exist to prevent.
  */
 class ManagementApi internal constructor(
@@ -172,6 +172,42 @@ class ManagementApi internal constructor(
      * @return the email_config namespace handle
      */
     fun emailConfig(): EmailConfigApi = EmailConfigApi(transport)
+
+    /**
+     * The directory operations.
+     *
+     * Acquiring the handle performs no I/O (§27.2 rule 1).
+     *
+     * @return the directory namespace handle
+     */
+    fun directory(): DirectoryApi = DirectoryApi(transport)
+
+    /**
+     * The saml operations.
+     *
+     * Acquiring the handle performs no I/O (§27.2 rule 1).
+     *
+     * @return the saml namespace handle
+     */
+    fun saml(): SamlApi = SamlApi(transport)
+
+    /**
+     * The ssf operations.
+     *
+     * Acquiring the handle performs no I/O (§27.2 rule 1).
+     *
+     * @return the ssf namespace handle
+     */
+    fun ssf(): SsfApi = SsfApi(transport)
+
+    /**
+     * The scim_targets operations.
+     *
+     * Acquiring the handle performs no I/O (§27.2 rule 1).
+     *
+     * @return the scim_targets namespace handle
+     */
+    fun scimTargets(): ScimTargetsApi = ScimTargetsApi(transport)
 
     /**
      * The settings operations.

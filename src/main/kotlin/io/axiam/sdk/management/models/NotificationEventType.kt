@@ -59,6 +59,8 @@ enum class NotificationEventType(val wire: String) {
 
     SERVICE_ACCOUNT_DELETED("service_account_deleted"),
 
+    SCIM_DELIVERY_FAILED("scim_delivery_failed"),
+
     /** A value this SDK's copy of the spec does not list; see the type's doc. */
     UNKNOWN("");
 

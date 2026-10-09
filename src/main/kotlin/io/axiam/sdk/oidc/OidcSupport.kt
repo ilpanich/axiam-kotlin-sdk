@@ -21,6 +21,7 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
@@ -104,6 +105,12 @@ internal class OidcSupport(
      * was, since no session changed.
      */
     private val onSessionEstablishedWithUnknownScope: () -> Unit = {},
+    /** §16.1 switch, for the one §12-family call that follows §16: `cibaPoll` (§33.7 rule 5). */
+    private val retryEnabled: Boolean = true,
+    /** §16.5 retry telemetry for `cibaPoll`. */
+    private val telemetry: io.axiam.sdk.internal.TelemetryDispatcher = io.axiam.sdk.internal.TelemetryDispatcher(),
+    /** §16 jitter draw for `cibaPoll`, injectable for tests. */
+    private val jitter: () -> Double = { kotlin.random.Random.Default.nextDouble() },
 ) {
     private val discoveryTtlMs: Long = discoveryTtlMs.coerceAtLeast(MIN_DISCOVERY_TTL_MS)
     private val clockSkewSec: Int = OidcIdToken.resolveClockSkewSec(clockSkewSecInput)
@@ -176,6 +183,13 @@ internal class OidcSupport(
         code_challenge_methods_supported = json.strListOrNull("code_challenge_methods_supported"),
         token_endpoint_auth_signing_alg_values_supported =
             json.strListOrNull("token_endpoint_auth_signing_alg_values_supported"),
+        backchannel_authentication_endpoint = json.strOrNull("backchannel_authentication_endpoint"),
+        backchannel_token_delivery_modes_supported =
+            json.strListOrNull("backchannel_token_delivery_modes_supported"),
+        backchannel_user_code_parameter_supported =
+            (json["backchannel_user_code_parameter_supported"] as? JsonPrimitive)?.booleanOrNull,
+        backchannel_authentication_request_signing_alg_values_supported =
+            json.strListOrNull("backchannel_authentication_request_signing_alg_values_supported"),
     )
 
     /**
@@ -200,6 +214,7 @@ internal class OidcSupport(
             device_authorization_endpoint = obj.strOrNull("device_authorization_endpoint"),
             pushed_authorization_request_endpoint =
                 obj.strOrNull("pushed_authorization_request_endpoint"),
+            backchannel_authentication_endpoint = obj.strOrNull("backchannel_authentication_endpoint"),
         )
     }
 
@@ -1093,6 +1108,218 @@ internal class OidcSupport(
                 // §14.2 rule 6: transport and 5xx failures are not among the
                 // five protocol answers and are not terminal.
                 continue
+            }
+        }
+    }
+
+    // -- §33 CIBA -------------------------------------------------------------
+
+    /**
+     * The transport `cibaInitiate` uses: the shared client with OkHttp's own
+     * silent retry on a connection failure switched off. §33.7 rule 1 forbids
+     * retrying an initiation on ANY transport error, and OkHttp would
+     * otherwise resend a non-one-shot form body on another route after a
+     * dropped connection — a second stored request, and possibly a second
+     * notification to a person, that nobody counted.
+     */
+    private val noRetryHttpClient: OkHttpClient by lazy {
+        httpClient.newBuilder().retryOnConnectionFailure(false).build()
+    }
+
+    /**
+     * The client's credential for a CIBA call (§33.1): `client_secret_post`,
+     * or the §6.1 client certificate the transport presents
+     * (`tls_client_auth`, which sends `client_id` only). A CIBA client is never
+     * public, so neither is a local [AuthError] — no anonymous request is sent.
+     */
+    private fun cibaClientAuth(operation: String): Pair<String, String?> {
+        val clientId = requireClientId()
+        val secret = oidcClientSecret?.expose()
+        if (secret == null && !presentsClientCertificate) {
+            throw AuthError(
+                "$operation requires client authentication: a CIBA client is never public — build " +
+                    "the client with oidcClientSecret(...) or a §6.1 client certificate " +
+                    "(CONTRACT.md §33.1)",
+            )
+        }
+        return clientId to secret
+    }
+
+    /** See [io.axiam.sdk.AxiamClient.cibaInitiate]. */
+    suspend fun cibaInitiate(params: CibaInitiateParams): CibaInitiateResponse {
+        val (clientId, secret) = cibaClientAuth("cibaInitiate")
+        val delivery = params.delivery
+        if (delivery is CibaDelivery.Ping && delivery.clientNotificationToken.expose().isEmpty()) {
+            throw io.axiam.sdk.errors.ValidationError(
+                "cibaInitiate: a ping-mode request needs a non-empty client_notification_token — " +
+                    "without one AXIAM has nothing to ping with (CONTRACT.md §33.2)",
+            )
+        }
+        val configuration = params.configuration ?: oidcDiscover()
+        val endpoint = preferredEndpoint(
+            configuration,
+            { it.backchannel_authentication_endpoint },
+            configuration.backchannel_authentication_endpoint,
+        ) ?: throw AuthError(
+            "the authorization server's discovery document advertises no " +
+                "backchannel_authentication_endpoint: this server does not support CIBA " +
+                "(CONTRACT.md §33.1)",
+        )
+        val url = endpointUrl(endpoint, params.tenantId)
+
+        val form = FormBody.Builder().add("client_id", clientId)
+        secret?.let { form.add("client_secret", it) }
+        val signer = params.signer
+        if (signer != null) {
+            val members = LinkedHashMap<String, Any>()
+            for ((name, value) in cibaMembers(params)) {
+                // A number inside the JWT (CIBA Core §7.1), a string on the form.
+                members[name] = if (name == "requested_expiry") params.requestedExpiry!! else value
+            }
+            form.add("request", signer.sign(clientId, configuration.issuer, members).expose())
+        } else {
+            for ((name, value) in cibaMembers(params)) form.add(name, value)
+        }
+
+        val request = Request.Builder().url(url).post(form.build()).build()
+        // §33.7 rule 1: never retried — not by §16, not by OkHttp.
+        val response = try {
+            withContext(Dispatchers.IO) { noRetryHttpClient.newCall(request).execute() }
+        } catch (e: IOException) {
+            throw NetworkError("cibaInitiate request failed: ${e.javaClass.simpleName}", e)
+        }
+        val json = response.use {
+            if (!it.isSuccessful) {
+                throw ErrorMapper.fromOAuth2ResponseAtAnyStatus("cibaInitiate request failed", it)
+            }
+            parseJsonObject(it)
+        }
+        val authReqId = (json["auth_req_id"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+            ?: throw NetworkError("cibaInitiate: the response carries no auth_req_id")
+        val expiresIn = (json["expires_in"] as? JsonPrimitive)?.takeIf { !it.isString }?.content?.toLongOrNull()
+            ?: throw NetworkError("cibaInitiate: the response carries no numeric expires_in")
+        val interval = (json["interval"] as? JsonPrimitive)?.takeIf { !it.isString }?.content?.toLongOrNull()
+        return CibaInitiateResponse(
+            authReqId = Sensitive.of(authReqId),
+            expiresIn = expiresIn,
+            // §33.7 rule 2: an absent (or zero) interval is 5 s, never faster.
+            interval = if (interval != null && interval > 0) interval else DEFAULT_CIBA_INTERVAL_SECONDS,
+            receivedAt = java.time.Instant.now(),
+        )
+    }
+
+    /** The plain form's authentication-request members, exactly those set (§33.2). */
+    private fun cibaMembers(params: CibaInitiateParams): List<Pair<String, String>> = buildList {
+        add("scope" to params.scope)
+        when (val hint = params.hint) {
+            is CibaUserHint.LoginHint -> add("login_hint" to hint.value)
+            is CibaUserHint.IdTokenHint -> add("id_token_hint" to hint.value)
+        }
+        params.bindingMessage?.let { add("binding_message" to it) }
+        params.requestedExpiry?.let { add("requested_expiry" to it.toString()) }
+        params.acrValues?.let { add("acr_values" to it) }
+        params.resource?.let { add("resource" to it) }
+        (params.delivery as? CibaDelivery.Ping)?.let {
+            add("client_notification_token" to it.clientNotificationToken.expose())
+        }
+    }
+
+    /** See [io.axiam.sdk.AxiamClient.cibaPoll]. */
+    suspend fun cibaPoll(params: CibaPollParams): OidcTokenSet = cibaPollTracked(params, PollTrace())
+
+    /** What the last attempt of a `cibaPoll` saw — `cibaAwait` classifies a failure by it. */
+    private class PollTrace {
+        /** The final attempt's HTTP status; `null` for a transport failure. */
+        var lastStatus: Int? = null
+    }
+
+    private suspend fun cibaPollTracked(params: CibaPollParams, trace: PollTrace): OidcTokenSet {
+        val (clientId, secret) = cibaClientAuth("cibaPoll")
+        val configuration = params.configuration ?: oidcDiscover()
+        val url = endpointUrl(
+            preferredEndpoint(configuration, { it.token_endpoint }, configuration.token_endpoint)!!,
+            params.tenantId,
+        )
+        val form = buildForm(
+            "grant_type" to CIBA_GRANT_TYPE,
+            "auth_req_id" to params.authReqId.expose(),
+            "client_id" to clientId,
+            "client_secret" to secret,
+        )
+        val json = io.axiam.sdk.internal.Retry.withRetry(
+            operation = "cibaPoll",
+            enabled = retryEnabled,
+            telemetry = telemetry,
+            random = jitter,
+            // §33.7 rule 5: transport failures, 5xx, 408 and a bodiless 429 are
+            // retried; a protocol answer (an OAuthProtocolError, which is not a
+            // NetworkError) and any other 4xx are decisive.
+            retryable = { trace.lastStatus.let { it == null || io.axiam.sdk.internal.Retry.isRetryableStatus(it) } },
+        ) { _ ->
+            trace.lastStatus = null
+            val request = Request.Builder().url(url).post(form).build()
+            val response = executeRequest(request)
+            response.use {
+                trace.lastStatus = it.code
+                if (!it.isSuccessful) {
+                    throw ErrorMapper.fromOAuth2ResponseAtAnyStatus("cibaPoll request failed", it)
+                }
+                // §33.7 rule 7: the 200 is consumed before anything else.
+                parseJsonObject(it)
+            }
+        }
+        // No nonce: a CIBA request carries none.
+        val expectations = OidcIdToken.Expectations(
+            issuer = configuration.issuer,
+            clientId = clientId,
+            nonce = null,
+            hasNonce = false,
+            clockSkewSec = clockSkewSec,
+        )
+        return toTokenSet(json, configuration, expectations)
+    }
+
+    /** See [io.axiam.sdk.AxiamClient.cibaAwait]. */
+    suspend fun cibaAwait(initiated: CibaInitiateResponse, params: CibaAwaitParams): OidcTokenSet {
+        val clock = params.clock
+        val configuration = params.configuration ?: oidcDiscover()
+        val deadline = initiated.receivedAt.plusSeconds(initiated.expiresIn)
+        var interval = if (initiated.interval > 0) initiated.interval else DEFAULT_CIBA_INTERVAL_SECONDS
+        while (true) {
+            val wait = java.time.Duration.ofSeconds(interval)
+            // §33.7 rule 4: the deadline is authoritative. Checking before
+            // waiting keeps the SDK from issuing a request that can only be
+            // refused, and reports it under the code the server would use.
+            if (!clock.now().plus(wait).isBefore(deadline)) {
+                throw OAuthProtocolError(
+                    error = "expired_token",
+                    errorDescription = "the CIBA request expired before it was decided (client-side " +
+                        "deadline from expires_in; CONTRACT.md §33.7 rule 4)",
+                )
+            }
+            clock.sleep(wait)
+            val trace = PollTrace()
+            try {
+                return cibaPollTracked(
+                    CibaPollParams(initiated.authReqId, params.tenantId, configuration),
+                    trace,
+                )
+            } catch (e: OAuthProtocolError) {
+                when (e.error) {
+                    "authorization_pending" -> continue
+                    // §33.7 rule 3: cumulative, never reset.
+                    "slow_down" -> interval += CIBA_SLOW_DOWN_INCREMENT_SECONDS
+                    // §33.3 rule 13: never terminal for a poll; counts as one interval.
+                    "rate_limit_exceeded" -> continue
+                    // access_denied, expired_token, invalid_grant, a refused call, an unknown code.
+                    else -> throw e
+                }
+            } catch (e: NetworkError) {
+                // §33.7 rule 5: a transport failure, 5xx, 408 or 429 that outlived
+                // §16 is not terminal. Any other status is the answer.
+                val status = trace.lastStatus
+                if (status == null || io.axiam.sdk.internal.Retry.isRetryableStatus(status)) continue
+                throw e
             }
         }
     }

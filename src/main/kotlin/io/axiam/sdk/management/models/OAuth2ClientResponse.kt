@@ -18,6 +18,10 @@ import kotlinx.serialization.Serializable
  *     compares rather than the ones they typed.
  * @property authnRequestParams X7.1 — echoed so an operator can audit which clients act on the
  *     OIDC authentication-request parameters, from this endpoint rather than from the database.
+ * @property backchannelAuthenticationRequestSigningAlg the server's
+ *     backchannel_authentication_request_signing_alg field
+ * @property backchannelClientNotificationEndpoint G-7 — the ping-mode notification endpoint.
+ * @property backchannelTokenDeliveryMode the server's backchannel_token_delivery_mode field
  * @property browserSso X7.3 — echoed for the same reason.
  * @property clientId the server's client_id field
  * @property createdAt the server's created_at field
@@ -63,6 +67,9 @@ import kotlinx.serialization.Serializable
 data class OAuth2ClientResponse(
     @SerialName("allowed_resources") val allowedResources: List<String>,
     @SerialName("authn_request_params") val authnRequestParams: AuthnRequestParamsMode,
+    @SerialName("backchannel_authentication_request_signing_alg") val backchannelAuthenticationRequestSigningAlg: CibaRequestSigningAlg? = null,
+    @SerialName("backchannel_client_notification_endpoint") val backchannelClientNotificationEndpoint: String? = null,
+    @SerialName("backchannel_token_delivery_mode") val backchannelTokenDeliveryMode: CibaDeliveryMode? = null,
     @SerialName("browser_sso") val browserSso: Boolean,
     @SerialName("client_id") val clientId: String,
     @SerialName("created_at") val createdAt: @Serializable(with = InstantSerializer::class) Instant,

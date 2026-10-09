@@ -50,9 +50,13 @@ import kotlinx.serialization.Serializable
  * @property requireLowercase the server's require_lowercase field
  * @property requireSymbols the server's require_symbols field
  * @property requireUppercase the server's require_uppercase field
+ * @property samlIdpEnabled G-2 / D-20 — defaulted, so an API client written before the SAML
+ *     identity provider existed lands on `false`, which is what every deployment did before (I1).
  * @property sensitiveScopesEnabled the server's sensitive_scopes_enabled field
  * @property serverCertAllowedNames S-7 — defaulted to empty, so an API client written before
  *     the field lands on "no `Server` certificate is issued" (I1).
+ * @property ssfEnabled G-5 / D-45 — defaulted, so an API client written before the SSF
+ *     transmitter existed lands on `false`, which is what every deployment did before (I1).
  * @property webauthnUserVerification the server's webauthn_user_verification field
  */
 @Serializable
@@ -89,7 +93,9 @@ data class SetOrgSettings(
     @SerialName("require_lowercase") val requireLowercase: Boolean,
     @SerialName("require_symbols") val requireSymbols: Boolean,
     @SerialName("require_uppercase") val requireUppercase: Boolean,
+    @SerialName("saml_idp_enabled") val samlIdpEnabled: Boolean? = null,
     @SerialName("sensitive_scopes_enabled") val sensitiveScopesEnabled: Boolean? = null,
     @SerialName("server_cert_allowed_names") val serverCertAllowedNames: List<String>? = null,
+    @SerialName("ssf_enabled") val ssfEnabled: Boolean? = null,
     @SerialName("webauthn_user_verification") val webauthnUserVerification: String? = null,
 )

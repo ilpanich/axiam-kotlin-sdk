@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Contract 1.58.** Re-vendored `CONTRACT.md`, `openapi.json` and `management-registry.json` from
+  `axiam` `21a9c22e`; `proto/` unchanged. The §27 surface is regenerated: **190 operations across
+  28 namespaces**, adding `directory` (§30), `saml` (§29), `scim_targets` (§31) and `ssf` (§32),
+  each reachable as a client property (`client.directory`, `client.saml`, `client.scimTargets`,
+  `client.ssf`) and behind `management()`.
+- **§28.12 — RFC 7592 client configuration.** `AxiamClient.readClientRegistration` /
+  `updateClientRegistration` / `deleteClientRegistration` and `io.axiam.sdk.oidc.ClientRegistration`
+  (tolerant decoding: unknown and mistyped members are kept in `extra`, so a read passed to an
+  update round-trips; `registrationAccessToken` and `clientSecret` are `Sensitive`). The URI is
+  checked against the client's own origin before any I/O (a local `ValidationError` naming no part
+  of it); the token is sent as `Authorization: Bearer` on a transport carrying none of the
+  session — no cookie, no access token, no CSRF header, no redirect; writes are never retried, the
+  read only on a transport failure, `408`, `429` or `5xx`.
+- **§29 / §30 / §31 / §32 management semantics.** `JsonNullable<T>` (`Absent` / `Null` /
+  `Value`) for the four members where an explicit `null` differs from absence —
+  `UpdateDirectoryConfig.groupBaseDn` / `groupFilter` (send `null` to clear) and
+  `SamlIdpInfo.activeCredentialId` / `nextCredentialId` (null kept apart from absent);
+  `ParseSamlSpMetadata.fromUrl` / `fromXml`, with both-or-neither refused locally; the
+  read-modify-write helpers `DirectoryConfig.toInput()`, `SamlServiceProvider.toInput()`,
+  `ScimTargetResponse.toInput()` and `SsfStream.toInput()` (secret absent); the contract's
+  call-site warnings in the generated KDoc of the fifteen operations that carry one.
+  `ScimTargetAuth` / `ScimTargetScope` are open: an unknown `type` decodes to `.Unknown` and is
+  refused locally on encode.
+- **§32.7 — the SSF receiver helper** (`io.axiam.sdk.ssf`): `SsfReceiver.verifySet` (the nine
+  steps in order; Ed25519 keys only from the configured JWKS — or a discovery document whose
+  `issuer` matches — fetched over the client's TLS policy without its session; one forced refetch
+  at most once a minute; a JWKS failure is a `NetworkError`, not a verdict), `SsfReceiver.poll`
+  (only the members set, nothing acknowledged on the caller's behalf, §16 on transport/`5xx`/
+  `408`/`429` only), `SetVerificationError` + `SetFailureReason` (`pushErrorCode()`),
+  `SetErr.fromReason`, pluggable `ReplayStore` / `MemoryReplayStore`, the seven-day replay window
+  as default and floor, `SsfEventTypes`.
+- **§33 — CIBA.** `AxiamClient.cibaInitiate` (never retried — OkHttp's own connection-failure
+  retry is off for it too), `cibaPoll` (§16 within the call), `cibaAwait` (injectable
+  `CibaClock`; `slow_down` +5 s for good; client-side `expired_token` at the deadline),
+  `cibaHandlePing` (no I/O, `MessageDigest.isEqual`). Client authentication is mandatory
+  (`client_secret_post`, or the §6.1 certificate as `tls_client_auth`); `tenant_id` rides in the
+  query. `CibaUserHint` is a single hint; ping mode without a token is a local `ValidationError`.
+  `OAuthProtocolError.isAccessDenied` / `isExpiredToken`.
+- **§33.2 — the signed request form.** `CibaRequestSigner.fromPem` / `of` for `PS256`, `ES256` and
+  `EdDSA` (Nimbus + Tink, already dependencies), probe-signed at construction; the form then
+  carries only the client authentication and `request`.
+- **§21.3.1 — the seventh alias.** `MtlsEndpointAliases.backchannel_authentication_endpoint`, and
+  the four CIBA discovery members on `OidcConfiguration`.
+
+### Changed
+
+- `OAuthProtocolError.errorDescription` defaults to `""`: RFC 6749 §5.2 makes it optional, and the
+  §28.12 / §33 endpoints may omit it. A missing description no longer turns an error object into a
+  generic error; the message is then just the code.
+- `ErrorMapper.fromOAuth2ResponseAtAnyStatus` — §2's `/oauth2` row at any status (§28.12.3,
+  §33.4) — used by the new operations; the existing §12 callers keep their 400/401 scope.
+
 ## [1.0.0-beta17] - 2026-09-25
 
 ### Added
