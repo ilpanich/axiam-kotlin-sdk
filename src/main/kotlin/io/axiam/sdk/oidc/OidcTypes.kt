@@ -34,7 +34,9 @@ import io.axiam.sdk.Sensitive
  * `/oauth2/token` but not on `/oauth2/authorize`" is not something one listener
  * can do. A deployment wanting both runs two, and this object names the second.
  *
- * Only these six are ever aliased. `authorization_endpoint` and
+ * Only these seven are ever aliased (the seventh,
+ * `backchannel_authentication_endpoint`, arrived with CIBA in contract 1.58 —
+ * the §21.3.1 in-place amendment). `authorization_endpoint` and
  * `end_session_endpoint` are front-channel and `jwks_uri` is public key
  * material, so CONTRACT.md §21.3 rule 2 forbids synthesising an alias for any
  * of them — sending a browser to an mTLS host raises a native
@@ -42,8 +44,8 @@ import io.axiam.sdk.Sensitive
  * endpoint and does not move either: §12.4 rule 3 still compares `iss` against
  * it by exact string.
  *
- * **Every property is nullable**, though the server's schema marks all six
- * required. AXIAM builds them from one path through a shared macro and so
+ * **Every property is nullable**, though the server's schema marks all
+ * seven required. AXIAM builds them from one path through a shared macro and so
  * always publishes the complete set, but RFC 8705 §5 permits an OP to alias
  * fewer, and the shape of this member must never be why a client stops
  * working — the same principle rule 2 point 1 states for the object as a
@@ -63,6 +65,12 @@ data class MtlsEndpointAliases(
     val device_authorization_endpoint: String? = null,
     /** RFC 9126 §2 — authenticates the client. */
     val pushed_authorization_request_endpoint: String? = null,
+    /**
+     * CIBA Core §7 — authenticates the client (contract 1.58, CONTRACT.md §33.1):
+     * a `tls_client_auth` CIBA client has no other way to present its
+     * certificate at `bc-authorize` on a two-listener deployment.
+     */
+    val backchannel_authentication_endpoint: String? = null,
 )
 
 /**
@@ -176,6 +184,25 @@ data class OidcConfiguration(
      * deployment, not an instruction to the client.
      */
     val token_endpoint_auth_signing_alg_values_supported: List<String>? = null,
+    /**
+     * The CIBA Core §4 backchannel authentication endpoint `cibaInitiate`
+     * posts to (contract 1.58, CONTRACT.md §33.1); `null` when the server does
+     * not implement CIBA — never synthesised from the issuer.
+     */
+    val backchannel_authentication_endpoint: String? = null,
+    /**
+     * The CIBA delivery modes the server supports (`poll`, `ping`). A
+     * statement about the server, never about a given client's registration
+     * (CONTRACT.md §21.5).
+     */
+    val backchannel_token_delivery_modes_supported: List<String>? = null,
+    /**
+     * Whether the server accepts a CIBA `user_code` (`false` at AXIAM). This
+     * SDK never sends one either way (§33.3 rule 3).
+     */
+    val backchannel_user_code_parameter_supported: Boolean? = null,
+    /** The algorithms a signed CIBA request may use (`PS256`, `ES256`, `EdDSA`). */
+    val backchannel_authentication_request_signing_alg_values_supported: List<String>? = null,
 )
 
 /**

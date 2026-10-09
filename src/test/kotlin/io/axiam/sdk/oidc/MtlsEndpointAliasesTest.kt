@@ -29,7 +29,7 @@ import java.util.Collections
  *  * a call going over mTLS prefers the alias;
  *  * a call NOT going over mTLS keeps the top-level entry;
  *  * an ABSENT member means "no separate mTLS host", never "unsupported";
- *  * only the six listed endpoints are ever aliased — not
+ *  * only the seven listed endpoints are ever aliased — not
  *    `authorization_endpoint`, `end_session_endpoint` or `jwks_uri`;
  *  * `issuer` is not an endpoint, does not move, and still governs `iss`
  *    validation by exact string.
@@ -94,6 +94,9 @@ class MtlsEndpointAliasesTest {
         "/oauth2/par" -> MockResponse().setResponseCode(201)
             .addHeader("Content-Type", "application/json")
             .setBody("""{"request_uri":"urn:ietf:params:oauth:request_uri:x","expires_in":60}""")
+        "/oauth2/bc-authorize" -> MockResponse().setResponseCode(200)
+            .addHeader("Content-Type", "application/json")
+            .setBody("""{"auth_req_id":"${java.util.UUID.randomUUID()}","expires_in":120}""")
         "/oauth2/introspect" -> MockResponse().setResponseCode(200)
             .addHeader("Content-Type", "application/json").setBody("""{"active":true}""")
         "/oauth2/revoke" -> MockResponse().setResponseCode(200)
@@ -103,7 +106,7 @@ class MtlsEndpointAliasesTest {
             .setBody("""{"access_token":"a","token_type":"Bearer","expires_in":900}""")
     }
 
-    /** All six aliases on the mTLS origin. */
+    /** All seven aliases on the mTLS origin (§21.3.1 as amended in contract 1.58). */
     private fun allAliases(): String {
         val m = mtls.url("/").toString().trimEnd('/')
         return """
@@ -113,7 +116,8 @@ class MtlsEndpointAliasesTest {
               "revocation_endpoint": "$m/oauth2/revoke",
               "introspection_endpoint": "$m/oauth2/introspect",
               "device_authorization_endpoint": "$m/oauth2/device_authorization",
-              "pushed_authorization_request_endpoint": "$m/oauth2/par"
+              "pushed_authorization_request_endpoint": "$m/oauth2/par",
+              "backchannel_authentication_endpoint": "$m/oauth2/bc-authorize"
             }
         """.trimIndent()
     }
@@ -198,6 +202,17 @@ class MtlsEndpointAliasesTest {
                     tenantId = tenantId,
                 ),
             )
+            // The seventh alias (contract 1.58): a tls_client_auth CIBA client
+            // presents its certificate at bc-authorize exactly as at the token
+            // endpoint.
+            client.cibaInitiate(
+                CibaInitiateParams(
+                    scope = "openid",
+                    hint = CibaUserHint.LoginHint("ada"),
+                    tenantId = tenantId,
+                    configuration = configuration,
+                ),
+            )
         }
 
         assertEquals(
@@ -207,6 +222,7 @@ class MtlsEndpointAliasesTest {
                 "/oauth2/revoke",
                 "/oauth2/device_authorization",
                 "/oauth2/par",
+                "/oauth2/bc-authorize",
             ),
             mtlsHits,
         )
@@ -316,17 +332,19 @@ class MtlsEndpointAliasesTest {
     }
 
     @Test
-    fun `the alias type carries only the six aliasable endpoints`() {
+    fun `the alias type carries only the seven aliasable endpoints`() {
         // Naming them as a closed set is what makes authorization_endpoint,
         // end_session_endpoint and jwks_uri unrepresentable rather than merely
-        // unused. A seventh property here would be an alias the SDK could
-        // synthesise.
+        // unused. An eighth property here would be an alias the SDK could
+        // synthesise. (The seventh, backchannel_authentication_endpoint, is
+        // CIBA's — the §21.3.1 in-place amendment of contract 1.58.)
         val properties = MtlsEndpointAliases::class.members
             .filterIsInstance<kotlin.reflect.KProperty1<*, *>>()
             .map { it.name }
             .sorted()
         assertEquals(
             listOf(
+                "backchannel_authentication_endpoint",
                 "device_authorization_endpoint",
                 "introspection_endpoint",
                 "pushed_authorization_request_endpoint",
@@ -459,6 +477,48 @@ class MtlsEndpointAliasesTest {
                 }
             }
             assertTrue(refused.message!!.contains("not an absolute URL"), refused.message)
+        }
+    }
+
+    // -- §21.3.1 vector A, verbatim from the vendored contract ----------------
+
+    @Test
+    fun `vector A parses to its seven aliases`() = runBlocking {
+        // Read from the vendored CONTRACT.md rather than copied here: the
+        // contract is byte-identical to the source and drift-gated, so this
+        // pins the vector as it stands — seven aliases since contract 1.58.
+        val contract = java.io.File("CONTRACT.md").readText()
+        val section = contract.substringAfter("**Vector A — a two-listener deployment.**")
+        val vector = section.substringAfter("```json\n").substringBefore("\n```")
+        val parsed = kotlinx.serialization.json.Json.parseToJsonElement(vector) as kotlinx.serialization.json.JsonObject
+        val published = (parsed["mtls_endpoint_aliases"] as kotlinx.serialization.json.JsonObject)
+        assertEquals(7, published.size, "vector A publishes seven aliases")
+
+        document = { vector }
+        client(mtlsIdentity = true).use { client ->
+            val aliases = client.oidcDiscover().mtls_endpoint_aliases!!
+            val decoded = mapOf(
+                "token_endpoint" to aliases.token_endpoint,
+                "userinfo_endpoint" to aliases.userinfo_endpoint,
+                "revocation_endpoint" to aliases.revocation_endpoint,
+                "introspection_endpoint" to aliases.introspection_endpoint,
+                "device_authorization_endpoint" to aliases.device_authorization_endpoint,
+                "pushed_authorization_request_endpoint" to aliases.pushed_authorization_request_endpoint,
+                "backchannel_authentication_endpoint" to aliases.backchannel_authentication_endpoint,
+            )
+            assertEquals(published.keys, decoded.keys, "every alias vector A names is modelled")
+            for ((name, value) in decoded) {
+                assertEquals(
+                    (published[name] as kotlinx.serialization.json.JsonPrimitive).content,
+                    value,
+                    name,
+                )
+            }
+            assertEquals(
+                "https://iam.example.test/oauth2/bc-authorize?tenant_id=6f3e0a5c-1b2d-4e8f-9a7b-0c1d2e3f4a5b",
+                client.oidcDiscover().backchannel_authentication_endpoint,
+                "the top-level CIBA endpoint is decoded beside its alias",
+            )
         }
     }
 }
