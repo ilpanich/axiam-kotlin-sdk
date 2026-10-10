@@ -380,7 +380,7 @@ class SsfReceiverTest {
         jwksFailAfter = 1 // the refresh after expiry answers 503
         now += SsfReceiver.JWKS_CACHE_LIFETIME.toNanos() + 1
         val failed = assertThrows<NetworkError> { runBlocking { r.verifySet(signSet(k, claims())) } }
-        assertFalse(failed is SetVerificationError, "a failed refresh is no verdict")
+        assertFalse(SetVerificationError::class.isInstance(failed), "a failed refresh is no verdict")
         assertEquals(2, jwksHits.get(), "the expired cache was refreshed")
 
         now += Duration.ofSeconds(30).toNanos()
@@ -587,8 +587,8 @@ class SsfReceiverTest {
 
         store.down = true
         val e = assertThrows<NetworkError> { runBlocking { r.verifySet(set) } }
-        assertFalse(e is SetVerificationError, "no reason code: it is not a verdict on the SET")
-        assertFalse(e is AuthError, "and it is not a refusal, least of all `replayed`")
+        assertFalse(SetVerificationError::class.isInstance(e), "no reason code: it is not a verdict on the SET")
+        assertFalse(AuthError::class.isInstance(e), "and it is not a refusal, least of all `replayed`")
         assertTrue(store.recorded.isEmpty(), "nothing was recorded")
 
         store.down = false
@@ -645,12 +645,12 @@ class SsfReceiverTest {
         val set = signSet(k, claims())
 
         val first = assertThrows<NetworkError> { runBlocking { r.verifySet(set) } }
-        assertFalse(first is SetVerificationError, "a failed fill is no verdict")
+        assertFalse(SetVerificationError::class.isInstance(first), "a failed fill is no verdict")
         assertEquals(1, jwksHits.get(), "the cold fill was attempted")
 
         now += Duration.ofSeconds(30).toNanos()
         val second = assertThrows<NetworkError> { runBlocking { r.verifySet(signSet(k, claims())) } }
-        assertFalse(second is SetVerificationError, "a second SET within the minute is left unjudged")
+        assertFalse(SetVerificationError::class.isInstance(second), "a second SET within the minute is left unjudged")
         assertEquals(1, jwksHits.get(), "and makes no fetch")
 
         // A SET refused before step 4 is still a verdict: the limit gates only the key fetch.
