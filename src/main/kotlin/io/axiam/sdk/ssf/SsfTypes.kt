@@ -227,9 +227,18 @@ fun interface ReplayStore {
      * MUST be atomic: two concurrent calls with one `jti` must not both see
      * `true`.
      *
+     * Three answers, not two (CONTRACT.md §34.2 P4, contract 1.60): `true`
+     * (new), `false` (already seen) and **cannot answer** — which is a thrown
+     * exception, never `false`. A store whose backend is down MUST throw: the
+     * receiver then gives no verdict on the SET (it is neither refused as
+     * `replayed` nor accepted, and its `jti` stays unrecorded), whereas
+     * answering `false` would be read as a replay, which `poll`'s caller
+     * acknowledges — losing an event that was never processed.
+     *
      * @param jti the SET's id
      * @param window how long to remember it
      * @return whether the `jti` was new
+     * @throws Exception when the store cannot answer
      */
     fun checkAndRecord(jti: String, window: Duration): Boolean
 }

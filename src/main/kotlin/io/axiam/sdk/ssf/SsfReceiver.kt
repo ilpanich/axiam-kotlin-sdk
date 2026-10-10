@@ -100,7 +100,8 @@ class SsfReceiver internal constructor(
     private var jwksUrl: HttpUrl? = null
     private var jwks: JWKSet? = null
     private var jwksFetchedNanos: Long = 0L
-    private var lastForcedRefetchNanos: Long? = null
+    /** When the last counted fetch started: a forced refetch, or a fetch that failed (P6). */
+    private var lastCountedFetchNanos: Long? = null
 
     init {
         if (replayWindow < MIN_REPLAY_WINDOW) {
@@ -145,8 +146,9 @@ class SsfReceiver internal constructor(
      * @param set the compact SET
      * @return the verified event
      * @throws SetVerificationError when the SET is refused
-     * @throws NetworkError when the JWKS could not be fetched — which is not a
-     *   verdict on the SET
+     * @throws NetworkError when the JWKS could not be fetched, or the
+     *   [ReplayStore] could not answer (it threw) — neither is a verdict on the
+     *   SET, which stays unjudged and unrecorded (CONTRACT.md §34.2 P3, P4)
      */
     suspend fun verifySet(set: String): SecurityEvent = verify(set, null)
 
@@ -168,7 +170,7 @@ class SsfReceiver internal constructor(
      *
      * **A SET is never recorded without being returned** (CONTRACT.md §34.2
      * P1). A JWKS or discovery fetch that fails, or a [ReplayStore] that
-     * throws, is not a verdict on the SET being judged: that SET and every
+     * throws (it cannot answer — P4), is not a verdict on the SET being judged: that SET and every
      * later one in the batch are left **unjudged** — in neither `events` nor
      * `refused`, their `jti`s not recorded — so you neither acknowledge nor
      * refuse them and the transmitter offers them again. When the batch had
@@ -180,9 +182,8 @@ class SsfReceiver internal constructor(
      * @param options what to send
      * @return the verified events and the refused SETs, apart, and any SETs
      *   left unjudged
-     * @throws NetworkError when a key fetch failed before any SET of the batch
-     *   was accepted (a throwing [ReplayStore]'s own exception is raised the
-     *   same way)
+     * @throws NetworkError when a key fetch failed, or the [ReplayStore] could
+     *   not answer, before any SET of the batch was accepted
      * @throws AuthError locally, without a request, when no access-token
      *   provider was configured
      */
@@ -316,9 +317,22 @@ class SsfReceiver internal constructor(
         }
         val (eventType, event) = events.entries.first()
         // 9.
-        if (!replayStore.checkAndRecord(jti, replayWindow)) {
-            throw refuse(SetFailureReason.REPLAYED, "the jti was already accepted")
+        val isNew = try {
+            replayStore.checkAndRecord(jti, replayWindow)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // §34.2 P3/P4: a store that cannot answer gives NO verdict. It is
+            // never read as `replayed` (P2 would then acknowledge a SET that
+            // was never processed) and never as accepted: the §2 type, no
+            // reason code, the jti unrecorded.
+            throw NetworkError(
+                "ssf.verify_set: the replay store could not answer (${e.javaClass.simpleName}); " +
+                    "the SET is left unjudged, neither accepted nor refused (CONTRACT.md §34.2 P4)",
+                e,
+            )
         }
+        if (!isNew) throw refuse(SetFailureReason.REPLAYED, "the jti was already accepted")
         return SecurityEvent(
             jti = jti,
             iat = iat,
@@ -340,18 +354,54 @@ class SsfReceiver internal constructor(
      * one, so a key the transmitter removed stops verifying within that
      * lifetime even if no unknown `kid` ever arrives.
      *
+     * The once-a-minute limit counts every refetch and every **failed** fetch —
+     * a failed fill included (CONTRACT.md §34.2 P6) — and not a successful
+     * fill, which is not a refetch.
+     *
      * A fetch failure is a [NetworkError], never `null`: an unreachable JWKS is
      * not a verdict on the SET.
      */
     private suspend fun keyFor(kid: String): OctetKeyPair? = keyLock.withLock {
         val current = jwks?.takeIf { nanoTime() - jwksFetchedNanos < JWKS_CACHE_LIFETIME.toNanos() }
-        val cached = current ?: store(fetchJwks())
+        val cached = current ?: fill()
         find(cached, kid)?.let { return@withLock it }
         val now = nanoTime()
-        val last = lastForcedRefetchNanos
-        if (last != null && now - last < FORCED_REFETCH_INTERVAL.toNanos()) return@withLock null
-        lastForcedRefetchNanos = now
+        if (withinRefetchLimit(now)) return@withLock null
+        lastCountedFetchNanos = now
         find(store(fetchJwks()), kid)
+    }
+
+    /**
+     * Fills an empty or expired cache (CONTRACT.md §34.2 P6, contract 1.60).
+     *
+     * A fill is not "the refetch" of step 4: one that **succeeds** is not
+     * counted, so an unknown `kid` right after it is refetched once. One that
+     * **fails** is counted, so a JWKS outage is not one fetch per SET: within
+     * the minute after it the next SET makes no fetch and is left unjudged — a
+     * [NetworkError], not a verdict.
+     */
+    private suspend fun fill(): JWKSet {
+        val now = nanoTime()
+        if (withinRefetchLimit(now)) {
+            throw NetworkError(
+                "ssf.jwks: the last JWKS fetch failed less than a minute ago and none is made " +
+                    "within the minute (CONTRACT.md §32.7 step 4); this SET is left unjudged",
+            )
+        }
+        return try {
+            store(fetchJwks())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            lastCountedFetchNanos = now
+            throw e
+        }
+    }
+
+    /** Whether a counted fetch (a refetch, or a failed fetch of any kind) was made under a minute ago. */
+    private fun withinRefetchLimit(now: Long): Boolean {
+        val last = lastCountedFetchNanos ?: return false
+        return now - last < FORCED_REFETCH_INTERVAL.toNanos()
     }
 
     /** Caches [fresh] and starts its lifetime. */

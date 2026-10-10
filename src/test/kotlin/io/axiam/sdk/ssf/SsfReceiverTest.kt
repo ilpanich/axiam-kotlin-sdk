@@ -142,8 +142,12 @@ class SsfReceiverTest {
     /** A [ReplayStore] the test can read back, failing on the jtis in [failOn]. */
     private class RecordingStore(private val failOn: Set<String> = emptySet()) : ReplayStore {
         val recorded: MutableSet<String> = Collections.synchronizedSet(mutableSetOf())
+
+        /** While set, the store cannot answer for any jti (its backend is down). */
+        @Volatile
+        var down = false
         override fun checkAndRecord(jti: String, window: Duration): Boolean {
-            if (jti in failOn) throw IllegalStateException("the replay store cannot answer")
+            if (down || jti in failOn) throw IllegalStateException("the replay store cannot answer")
             return recorded.add(jti)
         }
     }
@@ -474,6 +478,122 @@ class SsfReceiverTest {
         assertEquals(listOf(jtiOf(first)), result.events.map { it.jti })
         assertEquals(listOf(jtiOf(second), jtiOf(third)), result.unjudged)
         assertEquals(setOf(jtiOf(first)), store.recorded.toSet())
+    }
+
+    /**
+     * §32.8 helper test 6, the store-failure case (contract 1.60, §34.2 P4 / B1):
+     * a store that cannot answer gives NO verdict. `verify_set` raises the §2 type
+     * with no reason code — never `replayed`, never accepted — and records nothing,
+     * so the SET, offered again once the store is back, is accepted and not
+     * mistaken for a replay.
+     */
+    @Test
+    fun `test 6 - a store that cannot answer gives verifySet no verdict and is never read as replayed`() = runBlocking {
+        val k = key()
+        jwksKeys = listOf(k)
+        val store = RecordingStore()
+        val r = receiverWith(store)
+        val set = signSet(k, claims())
+
+        store.down = true
+        val e = assertThrows<NetworkError> { runBlocking { r.verifySet(set) } }
+        assertFalse(e is SetVerificationError, "no reason code: it is not a verdict on the SET")
+        assertFalse(e is AuthError, "and it is not a refusal, least of all `replayed`")
+        assertTrue(store.recorded.isEmpty(), "nothing was recorded")
+
+        store.down = false
+        val accepted = r.verifySet(set)
+        assertEquals(setOf(accepted.jti), store.recorded.toSet(), "once the store answers the SET is new")
+        assertEquals(SetFailureReason.REPLAYED, reason(r, set), "and only now a second sighting is a replay")
+    }
+
+    /** The same case through `poll`: the SET is in neither list, unrecorded, and not acknowledged by `poll`. */
+    @Test
+    fun `test 6 - poll returns a SET whose store cannot answer in neither events nor refused`() = runBlocking {
+        val k = key()
+        jwksKeys = listOf(k)
+        val first = claims()
+        val second = claims()
+        val reply = buildJsonObject {
+            put("sets", buildJsonObject {
+                put(jtiOf(first), signSet(k, first))
+                put(jtiOf(second), signSet(k, second))
+            })
+        }.toString()
+        pollAnswer = { json(200, reply) }
+        val store = RecordingStore(failOn = setOf(jtiOf(second)))
+        val result = receiverWith(store).poll("s-1")
+        assertEquals(listOf(jtiOf(first)), result.events.map { it.jti })
+        assertTrue(result.refused.isEmpty(), "unjudged, not refused (and above all not `replayed`)")
+        assertEquals(listOf(jtiOf(second)), result.unjudged)
+        assertFalse(jtiOf(second) in store.recorded, "its jti is not recorded")
+        // poll acknowledges nothing itself: the request it sent carries no `ack`.
+        assertFalse("ack" in Json.parseToJsonElement(polls.last().body.readUtf8()).jsonObject)
+
+        // With nothing judged before the failure the failure is raised, never returned as a refusal.
+        store.down = true
+        assertThrows<NetworkError> { runBlocking { receiverWith(store).poll("s-1") } }
+        assertEquals(setOf(jtiOf(first)), store.recorded.toSet())
+    }
+
+    /**
+     * §32.8 helper test 7 (contract 1.60, §34.2 P6 / A3): a fill that fails counts toward the
+     * once-a-minute limit, so the next SET within the minute makes no fetch and is left
+     * unjudged; a minute later a fetch is made again. A fill that succeeds is not counted.
+     */
+    @Test
+    fun `test 7 - a failed cold-cache fill counts toward the once-a-minute limit`() = runBlocking {
+        val k = key()
+        jwksKeys = listOf(k)
+        jwksFailAfter = 0 // the JWKS is down
+        var now = 0L
+        val r = SsfReceiver(
+            client(),
+            SsfReceiverConfig(issuer, audience, SsfKeySource.JwksUri(server.url("/oauth2/jwks").toString())),
+            nanoTime = { now },
+        )
+        val set = signSet(k, claims())
+
+        val first = assertThrows<NetworkError> { runBlocking { r.verifySet(set) } }
+        assertFalse(first is SetVerificationError, "a failed fill is no verdict")
+        assertEquals(1, jwksHits.get(), "the cold fill was attempted")
+
+        now += Duration.ofSeconds(30).toNanos()
+        val second = assertThrows<NetworkError> { runBlocking { r.verifySet(signSet(k, claims())) } }
+        assertFalse(second is SetVerificationError, "a second SET within the minute is left unjudged")
+        assertEquals(1, jwksHits.get(), "and makes no fetch")
+
+        // A SET refused before step 4 is still a verdict: the limit gates only the key fetch.
+        assertEquals(SetFailureReason.INVALID_TYPE, reason(r, sign(k, setHeader(k, typ = "JWT"), claims())))
+        assertEquals(1, jwksHits.get())
+
+        // The JWKS recovers; a minute after the failed fill the next SET fetches again.
+        jwksFailAfter = null
+        now += Duration.ofSeconds(31).toNanos()
+        r.verifySet(signSet(k, claims()))
+        assertEquals(2, jwksHits.get(), "the limit is a minute, not forever")
+
+        // A fill that succeeded is not a refetch: an unknown kid right after it is refetched once.
+        assertEquals(SetFailureReason.INVALID_KEY, reason(r, signSet(key(), claims())))
+        assertEquals(3, jwksHits.get(), "exactly one refetch after the successful fill")
+    }
+
+    /** The same through `poll`: a SET after a failed fill, inside the minute, is left unjudged without a fetch. */
+    @Test
+    fun `test 7 - a failed fill leaves the next batch unjudged without a fetch`() = runBlocking {
+        val k = key()
+        jwksKeys = listOf(k)
+        jwksFailAfter = 0
+        val c = claims()
+        pollAnswer = {
+            json(200, buildJsonObject { put("sets", buildJsonObject { put(jtiOf(c), signSet(k, c)) }) }.toString())
+        }
+        val store = RecordingStore()
+        val r = receiverWith(store)
+        assertThrows<NetworkError> { runBlocking { r.poll("s-1") } }
+        assertThrows<NetworkError> { runBlocking { r.poll("s-1") } }
+        assertEquals(1, jwksHits.get(), "the second poll, inside the minute, made no JWKS fetch")
+        assertTrue(store.recorded.isEmpty())
     }
 
     @Test
