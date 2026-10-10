@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 It is a coroutine-first, plain-JVM client (OkHttp, kotlinx.serialization; Kotlin 2.1.0 and JVM 17
 minimum) for AXIAM's **REST** surface, with an optional Ktor route guard, plus the §22 reactor
 runtime over **AMQP** (`amqps://` only). It ships no gRPC transport. It conforms to **contract
-1.60** — vendored byte for byte from `axiam` `3ed6547` — for §1–§7 (with §6.1 mTLS; §1.1's
+1.60** — vendored byte for byte from `axiam` `8df0e11` — for §1–§7 (with §6.1 mTLS; §1.1's
 `getUserInfo` and §1.1.1's `validateToken` / `introspectToken` are gRPC-only and declined), §9–§13
 and §12.7, §14, §15, §17, §19, §20, §21, §22, §23, §24, §25, §26, §27, §28 and §28.12, §29, §30,
 §31, §32 (with the §32.7 receiver) and §33 (with the §33.2 signed request form). The §27
@@ -109,7 +109,7 @@ Since `v1.0.0-beta17`:
 ### Changed
 
 - **Contract 1.60.** `CONTRACT.md`, `openapi.json`, `management-registry.json` and `proto/` are
-  re-vendored from `axiam` `3ed6547` and the §27 surface regenerated (190 operations, 28
+  re-vendored from `axiam` `8df0e11` and the §27 surface regenerated (190 operations, 28
   namespaces; the spec's new §35 `pki` route is excluded from the registry and has no SDK surface).
   The README states conformance at 1.60.
 - **A local refusal is a `ValidationError`** (§34.2 P12.2 (a), B5). Encoding a body that carries an
