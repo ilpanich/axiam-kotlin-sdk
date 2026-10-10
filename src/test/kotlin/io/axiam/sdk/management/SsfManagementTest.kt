@@ -157,26 +157,59 @@ class SsfManagementTest : ManagementTestBase() {
     }
 
     /**
-     * §32.2 "MUST NOT send one it does not know", on the request path
-     * (contract 1.59, §34.2 P12.2): a decoded value this SDK does not know is
-     * refused locally — never sent as `""` or left to the server — and
-     * rendering it for a log line does not fail.
+     * §32.2 "MUST NOT send one it does not know", on the request path (contract
+     * 1.59, §34.2 P12.2): a decoded enum value this SDK does not know is refused
+     * locally — never sent as `""` or left to the server — rendering it for a log
+     * line does not fail, and (contract 1.60, B5) the refusal is the SDK's
+     * [ValidationError], not a bare [NetworkError].
      */
     @Test
-    fun `a value this SDK does not know is refused before the request`() = runTest {
+    fun `a value this SDK does not know is refused before the request with a ValidationError`() = runTest {
         val id = UUID.randomUUID()
         val route = mount("PUT", "$streams/$id", 200, streamBody())
-        val odd = decode(
-            streamBody(status = "quarantined", allowed = "https://example.test/event-type/new"),
-        )
-        val unknownEvent = input(null).copy(eventsAllowed = odd.eventsAllowed)
+        val odd = decode(streamBody(status = "quarantined"))
         val unknownStatus = input(null).copy(status = odd.status)
-        for ((label, body) in listOf("event type" to unknownEvent, "status" to unknownStatus)) {
-            assertTrue(body.toString().isNotEmpty(), "$label: rendering never fails")
-            assertThrows<NetworkError> { runBlocking { client.ssf.updateStream(id, body) } }
-        }
+        assertTrue(unknownStatus.toString().isNotEmpty(), "rendering never fails")
+        val refused = assertThrows<ValidationError> { runBlocking { client.ssf.updateStream(id, unknownStatus) } }
+        assertEquals(
+            ValidationError::class.java,
+            refused.javaClass,
+            "B5: the local refusal is a ValidationError, not a bare NetworkError",
+        )
+        assertTrue(refused is NetworkError, "ValidationError is a NetworkError by subtype (§27.4 rule 7)")
         assertEquals(0, route.calls(), "an unknown value never reached the wire")
-        assertTrue(odd.toString().contains("https://example.test/event-type/new"), "the value is kept for reading")
+    }
+
+    /**
+     * §32.2 / §34.2 P12.2 (b), contract 1.60 B4: event types are strings, so an
+     * event-type URI read from the server that this SDK has never seen decodes with
+     * its value and goes back **unchanged** on `update_stream`, the server judging it.
+     */
+    @Test
+    fun `an unseen event-type URI read from the server round-trips through update_stream unchanged`() = runTest {
+        val id = UUID.randomUUID()
+        val unseen = "https://example.test/event-type/new"
+        val route = mount("PUT", "$streams/$id", 200, streamBody(allowed = unseen))
+        val read = decode(streamBody(allowed = unseen))
+        assertEquals(unseen, read.eventsAllowed[0].wire, "the value is kept for reading")
+        assertFalse(read.eventsAllowed[0].isKnown)
+
+        val stream = client.ssf.updateStream(id, input(null).copy(eventsAllowed = read.eventsAllowed))
+
+        assertEquals(1, route.calls())
+        assertEquals(
+            JsonArray(listOf(JsonPrimitive(unseen))),
+            route.last().json()["events_allowed"],
+            "the unseen URI is sent back exactly as read",
+        )
+        assertEquals(unseen, stream.eventsAllowed[0].wire)
+        // The same through the read-modify-write helper the contract recommends.
+        val again = read.toInput()
+        assertEquals(listOf(read.eventsAllowed[0]), again.eventsAllowed)
+        assertEquals(unseen, again.eventsAllowed[0].wire)
+        // A typed URI that is none of the six is a string too: sent as typed (the server judges it).
+        client.ssf.updateStream(id, input(null).copy(eventsAllowed = listOf(SsfEventType("urn:typed"))))
+        assertEquals(JsonArray(listOf(JsonPrimitive("urn:typed"))), route.last().json()["events_allowed"])
     }
 
     // -- 4. Pagination ------------------------------------------------------------------

@@ -1350,6 +1350,13 @@ internal class OidcSupport(
      * - **No default `actorToken`** (§15.2 rule 1). Leaving it `null` asks for
      *   *impersonation*; the SDK will not quietly reuse the client's own
      *   session token as the actor and turn that into a delegation.
+     * - **No actor token of its own** (rule 9, contract 1.60). The server accepts
+     *   only an `actorToken` issued to the exchanging client, so the usual one is
+     *   this same client's `client_credentials` token
+     *   (`loginClientCredentials().accessToken`); the caller obtains and passes it.
+     *   One issued to another client answers `400 invalid_request` (`actor_token
+     *   was not issued to the exchanging client`), which surfaces unchanged — not
+     *   retried, not rewritten into an impersonation, not repaired by substitution.
      * - **No retry or downgrade on `unauthorized_client`** (rule 2) — a
      *   registration fact an operator must fix.
      * - **No auto-narrowing on `invalid_scope`** (rule 3). The server refuses

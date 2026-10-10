@@ -450,6 +450,51 @@ class OidcTokenExchangeTest {
         )
     }
 
+    /**
+     * §15.6 (contract 1.60) and §15.2 rule 9: an `actor_token` that was not issued to the
+     * exchanging client is answered `400 invalid_request`. The SDK surfaces it as it surfaces
+     * every OAuth2 `invalid_request` (§15.3): unchanged, with exactly one request, no retry,
+     * no rewriting into an impersonation (rule 1) and no substitute actor token of its own.
+     */
+    @Test
+    fun `an actor token not issued to the exchanging client surfaces invalid_request unchanged with one request`(): Unit =
+        runBlocking {
+            val description = "actor_token was not issued to the exchanging client"
+            val calls = AtomicInteger(0)
+            dispatcher.on("/oauth2/token") {
+                calls.incrementAndGet()
+                okhttp3.mockwebserver.MockResponse()
+                    .setResponseCode(400)
+                    .addHeader("Content-Type", "application/json")
+                    .setBody(OidcTestKit.oauth2ErrorJson("invalid_request", description))
+            }
+
+            val error = assertThrows(OAuthProtocolError::class.java) {
+                runBlocking {
+                    confidentialClient().tokenExchange(
+                        TokenExchangeParams(
+                            subjectToken = Sensitive.of(subjectToken),
+                            subjectTokenType = OidcSupport.ACCESS_TOKEN_TYPE,
+                            actorToken = Sensitive.of(actorToken),
+                            scopes = listOf("orders:read"),
+                            tenantId = tenantId,
+                        ),
+                    )
+                }
+            }
+
+            assertEquals("invalid_request", error.error)
+            assertEquals(description, error.errorDescription, "surfaced unchanged")
+            assertEquals(1, calls.get(), "exactly one request: not retried, not re-sent as an impersonation")
+            val body = decodedTokenBody()
+            assertTrue(
+                body.contains("actor_token=$actorToken"),
+                "the request is sent as the caller wrote it, with the caller's actor token",
+            )
+            assertTrue(body.contains("actor_token_type=urn:ietf:params:oauth:token-type:access_token"))
+            assertEquals(1, Regex("actor_token=").findAll(body).count(), "no substitute actor token was added")
+        }
+
     @Test
     fun `a refused subject_token_type is never retried as another`(): Unit = runBlocking {
         // A refresh token is a re-authentication credential and an ID token is

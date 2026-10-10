@@ -133,6 +133,11 @@ class TenantsApi internal constructor(
     }
 
     /**
+     * #523 (D-4): the tenant is tombstoned and its sessions, refresh tokens, certificates and
+     * signing CAs are revoked before the `204` (R1W1-01: the certificates go on their issuers'
+     * revocation lists and stay there until they expire); its data is purged afterwards by the
+     * cleanup job's `tenant_purge` sweep, on the cleanup interval.
+     *
      * Issues `DELETE /api/v1/organizations/{org_id}/tenants/{tenant_id}`.
      *
      * Not retried: §27.4 rule 8 makes every write on this surface single-shot, including the ones

@@ -22,6 +22,8 @@ import kotlinx.serialization.Serializable
  * @property recipientEmails the server's recipient_emails field
  * @property tenantId the server's tenant_id field
  * @property updatedAt the server's updated_at field
+ * @property windowMinutes Minutes in which one event type mails each recipient at most once;
+ *     further events are counted and reported by the next mail (#551).
  */
 @Serializable
 data class NotificationRuleResponse(
@@ -34,4 +36,5 @@ data class NotificationRuleResponse(
     @SerialName("recipient_emails") val recipientEmails: List<String>,
     @SerialName("tenant_id") val tenantId: @Serializable(with = UuidSerializer::class) UUID,
     @SerialName("updated_at") val updatedAt: @Serializable(with = InstantSerializer::class) Instant,
+    @SerialName("window_minutes") val windowMinutes: Int,
 )

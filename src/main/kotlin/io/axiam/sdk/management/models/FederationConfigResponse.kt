@@ -14,6 +14,10 @@ import kotlinx.serialization.json.JsonElement
 /**
  * Federation config response -- omits client_secret.
  *
+ * @property allowSha1Signatures SAML only: whether IdP responses signed with SHA-1 are
+ *     accepted (default `false`; #531). A server that omits this (older than 1.0.0) means `false`,
+ *     which is this property's default rather than a decode failure on the whole response
+ *     (CONTRACT §27.15 note 6).
  * @property allowTenantInheritance Whether tenants of this organization may inherit this
  *     provider.
  * @property allowedAlgorithms Accepted signing algorithms. Returned for OIDC and SAML;
@@ -34,6 +38,8 @@ import kotlinx.serialization.json.JsonElement
  *     uses it and `button_icon` is refused; when false the button reads "Sign in with <provider>"
  *     and may carry a custom icon.
  * @property id the server's id field
+ * @property idpMetadataSigningCertPem SAML only: the certificate the IdP's metadata must be
+ *     signed with (#530); `null` when the metadata is not signature-checked.
  * @property metadataUrl the server's metadata_url field
  * @property mintsClientSecret Whether AXIAM mints this provider's client secret itself, per
  *     exchange, rather than sending a stored one. True only for an Apple config with both
@@ -55,6 +61,7 @@ import kotlinx.serialization.json.JsonElement
  */
 @Serializable
 data class FederationConfigResponse(
+    @SerialName("allow_sha1_signatures") val allowSha1Signatures: Boolean = false,
     @SerialName("allow_tenant_inheritance") val allowTenantInheritance: Boolean,
     @SerialName("allowed_algorithms") val allowedAlgorithms: List<String>,
     @SerialName("allowed_issuer_tenants") val allowedIssuerTenants: List<String>,
@@ -69,6 +76,7 @@ data class FederationConfigResponse(
     @SerialName("enabled") val enabled: Boolean,
     @SerialName("has_bundled_mark") val hasBundledMark: Boolean,
     @SerialName("id") val id: @Serializable(with = UuidSerializer::class) UUID,
+    @SerialName("idp_metadata_signing_cert_pem") val idpMetadataSigningCertPem: String? = null,
     @SerialName("metadata_url") val metadataUrl: String? = null,
     @SerialName("mints_client_secret") val mintsClientSecret: Boolean,
     @SerialName("pkce_required") val pkceRequired: Boolean,

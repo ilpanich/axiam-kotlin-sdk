@@ -4,6 +4,7 @@
 package io.axiam.sdk.management.models
 
 import io.axiam.sdk.Sensitive
+import io.axiam.sdk.management.JsonNullable
 import kotlinx.serialization.Contextual
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -17,53 +18,83 @@ import kotlinx.serialization.json.JsonElement
  * the properties you mean to change is the whole API — there is no builder because Kotlin does not
  * need one, and no way to accidentally send a field you did not name.
  *
+ * @property allowSha1Signatures SAML only: accept IdP responses signed with SHA-1. Refused on
+ *     a non-SAML config; turning it on is audited (`federation.sha1_signatures_allowed`).
  * @property allowTenantInheritance Whether tenants may inherit this organization-level
  *     provider.
  * @property allowedAlgorithms Accepted signature algorithms (CQ-B40/REQ-14 AC-5).
  * @property allowedIssuerTenants Accepted external IdP tenants for a templated issuer.
  *     Replaced wholesale.
- * @property appleKeyId Apple Key ID. `Some(None)` clears it.
- * @property appleTeamId Apple Team ID. `Some(None)` clears it.
+ * @property appleKeyId Apple Key ID. Explicit `null` clears it. -- NULL IS NOT ABSENT (§27.4
+ *     rule 5): `JsonNullable.Absent` (the default) is not sent and was not received,
+ *     `JsonNullable.Null` is an explicit `null`, `JsonNullable.Value(x)` carries x.
+ * @property appleTeamId Apple Team ID. Explicit `null` clears it. -- NULL IS NOT ABSENT (§27.4
+ *     rule 5): `JsonNullable.Absent` (the default) is not sent and was not received,
+ *     `JsonNullable.Null` is an explicit `null`, `JsonNullable.Value(x)` carries x.
  * @property attributeMap the server's attribute_map field
- * @property authorizationEndpoint OAuth2-variant authorization endpoint. `Some(None)` clears
- *     it.
- * @property buttonIcon Sign-in-button icon for a generic provider. `Some(None)` clears it.
+ * @property authorizationEndpoint OAuth2-variant authorization endpoint. Explicit `null`
+ *     clears it. -- NULL IS NOT ABSENT (§27.4 rule 5): `JsonNullable.Absent` (the default) is not
+ *     sent and was not received, `JsonNullable.Null` is an explicit `null`,
+ *     `JsonNullable.Value(x)` carries x.
+ * @property buttonIcon Sign-in-button icon for a generic provider. Explicit `null` clears it.
+ *     -- NULL IS NOT ABSENT (§27.4 rule 5): `JsonNullable.Absent` (the default) is not sent and
+ *     was not received, `JsonNullable.Null` is an explicit `null`, `JsonNullable.Value(x)` carries
+ *     x.
  * @property clientId the server's client_id field
  * @property clientSecret the server's client_secret field -- SECRET: redacted from toString
  *     and from every rendering except the one request body it is sent in
  * @property enabled the server's enabled field
+ * @property idpMetadataSigningCertPem SAML only: the IdP metadata signing certificate (#530).
+ *     Explicit `null` clears it; omitted leaves it. Clearing it is audited
+ *     (`federation.metadata_signing_cert_cleared`), and so is replacing it with a different
+ *     certificate (`federation.metadata_signing_cert_changed`). -- NULL IS NOT ABSENT (§27.4 rule
+ *     5): `JsonNullable.Absent` (the default) is not sent and was not received,
+ *     `JsonNullable.Null` is an explicit `null`, `JsonNullable.Value(x)` carries x.
  * @property idpSigningCertPem PEM-encoded X.509 certificate for verifying SAML assertions
- *     (CQ-B40/REQ-14 AC-5). `Some(None)` clears the stored cert.
- * @property metadataUrl the server's metadata_url field
+ *     (CQ-B40/REQ-14 AC-5). Explicit `null` clears the stored cert; omitted leaves it. -- NULL IS
+ *     NOT ABSENT (§27.4 rule 5): `JsonNullable.Absent` (the default) is not sent and was not
+ *     received, `JsonNullable.Null` is an explicit `null`, `JsonNullable.Value(x)` carries x.
+ * @property metadataUrl OIDC discovery or SAML metadata URL. Explicit `null` clears it;
+ *     omitted leaves it. -- NULL IS NOT ABSENT (§27.4 rule 5): `JsonNullable.Absent` (the default)
+ *     is not sent and was not received, `JsonNullable.Null` is an explicit `null`,
+ *     `JsonNullable.Value(x)` carries x.
  * @property provider the server's provider field
- * @property providerSlug Operator-chosen identifier for a `generic_*` kind. `Some(None)`
- *     clears it.
+ * @property providerSlug Operator-chosen identifier for a `generic_*` kind. Explicit `null`
+ *     clears it. -- NULL IS NOT ABSENT (§27.4 rule 5): `JsonNullable.Absent` (the default) is not
+ *     sent and was not received, `JsonNullable.Null` is an explicit `null`,
+ *     `JsonNullable.Value(x)` carries x.
  * @property requirePkce Send PKCE on the authorization request.
  * @property scopes Scopes to request. Replaced wholesale; empty restores the per-kind default.
- * @property tokenEndpoint OAuth2-variant token endpoint. `Some(None)` clears it.
+ * @property tokenEndpoint OAuth2-variant token endpoint. Explicit `null` clears it. -- NULL IS
+ *     NOT ABSENT (§27.4 rule 5): `JsonNullable.Absent` (the default) is not sent and was not
+ *     received, `JsonNullable.Null` is an explicit `null`, `JsonNullable.Value(x)` carries x.
  * @property tokenExchange the server's token_exchange field
- * @property userinfoEndpoint OAuth2-variant userinfo endpoint. `Some(None)` clears it.
+ * @property userinfoEndpoint OAuth2-variant userinfo endpoint. Explicit `null` clears it. --
+ *     NULL IS NOT ABSENT (§27.4 rule 5): `JsonNullable.Absent` (the default) is not sent and was
+ *     not received, `JsonNullable.Null` is an explicit `null`, `JsonNullable.Value(x)` carries x.
  */
 @Serializable
 data class UpdateFederationConfigRequest(
+    @SerialName("allow_sha1_signatures") val allowSha1Signatures: Boolean? = null,
     @SerialName("allow_tenant_inheritance") val allowTenantInheritance: Boolean? = null,
     @SerialName("allowed_algorithms") val allowedAlgorithms: List<String>? = null,
     @SerialName("allowed_issuer_tenants") val allowedIssuerTenants: List<String>? = null,
-    @SerialName("apple_key_id") val appleKeyId: String? = null,
-    @SerialName("apple_team_id") val appleTeamId: String? = null,
+    @SerialName("apple_key_id") val appleKeyId: JsonNullable<String> = JsonNullable.Absent,
+    @SerialName("apple_team_id") val appleTeamId: JsonNullable<String> = JsonNullable.Absent,
     @SerialName("attribute_map") val attributeMap: JsonElement? = null,
-    @SerialName("authorization_endpoint") val authorizationEndpoint: String? = null,
-    @SerialName("button_icon") val buttonIcon: String? = null,
+    @SerialName("authorization_endpoint") val authorizationEndpoint: JsonNullable<String> = JsonNullable.Absent,
+    @SerialName("button_icon") val buttonIcon: JsonNullable<String> = JsonNullable.Absent,
     @SerialName("client_id") val clientId: String? = null,
     @SerialName("client_secret") val clientSecret: @Contextual Sensitive<String>? = null,
     @SerialName("enabled") val enabled: Boolean? = null,
-    @SerialName("idp_signing_cert_pem") val idpSigningCertPem: String? = null,
-    @SerialName("metadata_url") val metadataUrl: String? = null,
+    @SerialName("idp_metadata_signing_cert_pem") val idpMetadataSigningCertPem: JsonNullable<String> = JsonNullable.Absent,
+    @SerialName("idp_signing_cert_pem") val idpSigningCertPem: JsonNullable<String> = JsonNullable.Absent,
+    @SerialName("metadata_url") val metadataUrl: JsonNullable<String> = JsonNullable.Absent,
     @SerialName("provider") val provider: String? = null,
-    @SerialName("provider_slug") val providerSlug: String? = null,
+    @SerialName("provider_slug") val providerSlug: JsonNullable<String> = JsonNullable.Absent,
     @SerialName("require_pkce") val requirePkce: Boolean? = null,
     @SerialName("scopes") val scopes: List<String>? = null,
-    @SerialName("token_endpoint") val tokenEndpoint: String? = null,
+    @SerialName("token_endpoint") val tokenEndpoint: JsonNullable<String> = JsonNullable.Absent,
     @SerialName("token_exchange") val tokenExchange: TokenExchangeTrustRequest? = null,
-    @SerialName("userinfo_endpoint") val userinfoEndpoint: String? = null,
+    @SerialName("userinfo_endpoint") val userinfoEndpoint: JsonNullable<String> = JsonNullable.Absent,
 )

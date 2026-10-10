@@ -743,7 +743,14 @@ data class DeviceLoginParams(
  *   by name, and the SDK will not retry a refusal as a different type
  * @property actorToken the acting party, when this is a **delegation** (§15.2
  *   rule 1). Its absence selects **impersonation** — a different operation with
- *   different risk. The SDK never fills this in for you
+ *   different risk. The SDK never fills this in for you. The server accepts
+ *   only an actor token **issued to the exchanging client** (§15.2 rule 9,
+ *   contract 1.60): obtain it with the same client's `client_credentials` grant
+ *   — `client.loginClientCredentials().accessToken` — whose `sub`, and so the
+ *   issued token's `act.sub`, is that client's `client_id`. Any other actor token
+ *   (another client's, a console sign-in, a service account's) is refused
+ *   `400 invalid_request` (`actor_token was not issued to the exchanging
+ *   client`), which surfaces unchanged
  * @property scopes scopes to request; omitted from the body when `null` or empty
  * @property audience the service the issued token is for
  * @property resource RFC 8707 synonym of [audience]; the server refuses the

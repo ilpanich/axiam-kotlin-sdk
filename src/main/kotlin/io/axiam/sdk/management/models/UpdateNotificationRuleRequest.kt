@@ -19,6 +19,7 @@ import kotlinx.serialization.Serializable
  * @property events the server's events field
  * @property name the server's name field
  * @property recipientEmails the server's recipient_emails field
+ * @property windowMinutes The rule's notification window in minutes, 1 … 1440 (#551).
  */
 @Serializable
 data class UpdateNotificationRuleRequest(
@@ -27,4 +28,5 @@ data class UpdateNotificationRuleRequest(
     @SerialName("events") val events: List<NotificationEventType>? = null,
     @SerialName("name") val name: String? = null,
     @SerialName("recipient_emails") val recipientEmails: List<String>? = null,
+    @SerialName("window_minutes") val windowMinutes: Int? = null,
 )

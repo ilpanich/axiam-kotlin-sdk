@@ -124,6 +124,11 @@ class CertificatesApi internal constructor(
     }
 
     /**
+     * Under a CA whose key Vault's PKI engine holds, the certificate is revoked in Vault as well,
+     * so Vault's own revocation list names it (T-470). A Vault that refuses or cannot be reached
+     * does not undo or fail the revocation: it is recorded
+     * (`certificate.vault_revocation_pending`) and retried by the cleanup job.
+     *
      * Issues `POST /api/v1/certificates/{id}/revoke`.
      *
      * Not retried: §27.4 rule 8 makes every write on this surface single-shot, including the ones

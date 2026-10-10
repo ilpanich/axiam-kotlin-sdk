@@ -552,6 +552,10 @@ class ManagementSparseBodiesGeneratedTest {
     @Test
     fun `updateFederationConfigRequest sends only what was set`() {
         assertKeys(
+            UpdateFederationConfigRequest(allowSha1Signatures = true),
+            UpdateFederationConfigRequest.serializer(), "allow_sha1_signatures",
+        )
+        assertKeys(
             UpdateFederationConfigRequest(allowTenantInheritance = true),
             UpdateFederationConfigRequest.serializer(), "allow_tenant_inheritance",
         )
@@ -564,11 +568,11 @@ class ManagementSparseBodiesGeneratedTest {
             UpdateFederationConfigRequest.serializer(), "allowed_issuer_tenants",
         )
         assertKeys(
-            UpdateFederationConfigRequest(appleKeyId = "example"),
+            UpdateFederationConfigRequest(appleKeyId = JsonNullable.Value("example")),
             UpdateFederationConfigRequest.serializer(), "apple_key_id",
         )
         assertKeys(
-            UpdateFederationConfigRequest(appleTeamId = "example"),
+            UpdateFederationConfigRequest(appleTeamId = JsonNullable.Value("example")),
             UpdateFederationConfigRequest.serializer(), "apple_team_id",
         )
         assertKeys(
@@ -576,11 +580,11 @@ class ManagementSparseBodiesGeneratedTest {
             UpdateFederationConfigRequest.serializer(), "attribute_map",
         )
         assertKeys(
-            UpdateFederationConfigRequest(authorizationEndpoint = "example"),
+            UpdateFederationConfigRequest(authorizationEndpoint = JsonNullable.Value("example")),
             UpdateFederationConfigRequest.serializer(), "authorization_endpoint",
         )
         assertKeys(
-            UpdateFederationConfigRequest(buttonIcon = "example"),
+            UpdateFederationConfigRequest(buttonIcon = JsonNullable.Value("example")),
             UpdateFederationConfigRequest.serializer(), "button_icon",
         )
         assertKeys(
@@ -596,11 +600,15 @@ class ManagementSparseBodiesGeneratedTest {
             UpdateFederationConfigRequest.serializer(), "enabled",
         )
         assertKeys(
-            UpdateFederationConfigRequest(idpSigningCertPem = "example"),
+            UpdateFederationConfigRequest(idpMetadataSigningCertPem = JsonNullable.Value("example")),
+            UpdateFederationConfigRequest.serializer(), "idp_metadata_signing_cert_pem",
+        )
+        assertKeys(
+            UpdateFederationConfigRequest(idpSigningCertPem = JsonNullable.Value("example")),
             UpdateFederationConfigRequest.serializer(), "idp_signing_cert_pem",
         )
         assertKeys(
-            UpdateFederationConfigRequest(metadataUrl = "example"),
+            UpdateFederationConfigRequest(metadataUrl = JsonNullable.Value("example")),
             UpdateFederationConfigRequest.serializer(), "metadata_url",
         )
         assertKeys(
@@ -608,7 +616,7 @@ class ManagementSparseBodiesGeneratedTest {
             UpdateFederationConfigRequest.serializer(), "provider",
         )
         assertKeys(
-            UpdateFederationConfigRequest(providerSlug = "example"),
+            UpdateFederationConfigRequest(providerSlug = JsonNullable.Value("example")),
             UpdateFederationConfigRequest.serializer(), "provider_slug",
         )
         assertKeys(
@@ -620,7 +628,7 @@ class ManagementSparseBodiesGeneratedTest {
             UpdateFederationConfigRequest.serializer(), "scopes",
         )
         assertKeys(
-            UpdateFederationConfigRequest(tokenEndpoint = "example"),
+            UpdateFederationConfigRequest(tokenEndpoint = JsonNullable.Value("example")),
             UpdateFederationConfigRequest.serializer(), "token_endpoint",
         )
         assertKeys(
@@ -628,40 +636,53 @@ class ManagementSparseBodiesGeneratedTest {
             UpdateFederationConfigRequest.serializer(), "token_exchange",
         )
         assertKeys(
-            UpdateFederationConfigRequest(userinfoEndpoint = "example"),
+            UpdateFederationConfigRequest(userinfoEndpoint = JsonNullable.Value("example")),
             UpdateFederationConfigRequest.serializer(), "userinfo_endpoint",
         )
         assertKeys(
             UpdateFederationConfigRequest(
+                allowSha1Signatures = true,
                 allowTenantInheritance = true,
                 allowedAlgorithms = emptyList(),
                 allowedIssuerTenants = emptyList(),
-                appleKeyId = "example",
-                appleTeamId = "example",
+                appleKeyId = JsonNullable.Value("example"),
+                appleTeamId = JsonNullable.Value("example"),
                 attributeMap = kotlinx.serialization.json.JsonObject(emptyMap()),
-                authorizationEndpoint = "example",
-                buttonIcon = "example",
+                authorizationEndpoint = JsonNullable.Value("example"),
+                buttonIcon = JsonNullable.Value("example"),
                 clientId = "example",
                 clientSecret = Sensitive.of("example"),
                 enabled = true,
-                idpSigningCertPem = "example",
-                metadataUrl = "example",
+                idpMetadataSigningCertPem = JsonNullable.Value("example"),
+                idpSigningCertPem = JsonNullable.Value("example"),
+                metadataUrl = JsonNullable.Value("example"),
                 provider = "example",
-                providerSlug = "example",
+                providerSlug = JsonNullable.Value("example"),
                 requirePkce = true,
                 scopes = emptyList(),
-                tokenEndpoint = "example",
+                tokenEndpoint = JsonNullable.Value("example"),
                 tokenExchange = TokenExchangeTrustRequest(),
-                userinfoEndpoint = "example",
+                userinfoEndpoint = JsonNullable.Value("example"),
             ),
             UpdateFederationConfigRequest.serializer(),
-            "allow_tenant_inheritance", "allowed_algorithms", "allowed_issuer_tenants",
-            "apple_key_id", "apple_team_id", "attribute_map", "authorization_endpoint",
-            "button_icon", "client_id", "client_secret", "enabled", "idp_signing_cert_pem",
+            "allow_sha1_signatures", "allow_tenant_inheritance", "allowed_algorithms",
+            "allowed_issuer_tenants", "apple_key_id", "apple_team_id", "attribute_map",
+            "authorization_endpoint", "button_icon", "client_id", "client_secret",
+            "enabled", "idp_metadata_signing_cert_pem", "idp_signing_cert_pem",
             "metadata_url", "provider", "provider_slug", "require_pkce", "scopes",
             "token_endpoint", "token_exchange", "userinfo_endpoint",
         )
         assertKeys(UpdateFederationConfigRequest(), UpdateFederationConfigRequest.serializer())
+        assertExplicitNull(UpdateFederationConfigRequest(appleKeyId = JsonNullable.Null), UpdateFederationConfigRequest.serializer(), "apple_key_id")
+        assertExplicitNull(UpdateFederationConfigRequest(appleTeamId = JsonNullable.Null), UpdateFederationConfigRequest.serializer(), "apple_team_id")
+        assertExplicitNull(UpdateFederationConfigRequest(authorizationEndpoint = JsonNullable.Null), UpdateFederationConfigRequest.serializer(), "authorization_endpoint")
+        assertExplicitNull(UpdateFederationConfigRequest(buttonIcon = JsonNullable.Null), UpdateFederationConfigRequest.serializer(), "button_icon")
+        assertExplicitNull(UpdateFederationConfigRequest(idpMetadataSigningCertPem = JsonNullable.Null), UpdateFederationConfigRequest.serializer(), "idp_metadata_signing_cert_pem")
+        assertExplicitNull(UpdateFederationConfigRequest(idpSigningCertPem = JsonNullable.Null), UpdateFederationConfigRequest.serializer(), "idp_signing_cert_pem")
+        assertExplicitNull(UpdateFederationConfigRequest(metadataUrl = JsonNullable.Null), UpdateFederationConfigRequest.serializer(), "metadata_url")
+        assertExplicitNull(UpdateFederationConfigRequest(providerSlug = JsonNullable.Null), UpdateFederationConfigRequest.serializer(), "provider_slug")
+        assertExplicitNull(UpdateFederationConfigRequest(tokenEndpoint = JsonNullable.Null), UpdateFederationConfigRequest.serializer(), "token_endpoint")
+        assertExplicitNull(UpdateFederationConfigRequest(userinfoEndpoint = JsonNullable.Null), UpdateFederationConfigRequest.serializer(), "userinfo_endpoint")
     }
 
     /** §27.4 rule 5 for UpdateGroup: each property sets exactly its own key. */
@@ -715,15 +736,21 @@ class ManagementSparseBodiesGeneratedTest {
             UpdateNotificationRuleRequest.serializer(), "recipient_emails",
         )
         assertKeys(
+            UpdateNotificationRuleRequest(windowMinutes = 1),
+            UpdateNotificationRuleRequest.serializer(), "window_minutes",
+        )
+        assertKeys(
             UpdateNotificationRuleRequest(
                 description = "example",
                 enabled = true,
                 events = emptyList(),
                 name = "example",
                 recipientEmails = emptyList(),
+                windowMinutes = 1,
             ),
             UpdateNotificationRuleRequest.serializer(),
             "description", "enabled", "events", "name", "recipient_emails",
+            "window_minutes",
         )
         assertKeys(UpdateNotificationRuleRequest(), UpdateNotificationRuleRequest.serializer())
     }

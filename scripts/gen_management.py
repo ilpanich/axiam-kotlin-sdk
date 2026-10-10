@@ -73,11 +73,21 @@ OPEN_UNIONS = {"ScimTargetAuth", "ScimTargetScope"}
 # §29.8 test 8 asks the same of a *response*: `SamlIdpInfo`'s two credential
 # ids are null when the slot is empty, and that null must stay distinct from an
 # absent member, so a server that stopped sending the member is noticed.
+#
+# §27.15 note 8 (contract 1.60) names ten on `UpdateFederationConfigRequest`:
+# each is cleared by an explicit `null` and left unchanged when omitted. Its
+# other members (`provider`, `client_id`, the booleans, the lists, ...) cannot
+# be cleared -- the server reads their `null` as absent -- so they stay `T?`.
 EXPLICIT_NULL_FIELDS = {
     ("UpdateDirectoryConfig", "group_base_dn"),
     ("UpdateDirectoryConfig", "group_filter"),
     ("SamlIdpInfo", "active_credential_id"),
     ("SamlIdpInfo", "next_credential_id"),
+    *(("UpdateFederationConfigRequest", wire) for wire in (
+        "metadata_url", "idp_signing_cert_pem", "idp_metadata_signing_cert_pem",
+        "provider_slug", "authorization_endpoint", "token_endpoint",
+        "userinfo_endpoint", "apple_team_id", "apple_key_id", "button_icon",
+    )),
 }
 
 # Call-site documentation the contract makes an SDK repeat (§29.3, §30.3,
@@ -185,8 +195,11 @@ CALL_SITE_NOTES: dict[str, str] = {
         "`auth.type`, without `credential` in the same write is refused `400` and "
         "changes nothing. The SDK holds no credential to re-send. Every other member "
         "left out takes its default (`ScimTargetResponse.toInput()` turns a read into "
-        "the body). An update overtaken by another administrator's write is `409` "
-        "(§31.3 rule 4): reload, then retry yourself."
+        "the body, carrying the `updated_at` it read as `expected_updated_at`). An "
+        "update overtaken by another administrator's write is `409` (§31.3 rule 4): "
+        "reload, then retry yourself. `expected_updated_at` is sent exactly as set "
+        "and only when set; without it the write is conditional only on the version "
+        "the server reads during the request (contract 1.60)."
     ),
     "scim_targets.delete": (
         "**Deprovisions nothing downstream** (§31.3 rule 8): the users and groups "
@@ -781,7 +794,9 @@ def field_list(schema_name: str, secrets: set[str]) -> tuple[list[dict[str, Any]
 # constants, rather than as a Kotlin enum. CONTRACT §32.2: "An SDK SHOULD model
 # event types as strings with the six URIs as named constants" -- an enum maps
 # an event-type URI it has not seen to UNKNOWN and loses it (contract 1.59,
-# R-22). The value is kept for reading; only a known one is ever sent.
+# R-22). The value is kept and sent back unchanged: an unseen URI read from the
+# server round-trips through ``update_stream`` and the server judges it
+# (contract 1.60, B4 / §34.2 P12.2 (b)); a client-side list of URIs goes stale.
 OPEN_STRING_TYPES = {"SsfEventType"}
 
 
@@ -790,8 +805,9 @@ def emit_open_string(name: str, schema: Any) -> str:
 
     Decodes ANY string, keeping it in ``wire``; the spec's values are companion
     constants (named as :func:`emit_enum` names them, so call sites read the
-    same); encoding refuses a value outside them, locally, before any request
-    (CONTRACT §34.2 P12.2).
+    same); encoding writes any string as it is held -- an event-type URI is not a value
+    "this SDK does not know" in P12.2's sense, because a client-side list of URIs
+    goes stale and the server judges it (contract 1.60, B4).
     """
     type_name = pascal(name)
     text = schema.get("description") or f"The {type_name} values the server uses."
@@ -801,13 +817,14 @@ def emit_open_string(name: str, schema: Any) -> str:
                 f"constants and in [{type_name}.KNOWN] (CONTRACT §32.2). A value the spec does "
                 "not list decodes with its spelling intact -- read it from [wire] -- rather than "
                 "failing the response it arrived in or collapsing to a placeholder (CONTRACT "
-                "§27.11 rule 1). Only a known value is ever sent: writing any other is refused "
-                "locally, before any request (CONTRACT §34.2 P12.2). Rendering one (`toString`, "
+                "§27.11 rule 1). Every value is sent as the string the caller holds -- one this SDK has "
+                "never seen, read from the server, goes back unchanged on a write and the server "
+                "judges it (CONTRACT §32.2, §34.2 P12.2). Rendering one (`toString`, "
                 "which is the wire spelling) never fails.\n\n"
                 "@property wire the value exactly as the server spells it")
     body.append(f"@Serializable(with = {type_name}.Companion.Serializer::class)")
     body.append(f"class {type_name}(val wire: String) {{")
-    body.append(f"    /** Whether this is one of [KNOWN] -- the only values ever sent. */")
+    body.append(f"    /** Whether this is one of [KNOWN]; informational -- an unknown value is still sent unchanged. */")
     body.append("    val isKnown: Boolean")
     body.append("        get() = this in KNOWN")
     body.append("")
@@ -829,8 +846,8 @@ def emit_open_string(name: str, schema: Any) -> str:
     body.append("        )")
     body.append("")
     body.append("        /**")
-    body.append("         * Decodes every string, keeping its spelling, and refuses to encode a")
-    body.append("         * value outside [KNOWN].")
+    body.append("         * Decodes and encodes every string, keeping its spelling: a value outside")
+    body.append("         * [KNOWN] round-trips unchanged and the server judges it (CONTRACT §32.2).")
     body.append("         */")
     body.append(f"        internal object Serializer : KSerializer<{type_name}> {{")
     body.append("            override val descriptor: SerialDescriptor =")
@@ -838,12 +855,6 @@ def emit_open_string(name: str, schema: Any) -> str:
                 "PrimitiveKind.STRING)")
     body.append("")
     body.append(f"            override fun serialize(encoder: Encoder, value: {type_name}) {{")
-    body.append("                if (!value.isKnown) {")
-    body.append("                    throw SerializationException(")
-    body.append(f'                        "{type_name} \\"${{value.wire}}\\" is not one this SDK knows, so it is " +')
-    body.append('                            "never sent (CONTRACT §34.2 P12.2)",')
-    body.append("                    )")
-    body.append("                }")
     body.append("                encoder.encodeString(value.wire)")
     body.append("            }")
     body.append("")
@@ -935,6 +946,12 @@ def emit_enum(name: str, schema: Any) -> str:
 # left as a hard requirement -- rather than the schema's literal "required".
 DEFAULT_TRUE_FIELDS = {"inherit"}
 
+# The same shape with the opposite default, keyed by (schema, member) because
+# the default is the contract's, per member. §27.15 note 6 (contract 1.60):
+# `FederationConfigResponse.allow_sha1_signatures` is required in the export,
+# but a server older than 1.0.0 sends none, and its absence means `false`.
+DEFAULT_FALSE_FIELDS = {("FederationConfigResponse", "allow_sha1_signatures")}
+
 
 def emit_data_class(name: str, secrets: set[str], replacement: bool) -> str:
     """A ``@Serializable data class`` for an object schema."""
@@ -970,6 +987,10 @@ def emit_data_class(name: str, secrets: set[str], replacement: bool) -> str:
             doc += (" -- NULL IS NOT ABSENT (§27.4 rule 5): `JsonNullable.Absent` (the "
                     "default) is not sent and was not received, `JsonNullable.Null` is an "
                     "explicit `null`, `JsonNullable.Value(x)` carries x.")
+        if (name, f["wire"]) in DEFAULT_FALSE_FIELDS and f["required"]:
+            doc += (" A server that omits this (older than 1.0.0) means `false`, which is "
+                    "this property's default rather than a decode failure on the whole "
+                    "response (CONTRACT §27.15 note 6).")
         if f["wire"] in DEFAULT_TRUE_FIELDS and f["required"]:
             doc += (" A server that omits this (older than contract 1.51) means `true` -- "
                     "reaches descendants -- which is this property's default rather than a "
@@ -988,6 +1009,9 @@ def emit_data_class(name: str, secrets: set[str], replacement: bool) -> str:
             # §27.13 S-10 rule 3: required-on-the-wire, defaulted here -- see
             # DEFAULT_TRUE_FIELDS. Neither nullable nor a hard requirement.
             default, nullable = " = true", ""
+        elif (name, f["wire"]) in DEFAULT_FALSE_FIELDS and f["required"] and f["type"] == "Boolean":
+            # §27.15 note 6: absent from an older server's response is `false`.
+            default, nullable = " = false", ""
         elif f.get("explicit_null"):
             # EXPLICIT_NULL_FIELDS: absent is the default, and it is not null.
             default, nullable = " = JsonNullable.Absent", ""

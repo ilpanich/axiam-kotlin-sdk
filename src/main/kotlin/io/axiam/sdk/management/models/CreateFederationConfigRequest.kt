@@ -12,6 +12,10 @@ import kotlinx.serialization.json.JsonElement
 /**
  * The CreateFederationConfigRequest schema from the server's OpenAPI document.
  *
+ * @property allowSha1Signatures SAML only: accept IdP responses signed with SHA-1
+ *     (`rsa-sha1`). Default `false` — since 1.0.0 the SP verifier accepts only SHA-2 signatures.
+ *     The escape hatch for an IdP that cannot sign with SHA-2 yet; refused on a non-SAML config,
+ *     and audited (`federation.sha1_signatures_allowed`) when set to `true`.
  * @property allowTenantInheritance Whether tenants of this organization may inherit this
  *     provider. Only meaningful on a config in the organization-scope tenant.
  * @property allowedAlgorithms Accepted JWT signing algorithms (OIDC) or signature algorithms
@@ -33,6 +37,10 @@ import kotlinx.serialization.json.JsonElement
  * @property clientId OAuth2 client ID registered with the external IdP.
  * @property clientSecret OAuth2 client secret registered with the external IdP. -- SECRET:
  *     redacted from toString and from every rendering except the one request body it is sent in
+ * @property idpMetadataSigningCertPem SAML only: the PEM certificate the IdP signs its
+ *     metadata document with (#530). When set, the metadata must carry one SHA-2 signature on its
+ *     `EntityDescriptor` root that verifies against it, or no sign-in starts. Omitted: the
+ *     metadata is not signature-checked.
  * @property idpSigningCertPem PEM-encoded X.509 certificate for verifying SAML assertions or
  *     OIDC signatures (CQ-B40/REQ-14 AC-5). Required for SAML configs.
  * @property metadataUrl OIDC discovery URL or SAML metadata URL.
@@ -53,6 +61,7 @@ import kotlinx.serialization.json.JsonElement
  */
 @Serializable
 data class CreateFederationConfigRequest(
+    @SerialName("allow_sha1_signatures") val allowSha1Signatures: Boolean? = null,
     @SerialName("allow_tenant_inheritance") val allowTenantInheritance: Boolean? = null,
     @SerialName("allowed_algorithms") val allowedAlgorithms: List<String>? = null,
     @SerialName("allowed_issuer_tenants") val allowedIssuerTenants: List<String>? = null,
@@ -63,6 +72,7 @@ data class CreateFederationConfigRequest(
     @SerialName("button_icon") val buttonIcon: String? = null,
     @SerialName("client_id") val clientId: String,
     @SerialName("client_secret") val clientSecret: @Contextual Sensitive<String>,
+    @SerialName("idp_metadata_signing_cert_pem") val idpMetadataSigningCertPem: String? = null,
     @SerialName("idp_signing_cert_pem") val idpSigningCertPem: String? = null,
     @SerialName("metadata_url") val metadataUrl: String? = null,
     @SerialName("protocol") val protocol: String,

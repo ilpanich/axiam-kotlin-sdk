@@ -5,7 +5,6 @@ package io.axiam.sdk.management.models
 
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.SerializationException
 import kotlinx.serialization.descriptors.PrimitiveKind
 import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
 import kotlinx.serialization.descriptors.SerialDescriptor
@@ -19,15 +18,16 @@ import kotlinx.serialization.encoding.Encoder
  * A **string**, with the values this SDK's copy of the spec lists as named constants and in
  * [SsfEventType.KNOWN] (CONTRACT §32.2). A value the spec does not list decodes with its spelling
  * intact -- read it from [wire] -- rather than failing the response it arrived in or collapsing to
- * a placeholder (CONTRACT §27.11 rule 1). Only a known value is ever sent: writing any other is
- * refused locally, before any request (CONTRACT §34.2 P12.2). Rendering one (`toString`, which is
- * the wire spelling) never fails.
+ * a placeholder (CONTRACT §27.11 rule 1). Every value is sent as the string the caller holds --
+ * one this SDK has never seen, read from the server, goes back unchanged on a write and the server
+ * judges it (CONTRACT §32.2, §34.2 P12.2). Rendering one (`toString`, which is the wire spelling)
+ * never fails.
  *
  * @property wire the value exactly as the server spells it
  */
 @Serializable(with = SsfEventType.Companion.Serializer::class)
 class SsfEventType(val wire: String) {
-    /** Whether this is one of [KNOWN] -- the only values ever sent. */
+    /** Whether this is one of [KNOWN]; informational -- an unknown value is still sent unchanged. */
     val isKnown: Boolean
         get() = this in KNOWN
 
@@ -67,20 +67,14 @@ class SsfEventType(val wire: String) {
         )
 
         /**
-         * Decodes every string, keeping its spelling, and refuses to encode a
-         * value outside [KNOWN].
+         * Decodes and encodes every string, keeping its spelling: a value outside
+         * [KNOWN] round-trips unchanged and the server judges it (CONTRACT §32.2).
          */
         internal object Serializer : KSerializer<SsfEventType> {
             override val descriptor: SerialDescriptor =
                 PrimitiveSerialDescriptor("io.axiam.sdk.management.models.SsfEventType", PrimitiveKind.STRING)
 
             override fun serialize(encoder: Encoder, value: SsfEventType) {
-                if (!value.isKnown) {
-                    throw SerializationException(
-                        "SsfEventType \"${value.wire}\" is not one this SDK knows, so it is " +
-                            "never sent (CONTRACT §34.2 P12.2)",
-                    )
-                }
                 encoder.encodeString(value.wire)
             }
 

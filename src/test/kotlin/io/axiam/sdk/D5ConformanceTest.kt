@@ -387,6 +387,7 @@ class D5ConformanceTest {
                 is TelemetryEvent.Retry -> "retry"
                 is TelemetryEvent.Refresh -> "refresh"
                 is TelemetryEvent.ConfigClamped -> "clamped"
+                is TelemetryEvent.SsfUnjudged -> "ssf_unjudged"
             }
         }
         assertEquals(listOf("start", "end", "retry", "start", "end"), kinds)

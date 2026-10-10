@@ -114,4 +114,27 @@ class OidcRefreshTest {
         }
         assertEquals(false, request.body.readUtf8().contains("scope="))
     }
+
+    /**
+     * §12.1 (contract 1.60): a refresh may narrow `scope` — the server intersects the grant with
+     * the client's registration — so the token set's scope is the refresh response's, never the
+     * original grant's, and no ID token is expected once `openid` is gone.
+     */
+    @Test
+    fun `the refresh response's scope replaces the grant's`(): Unit = runBlocking {
+        val client = OidcTestKit.clientFor(server)
+        client.oidcDiscover()
+        dispatcher.onJson("/oauth2/token", 200, OidcTestKit.tokenResponseJson(scope = "profile"))
+        val narrowed = client.oidcRefresh(
+            OidcRefreshParams.of("rt", scope = "openid profile email", tenantId = "22222222-2222-2222-2222-222222222222"),
+        )
+        assertEquals("profile", narrowed.scope)
+        assertNull(narrowed.idClaims, "no openid: no ID token")
+
+        dispatcher.onJson("/oauth2/token", 200, OidcTestKit.tokenResponseJson())
+        val unstated = client.oidcRefresh(
+            OidcRefreshParams.of("rt", scope = "openid profile", tenantId = "22222222-2222-2222-2222-222222222222"),
+        )
+        assertNull(unstated.scope, "the requested scope is never substituted for the response's")
+    }
 }

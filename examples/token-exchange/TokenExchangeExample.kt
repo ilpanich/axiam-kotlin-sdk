@@ -44,12 +44,21 @@ object TokenExchangeExample {
                 // operation with different risk, which the server refuses
                 // unless this client holds that grant. The SDK will not pick
                 // for you (§15.2 rule 1).
+                //
+                // The actor token must have been issued to THIS client (rule 9,
+                // contract 1.60): the usual one is this same client's own
+                // client_credentials token, whose `sub` — and so the issued
+                // token's `act.sub` — is the gateway's client_id. The SDK does
+                // not fetch it for you; you ask for it, and you pass it. A token
+                // issued to another client is refused 400 invalid_request.
+                val actor = it.loginClientCredentials()
                 it.tokenExchange(
                     TokenExchangeParams(
                         subjectToken = Sensitive.of(userToken),
                         // Required (§15.1), no default: only you know what kind of
                         // token you are holding.
                         subjectTokenType = ACCESS_TOKEN_TYPE,
+                        actorToken = actor.accessToken,
                         scopes = listOf("orders:read"),
                         audience = "orders-service",
                         tenantId = tenantId,
@@ -59,6 +68,8 @@ object TokenExchangeExample {
                 // Each names something an operator must fix rather than
                 // something to retry.
                 when (e.error) {
+                    "invalid_request" ->
+                        println("Malformed — or the actor token was not issued to this client (rule 9).")
                     "unauthorized_client" ->
                         println("This client may not exchange, or may not impersonate — a registration fact.")
                     // Do NOT re-send with fewer scopes: the server refused
