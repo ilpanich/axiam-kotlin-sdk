@@ -14,6 +14,7 @@ import io.axiam.sdk.errors.NotFoundError
 import io.axiam.sdk.errors.ValidationError
 import io.axiam.sdk.internal.Retry
 import io.axiam.sdk.internal.Sessionless
+import io.axiam.sdk.telemetry.TelemetryEvent
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -150,7 +151,12 @@ class SsfReceiver internal constructor(
      *   [ReplayStore] could not answer (it threw) — neither is a verdict on the
      *   SET, which stays unjudged and unrecorded (CONTRACT.md §34.2 P3, P4)
      */
-    suspend fun verifySet(set: String): SecurityEvent = verify(set, null)
+    suspend fun verifySet(set: String): SecurityEvent = verify(set, null, Stage())
+
+    /** How far [verify] got: a failure before the replay store is a key fetch's (§19.1 `ssf_unjudged`). */
+    private class Stage {
+        var cause: TelemetryEvent.UnjudgedCause = TelemetryEvent.UnjudgedCause.KEY_FETCH
+    }
 
     /**
      * Polls the stream's RFC 8936 endpoint, `{base URL}/ssf/v1/poll/{streamId}`,
@@ -175,8 +181,9 @@ class SsfReceiver internal constructor(
      * `refused`, their `jti`s not recorded — so you neither acknowledge nor
      * refuse them and the transmitter offers them again. When the batch had
      * already accepted a SET, `poll` returns what it judged and lists the rest
-     * in [SsfPollResult.unjudged]; when it had accepted none, it raises the
-     * failure (a [NetworkError] for a fetch), having recorded nothing.
+     * in [SsfPollResult.unjudged], emitting a [TelemetryEvent.SsfUnjudged]
+     * (§19.1); when it had accepted none, it raises the failure (a
+     * [NetworkError] for a fetch), having recorded nothing.
      *
      * @param streamId the stream's id (path-escaped)
      * @param options what to send
@@ -232,8 +239,9 @@ class SsfReceiver internal constructor(
                 refused += RefusedSet(jti, SetFailureReason.MALFORMED)
                 continue
             }
+            val stage = Stage()
             try {
-                events += verify(compact, jti)
+                events += verify(compact, jti, stage)
             } catch (e: SetVerificationError) {
                 refused += RefusedSet(jti, e.failureReason)
             } catch (e: CancellationException) {
@@ -246,13 +254,19 @@ class SsfReceiver internal constructor(
                 // failure is raised (nothing is recorded); otherwise the
                 // accepted SETs are returned and the rest listed as unjudged.
                 if (events.isEmpty()) throw e
-                return SsfPollResult(events, moreAvailable, refused, sets.drop(index).map { it.key })
+                val unjudged = sets.drop(index).map { it.key }
+                // §19.1 (contract 1.60, SHOULD): a poll that returns leaving SETs
+                // unjudged says so — a count and a category, no jti, no SET.
+                client.telemetryForHelpers().emit(
+                    TelemetryEvent.SsfUnjudged("ssf.poll", unjudged.size, stage.cause),
+                )
+                return SsfPollResult(events, moreAvailable, refused, unjudged)
             }
         }
         return SsfPollResult(events, moreAvailable, refused)
     }
 
-    private suspend fun verify(set: String, expectedJti: String?): SecurityEvent {
+    private suspend fun verify(set: String, expectedJti: String?, stage: Stage): SecurityEvent {
         // 1.
         val parts = set.split('.')
         if (parts.size != 3 || decodeOrNull(parts[2]) == null) {
@@ -317,6 +331,7 @@ class SsfReceiver internal constructor(
         }
         val (eventType, event) = events.entries.first()
         // 9.
+        stage.cause = TelemetryEvent.UnjudgedCause.REPLAY_STORE
         val isNew = try {
             replayStore.checkAndRecord(jti, replayWindow)
         } catch (e: CancellationException) {

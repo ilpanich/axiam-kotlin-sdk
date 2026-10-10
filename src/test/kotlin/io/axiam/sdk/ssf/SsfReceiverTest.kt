@@ -13,6 +13,8 @@ import io.axiam.sdk.Sensitive
 import io.axiam.sdk.errors.AuthError
 import io.axiam.sdk.errors.NetworkError
 import io.axiam.sdk.errors.ValidationError
+import io.axiam.sdk.telemetry.TelemetryEvent
+import io.axiam.sdk.telemetry.TelemetryHook
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -152,10 +154,12 @@ class SsfReceiverTest {
         }
     }
 
-    private fun receiverWith(store: ReplayStore): SsfReceiver {
+    private fun receiverWith(store: ReplayStore, hook: TelemetryHook? = null): SsfReceiver {
         val token = "cc-" + UUID.randomUUID().toString().replace("-", "")
+        val builder = AxiamClient.builder(server.url("/").toString(), UUID.randomUUID().toString())
+        if (hook != null) builder.telemetryHook(hook)
         return SsfReceiver(
-            client(),
+            builder.build(),
             SsfReceiverConfig(
                 issuer,
                 audience,
@@ -351,6 +355,42 @@ class SsfReceiverTest {
         now += Duration.ofSeconds(2).toNanos()
         assertEquals(SetFailureReason.INVALID_KEY, reason(r, signSet(old, claims())))
         assertTrue(jwksHits.get() >= 2, "the expired cache was fetched again")
+        // P6 (contract 1.60): no later than 10 minutes after the fill that started it.
+        assertTrue(SsfReceiver.JWKS_CACHE_LIFETIME <= Duration.ofMinutes(10))
+    }
+
+    /**
+     * P6 (contract 1.60, §34.4 C-5): a failed refresh of an expired cache counts toward the
+     * once-a-minute limit like a failed fill, so the next SET within the minute makes no fetch
+     * and gets no verdict.
+     */
+    @Test
+    fun `a failed refresh of the expired cache counts toward the once-a-minute limit`() = runBlocking {
+        val k = key()
+        jwksKeys = listOf(k)
+        var now = 0L
+        val r = SsfReceiver(
+            client(),
+            SsfReceiverConfig(issuer, audience, SsfKeySource.JwksUri(server.url("/oauth2/jwks").toString())),
+            nanoTime = { now },
+        )
+        r.verifySet(signSet(k, claims()))
+        assertEquals(1, jwksHits.get(), "the fill")
+
+        jwksFailAfter = 1 // the refresh after expiry answers 503
+        now += SsfReceiver.JWKS_CACHE_LIFETIME.toNanos() + 1
+        val failed = assertThrows<NetworkError> { runBlocking { r.verifySet(signSet(k, claims())) } }
+        assertFalse(failed is SetVerificationError, "a failed refresh is no verdict")
+        assertEquals(2, jwksHits.get(), "the expired cache was refreshed")
+
+        now += Duration.ofSeconds(30).toNanos()
+        assertThrows<NetworkError> { runBlocking { r.verifySet(signSet(k, claims())) } }
+        assertEquals(2, jwksHits.get(), "inside the minute: no fetch")
+
+        jwksFailAfter = null
+        now += Duration.ofSeconds(31).toNanos()
+        r.verifySet(signSet(k, claims()))
+        assertEquals(3, jwksHits.get(), "a minute later the refresh is made again")
     }
 
     // -- 8 ---------------------------------------------------------------------------
@@ -458,6 +498,56 @@ class SsfReceiverTest {
         assertEquals(listOf(jtiOf(second)), result.unjudged)
         assertFalse(jtiOf(second) in store.recorded, "the unjudged SET is not recorded")
         assertEquals(setOf(jtiOf(first)), store.recorded.toSet())
+    }
+
+    /**
+     * §19.1 `ssf_unjudged` (contract 1.60, SHOULD; §34.4 C-4): a poll that returns leaving SETs
+     * unjudged emits one event with their count and the failure category — no jti, no SET.
+     */
+    @Test
+    fun `a poll that leaves SETs unjudged emits ssf_unjudged with the cause`() = runBlocking {
+        val k = key()
+        jwksKeys = listOf(k)
+        val sets = List(3) { claims() }
+        pollAnswer = {
+            json(200, buildJsonObject {
+                put("sets", buildJsonObject { for (c in sets) put(jtiOf(c), signSet(k, c)) })
+            }.toString())
+        }
+        val seen = mutableListOf<TelemetryEvent>()
+        val hook = TelemetryHook { seen += it }
+
+        receiverWith(RecordingStore(failOn = setOf(jtiOf(sets[1]))), hook).poll("s-1")
+        val storeDown = seen.filterIsInstance<TelemetryEvent.SsfUnjudged>()
+        assertEquals(listOf(TelemetryEvent.SsfUnjudged("ssf.poll", 2, TelemetryEvent.UnjudgedCause.REPLAY_STORE)), storeDown)
+        for (c in sets) assertFalse(jtiOf(c) in storeDown.single().toString(), "no jti in the event")
+
+        // The second SET names a key the JWKS lacks, and its refetch fails.
+        seen.clear()
+        jwksFailAfter = jwksHits.get() + 1 // the new receiver's cold fill succeeds, its refetch fails
+        val other = claims()
+        pollAnswer = {
+            json(200, buildJsonObject {
+                put("sets", buildJsonObject {
+                    put(jtiOf(sets[0]), signSet(k, sets[0]))
+                    put(jtiOf(other), signSet(key(), other))
+                })
+            }.toString())
+        }
+        receiverWith(RecordingStore(), hook).poll("s-1")
+        assertEquals(
+            listOf(TelemetryEvent.SsfUnjudged("ssf.poll", 1, TelemetryEvent.UnjudgedCause.KEY_FETCH)),
+            seen.filterIsInstance<TelemetryEvent.SsfUnjudged>(),
+        )
+
+        // A poll that judged every SET emits none.
+        seen.clear()
+        jwksFailAfter = null
+        pollAnswer = {
+            json(200, buildJsonObject { put("sets", buildJsonObject { put(jtiOf(other), signSet(k, other)) }) }.toString())
+        }
+        receiverWith(RecordingStore(), hook).poll("s-1")
+        assertTrue(seen.none { it is TelemetryEvent.SsfUnjudged })
     }
 
     @Test

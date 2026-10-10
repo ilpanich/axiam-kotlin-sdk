@@ -131,6 +131,33 @@ public sealed interface TelemetryEvent {
         val effective: String,
         val contractReference: String,
     ) : TelemetryEvent
+
+    /** What left a polled SET unjudged (CONTRACT.md §19.1, §34.2 P1). */
+    public enum class UnjudgedCause {
+        /** A JWKS or discovery fetch failed, or was not made inside the minute after one that did. */
+        KEY_FETCH,
+
+        /** The replay store could not answer. */
+        REPLAY_STORE,
+    }
+
+    /**
+     * Emitted when an SSF `poll` returns normally leaving at least one SET
+     * unjudged (CONTRACT.md §19.1, contract 1.60).
+     *
+     * Those SETs are re-offered by the transmitter, so nothing is lost — but a
+     * JWKS or replay-store outage that only ever shows up as a shorter batch is
+     * invisible without this event. It carries no `jti` and no SET.
+     *
+     * @property operation canonical operation name, `ssf.poll`.
+     * @property count how many SETs the poll left unjudged.
+     * @property cause the failure category that left them unjudged.
+     */
+    public data class SsfUnjudged(
+        val operation: String,
+        val count: Int,
+        val cause: UnjudgedCause,
+    ) : TelemetryEvent
 }
 
 /**

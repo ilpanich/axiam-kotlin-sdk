@@ -44,6 +44,38 @@ class OidcDiscoveryTest {
         assertTrue(doc.grant_types_supported.contains("authorization_code"))
     }
 
+    /**
+     * §21.5 / §12.1 (contract 1.60): a 1.0.0 server adds the four revocation and introspection
+     * auth members; this SDK does not model them, so a document carrying them decodes exactly
+     * as one without them (the document above), and the methods it authenticates with are
+     * unchanged.
+     */
+    @Test
+    fun `a document with the four 1_60 revocation and introspection members decodes`(): Unit = runBlocking {
+        val withMembers = MockWebServer()
+        withMembers.dispatcher = OidcTestKit.RoutingDispatcher(
+            discoveryBody = {
+                OidcTestKit.discoveryJson(withMembers.url("/").toString()).trimEnd().removeSuffix("}") +
+                    """,
+                    "revocation_endpoint_auth_methods_supported": ["client_secret_basic", "private_key_jwt", "none"],
+                    "introspection_endpoint_auth_methods_supported": ["client_secret_basic", "private_key_jwt"],
+                    "revocation_endpoint_auth_signing_alg_values_supported": ["EdDSA"],
+                    "introspection_endpoint_auth_signing_alg_values_supported": ["EdDSA"]
+                    }"""
+            },
+            jwksBody = { OidcTestKit.jwksJson(signingKey.toPublicJWK()) },
+        )
+        withMembers.start()
+        try {
+            val doc = OidcTestKit.clientFor(withMembers).oidcDiscover()
+            assertEquals("${doc.issuer}/oauth2/revoke", doc.revocation_endpoint)
+            assertEquals("${doc.issuer}/oauth2/introspect", doc.introspection_endpoint)
+            assertEquals(listOf("client_secret_post"), doc.token_endpoint_auth_methods_supported)
+        } finally {
+            withMembers.shutdown()
+        }
+    }
+
     @Test
     fun `oidcDiscover caches within the TTL and does not refetch`(): Unit = runBlocking {
         val client = OidcTestKit.clientFor(server, discoveryTtlMs = 300_000)
