@@ -17,14 +17,15 @@ Source: [ilpanich/axiam-kotlin-sdk](https://github.com/ilpanich/axiam-kotlin-sdk
 - **Maven coordinates:** `io.github.ilpanich:axiam-sdk-kotlin`
 - **GroupId:** `io.github.ilpanich`
 - **ArtifactId:** `axiam-sdk-kotlin`
-- **Registry:** Maven Central (Sonatype Central Portal) _(reserved, not yet published)_
+- **Registry:** Maven Central (Sonatype Central Portal)
+- **Versioning:** stable from 1.0.0; follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - **API docs:** [javadoc.io](https://javadoc.io/doc/io.github.ilpanich/axiam-sdk-kotlin) — served from the Dokka `-javadoc.jar`
 - **License:** Apache-2.0
 - **Kotlin:** 2.1.0 minimum · **JVM:** 17 minimum — see [Supported Kotlin and JVM versions](#supported-kotlin-and-jvm-versions)
 
 ## Contract conformance
 
-This SDK conforms to **contract 1.59**: CONTRACT.md §1–§7 (§1.1's `getUserInfo` and §1.1.1's
+This SDK conforms to **contract 1.60**: CONTRACT.md §1–§7 (§1.1's `getUserInfo` and §1.1.1's
 `validateToken`/`introspectToken` declined — gRPC-only, and this SDK ships no gRPC transport; see
 [Scope of this SDK (v1)](#scope-of-this-sdk-v1) below), §9–§13 and §12.7, §14, §15, §17, §19,
 §20, §21, §22, §23, §24, §25, §26, §27, §28 (including §6.1 mTLS), and §28.12, §29, §30, §31, §32
@@ -32,8 +33,30 @@ and §33, with §32.7 and §33.2 signed. §12 is implemented in full at its
 1.38 shape: all **thirteen** operations, including the four public "Sign in with X" entry points,
 as `suspend` functions on the same `AxiamClient`.
 
-**Contract 1.59 — the §34 review's clarifications applied** (follow-up F-59-08). No section is
-added or dropped; the claim above holds at 1.59 with these fixes:
+**Contract 1.60 — the answers to the §34 review (§34.4) and the 1.0.0 model additions.** No
+section is added or dropped (§35, the certificate revocation list, is informative and has no SDK
+surface); the claim above holds at 1.60 with these:
+
+- **§32.7 (§34.2 P1, P3, P4, P6)** — a replay store that cannot answer gives no verdict (a
+  `NetworkError`, never `replayed`); a failed JWKS fill or failed refresh of the expired cache
+  counts toward the once-a-minute limit; the key cache lives 300 s, inside P6's 10-minute bound; a
+  `poll` that returns leaving SETs unjudged emits the §19.1 `ssf_unjudged` telemetry event.
+- **§32.2 (§34.2 P12.2 (b))** — an unseen event-type URI round-trips through `ssf.updateStream`
+  unchanged; **(a), B5** — every local refusal of a value is a `ValidationError`.
+- **§31.3 rule 4** — `ScimTargetInput.expectedUpdatedAt`, sent exactly as set; a read's
+  `toInput()` carries its `updatedAt`, so an overtaken replacement is a `409`.
+- **§27.15** — `windowMinutes` on the `notificationRules` models, passed through and never
+  clamped; `allowSha1Signatures` and `idpMetadataSigningCertPem` on the three federation
+  configuration models (`allowSha1Signatures` absent from a response reads `false`); the ten
+  clearable members of `UpdateFederationConfigRequest` are `JsonNullable<String>`, so "omitted,
+  keep it" and "`null`, clear it" are different requests (note 8).
+- **§12.1** — `oidcRefresh` returns the refresh response's `scope`, which may be narrower than
+  the grant's; **§21.5** — a discovery document with or without the four revocation and
+  introspection auth members decodes.
+- **§15.2 rule 9** — the `actorToken` of `tokenExchange` is the same client's own
+  `loginClientCredentials()` token, in the KDoc, this README and `examples/token-exchange`.
+
+**Contract 1.59 — the §34 review's clarifications applied** (follow-up F-59-08):
 
 - **§29.7, §30.7, §31.7, §32 writes (§34.2 P11)** — management writes go out with OkHttp's own
   re-send after a dropped connection switched off, so a write is never sent twice.
@@ -82,12 +105,9 @@ added or dropped; the claim above holds at 1.59 with these fixes:
 rather than folded into the range because they landed after this SDK already stated its coverage: widening the range silently
 would turn a statement that was true when written into a different claim without anyone editing it.
 
-**§28 (MCP resource-server helpers)** shipped in `1.0.0-beta17`, when `CONTRACT.md`, `openapi.json`
-and `proto/` were re-synced ahead of `axiam` `main` from the `claude_dev/mcp-authorization-server-plan.md`
-branch, where contract 1.48 landed before that phase merged. `CONTRACT.md`, `openapi.json` and
-`proto/` have since been re-synced again, from `axiam` `main` at `56fbe44` (contract 1.51) — this
-SDK now tracks `main`, not a branch ahead of it. See
-[MCP resource-server helpers](#mcp-resource-server-helpers-ioaxiamsdkmcp-28-opt-in) below.
+`CONTRACT.md`, `openapi.json`, `management-registry.json` and `proto/` are vendored byte for byte
+from `axiam` at `3ed6547` (contract 1.60), and the §27 surface is generated from them. See
+[MCP resource-server helpers](#mcp-resource-server-helpers-ioaxiamsdkmcp-28-opt-in) below for §28.
 
 **§27 is the Management API** — all 190 operations across 28 namespaces, with the §27.6 declarative
 layer. See [Management API](#management-api-27) below.
@@ -2092,6 +2112,16 @@ generated like the rest of §27; the tenant in their paths defaults from the cli
 // §30: a sparse update. Unset members are not sent; JsonNullable.Null sends `null` and CLEARS.
 client.directory.update(UpdateDirectoryConfig(groupFilter = JsonNullable.Null))
 
+// §27.15 note 8: the same for the ten clearable federation members. This clears the metadata
+// signing certificate, sets the metadata URL, and leaves every other member as stored.
+client.federation.updateConfig(
+    configId,
+    UpdateFederationConfigRequest(
+        idpMetadataSigningCertPem = JsonNullable.Null,
+        metadataUrl = JsonNullable.Value("https://idp.example/metadata"),
+    ),
+)
+
 // Moving the connection needs the bind secret again (§30.3 rule 2): the SDK keeps no copy.
 client.directory.update(
     UpdateDirectoryConfig(url = "ldaps://dc2.corp.example", bindSecret = Sensitive.of(bindSecret)),
@@ -2173,7 +2203,12 @@ while (true) {
   or a replay store that throws, is not a verdict: that SET and the rest of the batch are left
   **unjudged** — not recorded, in neither `events` nor `refused` — so you neither acknowledge nor
   refuse them and the transmitter offers them again. If the batch had already accepted a SET, `poll`
-  returns what it judged and lists the rest in `result.unjudged`; otherwise it raises the failure.
+  returns what it judged, lists the rest in `result.unjudged` and emits
+  `TelemetryEvent.SsfUnjudged` (the count and `KEY_FETCH` or `REPLAY_STORE`, never a `jti`);
+  otherwise it raises the failure.
+- A failed JWKS fetch — the first fill, or the refresh of an expired cache — counts toward the
+  once-a-minute limit: a SET inside the minute after it makes no fetch and gets no verdict
+  (`NetworkError`). A fetch that succeeds is not counted.
 
 ## CIBA (§33)
 

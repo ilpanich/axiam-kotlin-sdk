@@ -7,90 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed — contract 1.60 (ilpanich/axiam#588, phase 1)
+`axiam-sdk-kotlin` 1.0.0 is the first stable release: from here on it follows Semantic Versioning.
+It is a coroutine-first, plain-JVM client (OkHttp, kotlinx.serialization; Kotlin 2.1.0 and JVM 17
+minimum) for AXIAM's **REST** surface, with an optional Ktor route guard, plus the §22 reactor
+runtime over **AMQP** (`amqps://` only). It ships no gRPC transport. It conforms to **contract
+1.60** — vendored byte for byte from `axiam` `3ed6547` — for §1–§7 (with §6.1 mTLS; §1.1's
+`getUserInfo` and §1.1.1's `validateToken` / `introspectToken` are gRPC-only and declined), §9–§13
+and §12.7, §14, §15, §17, §19, §20, §21, §22, §23, §24, §25, §26, §27, §28 and §28.12, §29, §30,
+§31, §32 (with the §32.7 receiver) and §33 (with the §33.2 signed request form). The §27
+management API is generated from the vendored registry and spec: 190 operations across 28
+namespaces.
 
-- **Contract 1.60.** Re-vendored `CONTRACT.md` from the `axiam` 1.60 revision (§34.4 assigns this
-  SDK A3, B1 *verify*, B4 *verify*, B5 and §15.2 rule 9). `openapi.json`, `management-registry.json`
-  and `proto/` are re-vendored, and the README's conformance statement bumped, in the second phase.
-- **A3 — a failed cold-cache JWKS fill counts toward the once-a-minute limit** (§32.7 step 4,
-  §34.2 P6). `SsfReceiver` used to count only forced refetches, so a JWKS outage cost one fetch per
-  SET. Now a fill that fails is counted: a SET inside the minute after it makes no fetch and is left
-  unjudged (a `NetworkError`, not a verdict; `poll` raises it, or lists the SET in `unjudged`). A
-  fill that succeeds is still not a refetch, so an unknown `kid` right after it is refetched once.
-  §32.8 helper test 7 gains both cases.
-- **B1 *verify* — a `ReplayStore` that cannot answer gives no verdict** (§32.7 step 9, §34.2 P4;
-  §32.8 helper test 6's store-failure case). `ReplayStore.checkAndRecord` already signalled "cannot
-  answer" by throwing, never by `false`, and `poll` left such a SET unjudged. Verified, with the
-  missing half fixed: `verifySet` let the store's own exception escape, which is not a §2 type; it now
-  raises a `NetworkError` (cause kept) with no reason code, records nothing, and never reads the
-  failure as `replayed`. The `ReplayStore` KDoc states the three answers. A store whose exception
-  was caught as its own type will now see `NetworkError` from `verifySet`/`poll`.
-- **B4 *verify* — an unseen event-type URI round-trips through `ssf.updateStream` unchanged**
-  (§32.2, §34.2 P12.2 (b)). The check failed: 1.59's `SsfEventType` decoded any URI but refused to
-  *encode* one outside the six (`isKnown`), so a read-modify-write of a stream carrying a URI added
-  later raised before the request. The generated serializer now writes any string as held and the
-  server judges it; `isKnown` and `KNOWN` remain, informational. **Behaviour change** for a caller
-  that relied on the local refusal of a typed, unlisted event-type URI (the server now answers it).
-- **B5 — the local refusal of an unknown open-enum value raises `ValidationError`, not a bare
-  `NetworkError`** (§34.2 P12.2 (a)). Encoding a request body that carries an open enum's `UNKNOWN`
-  or a union's `Unknown` arm failed with `NetworkError("could not encode the request body")`; it is
-  now `ValidationError` (still a `NetworkError` by subtype, §27.4 rule 7, so existing `catch`
-  blocks keep working), and nothing is sent.
-- **§15.2 rule 9 / §15.6 — the actor token is the exchanging client's own `client_credentials`
-  token.** The `tokenExchange` / `TokenExchangeParams.actorToken` KDoc, the README and
-  `examples/token-exchange` now obtain the actor token with `loginClientCredentials()` on the same
-  client. The SDK still supplies no default. Added §15.6's contract-1.60 test: an actor token the
-  mock answers `400 invalid_request` (`actor_token was not issued to the exchanging client`)
-  surfaces unchanged, with exactly one request and no rewriting.
+### Breaking changes
 
-### Fixed — contract 1.59 (follow-up F-59-08, ilpanich/axiam#583)
+Since `v1.0.0-beta17`:
 
-- **Contract 1.59.** Re-vendored `CONTRACT.md` from `axiam` `fe369eb` (the merge carrying §34, the
-  cross-SDK review of the 1.53 – 1.58 ports); `openapi.json`, `management-registry.json` and
-  `proto/` were already identical. The README states conformance at 1.59 with the same section
-  list: §1–§7, §9–§13 and §12.7, §14, §15, §17, §19, §20, §21, §22, §23, §24, §25, §26, §27, §28
-  (including §6.1 mTLS), and §28.12, §29, §30, §31, §32 and §33, with §32.7 and §33.2 signed.
-- **R-17 (F-KT-03) — management writes are never re-sent by OkHttp** (§29.7, §30.7, §31.7, §32's
-  writes; §34.2 P11). Every management POST, PUT, PATCH and DELETE goes out on a client derived
-  from the shared one with `retryOnConnectionFailure(false)`; before, a write whose pooled
-  connection dropped after the server read it was silently sent a second time. The no-retry tests
-  now drop a reused connection, not only answer `503`.
-- **R-1 (F-KT-02) — `SsfReceiver.poll` never keeps a `jti` it does not return** (§32.7, §34.2 P1,
-  P3). A JWKS/discovery fetch or a `ReplayStore` that fails partway through a batch used to escape
-  `poll` with the earlier SETs already recorded — offered again, they read `replayed` and were lost.
-  **P1 form taken: the second** — return what was judged and leave the unjudged SETs unrecorded,
-  listing their keys in the new `SsfPollResult.unjudged` (default empty). When nothing in the batch
-  had been accepted yet, the failure is raised instead, with nothing recorded. §32.8 helper test 8
-  gains the two-SET batch whose second SET's refetch fails.
-- **R-8 (F-KT-10) — the receiver's JWKS cache expires** (§32.7 step 4, §34.2 P6): 300 s, the
-  lifetime of §10's JWKS cache (`SsfReceiver.JWKS_CACHE_LIFETIME`); a key the transmitter removed
-  stops verifying. The forced refetch on an unknown `kid` is unchanged.
-- **R-11 (F-KT-01) — a `5xx` on `cibaPoll` is transient whatever its body** (§33.4, §33.7 rule 5,
-  §34.2 P8). AXIAM's real `500 {"error":"server_error"}` (and a `503 temporarily_unavailable`) is
-  now a `NetworkError`, retried under §16, and never ends `cibaAwait`; it used to be a terminal
-  `OAuthProtocolError`. §33.8 test 8's `500` carries `{"error":"server_error"}`.
-- **R-19 (F-KT-04) — the clear-text writer is not public** (§7 rules 2 – 3).
-  `ManagementTransport.WIRE`, which serializes every `Sensitive` in the clear, is now `internal`
-  with a `@JvmSynthetic` getter; only the management request path uses it. **Breaking** for any
-  caller that reached for it (it was documented as unsupported plumbing).
-- **R-22 (F-KT-05, F-KT-06) — unknown values are refused locally; SSF event types are strings**
-  (§29.2, §31.2, §32.2, §34.2 P12.2). A generated open enum's `UNKNOWN` now refuses to encode, so
-  writing back a value this SDK does not know fails before any request instead of reaching the
-  server as `""`; rendering it still never fails. `SsfEventType` is generated as a string type
-  (`wire`, `isKnown`, `KNOWN`) with the six URIs as named constants, so an unseen event-type URI
-  keeps its value; only a known one is ever sent. **Source-breaking** for a `when` over
-  `SsfEventType` or a reference to `SsfEventType.UNKNOWN`, `entries` or `valueOf`.
-- **P10 anchor (no change):** `cibaAwait`'s deadline stays anchored at the instant the initiate
-  response was received (`CibaInitiateResponse.receivedAt`), one of the two anchors §34.2 P10
-  permits.
+- **`UpdateFederationConfigRequest`: ten members are `JsonNullable<String>`** (contract 1.60,
+  §27.15 note 8). `metadataUrl`, `idpSigningCertPem`, `idpMetadataSigningCertPem`, `providerSlug`,
+  `authorizationEndpoint`, `tokenEndpoint`, `userinfoEndpoint`, `appleTeamId`, `appleKeyId` and
+  `buttonIcon` used to be `String?`, where `null` could only mean "leave it", so none of them could
+  be cleared. Now an omitted member (`JsonNullable.Absent`, the default) is kept, `JsonNullable.Null`
+  is sent as `null` and clears it, and `JsonNullable.Value(x)` sets it. *Migration:* wrap a value
+  you set — `metadataUrl = JsonNullable.Value(url)`, or `JsonNullable.of(maybeNull)` to clear when
+  you hold nothing; drop any `= null` you passed to mean "unchanged".
+- **`ScimTargetResponse.toInput()` carries the read's version** (§31.3 rule 4, contract 1.60). The
+  body it builds now sets `expectedUpdatedAt = updatedAt`, so a replacement overtaken by another
+  administrator's write is answered `409` instead of silently overwriting it. *Migration:* reload
+  and retry on `ConflictError`; `toInput().copy(expectedUpdatedAt = null)` restores
+  last-writer-wins.
+- **`TelemetryEvent` has a sixth variant, `SsfUnjudged`** (§19.1, contract 1.60). A `when` over
+  `TelemetryEvent` used as an expression needs a branch for it (or an `else`).
+- **`SsfReceiver.verifySet` raises `NetworkError` when the `ReplayStore` throws** (§34.2 P4, B1).
+  The store's own exception used to escape unwrapped. *Migration:* catch `NetworkError`; the
+  store's exception is its `cause`.
+- **`SsfEventType` is a string type, not an enum** (§32.2, §34.2 P12.2). It has `wire`, `isKnown`,
+  `KNOWN` and the six URIs as named constants; `UNKNOWN`, `entries` and `valueOf` are gone, and a
+  `when` over it compares values instead of enum constants. An event-type URI this SDK has not
+  seen decodes with its value and is sent back unchanged on `ssf.updateStream`, where the server
+  judges it. A typed URI outside the six is no longer refused locally.
+- **A generated open enum's `UNKNOWN` refuses to encode** (§29.2, §31.2, §34.2 P12.2). Writing
+  back a value this SDK does not know fails locally, before any request, with a `ValidationError`
+  rather than reaching the server as `""`. *Migration:* replace the unknown value before a
+  read-modify-write; rendering one for a log still works.
+- **`ManagementTransport.WIRE` is no longer public** (§7 rules 2 – 3). It serialized every
+  `Sensitive` in the clear and was documented as unsupported plumbing. *Migration:* encode a
+  management model with your own `Json`, which refuses a `Sensitive`, or call `expose()` where you
+  mean to handle the secret.
 
 ### Added
 
-- **Contract 1.58.** Re-vendored `CONTRACT.md`, `openapi.json` and `management-registry.json` from
-  `axiam` `21a9c22e`; `proto/` unchanged. The §27 surface is regenerated: **190 operations across
-  28 namespaces**, adding `directory` (§30), `saml` (§29), `scim_targets` (§31) and `ssf` (§32),
-  each reachable as a client property (`client.directory`, `client.saml`, `client.scimTargets`,
-  `client.ssf`) and behind `management()`.
+- **Contract 1.60 model members** (§27.15, §31). `windowMinutes` on `CreateNotificationRuleRequest`,
+  `UpdateNotificationRuleRequest` and `NotificationRuleResponse` (1 – 1440; passed through, never
+  clamped — the server answers `400` outside that range). `allowSha1Signatures` and
+  `idpMetadataSigningCertPem` on `CreateFederationConfigRequest`, `UpdateFederationConfigRequest`
+  and `FederationConfigResponse`, each sent only when set; `allowSha1Signatures` absent from an
+  older server's response reads `false`. `ScimTargetInput.expectedUpdatedAt`, sent exactly as set
+  and only when set.
+- **`TelemetryEvent.SsfUnjudged`** (§19.1, contract 1.60): emitted when `SsfReceiver.poll` returns
+  leaving SETs unjudged, with the count and the cause (`KEY_FETCH` or `REPLAY_STORE`) — never a
+  `jti` or a SET — so a JWKS or replay-store outage is visible rather than a quietly shorter batch.
+- **`SsfPollResult.unjudged`** (§34.2 P1): the keys of the SETs a `poll` could not judge.
 - **§28.12 — RFC 7592 client configuration.** `AxiamClient.readClientRegistration` /
   `updateClientRegistration` / `deleteClientRegistration` and `io.axiam.sdk.oidc.ClientRegistration`
   (tolerant decoding: unknown and mistyped members are kept in `extra`, so a read passed to an
@@ -99,44 +75,100 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of it); the token is sent as `Authorization: Bearer` on a transport carrying none of the
   session — no cookie, no access token, no CSRF header, no redirect; writes are never retried, the
   read only on a transport failure, `408`, `429` or `5xx`.
-- **§29 / §30 / §31 / §32 management semantics.** `JsonNullable<T>` (`Absent` / `Null` /
-  `Value`) for the four members where an explicit `null` differs from absence —
-  `UpdateDirectoryConfig.groupBaseDn` / `groupFilter` (send `null` to clear) and
-  `SamlIdpInfo.activeCredentialId` / `nextCredentialId` (null kept apart from absent);
-  `ParseSamlSpMetadata.fromUrl` / `fromXml`, with both-or-neither refused locally; the
-  read-modify-write helpers `DirectoryConfig.toInput()`, `SamlServiceProvider.toInput()`,
-  `ScimTargetResponse.toInput()` and `SsfStream.toInput()` (secret absent); the contract's
-  call-site warnings in the generated KDoc of the fifteen operations that carry one.
-  `ScimTargetAuth` / `ScimTargetScope` are open: an unknown `type` decodes to `.Unknown` and is
+- **Four §27 namespaces: `directory` (§30), `saml` (§29), `scimTargets` (§31) and `ssf` (§32)**,
+  each a client property (`client.directory`, …) and behind `management()`. With them:
+  `JsonNullable<T>` (`Absent` / `Null` / `Value`) wherever an explicit `null` differs from absence —
+  `UpdateDirectoryConfig.groupBaseDn` / `groupFilter`, `SamlIdpInfo.activeCredentialId` /
+  `nextCredentialId` and the federation members above; `ParseSamlSpMetadata.fromUrl` / `fromXml`,
+  with both-or-neither refused locally; the read-modify-write helpers `DirectoryConfig.toInput()`,
+  `SamlServiceProvider.toInput()`, `ScimTargetResponse.toInput()` and `SsfStream.toInput()` (secret
+  absent); the contract's call-site warnings in the generated KDoc of the operations that carry
+  one. `ScimTargetAuth` / `ScimTargetScope` are open: an unknown `type` decodes to `.Unknown` and is
   refused locally on encode.
 - **§32.7 — the SSF receiver helper** (`io.axiam.sdk.ssf`): `SsfReceiver.verifySet` (the nine
   steps in order; Ed25519 keys only from the configured JWKS — or a discovery document whose
-  `issuer` matches — fetched over the client's TLS policy without its session; one forced refetch
-  at most once a minute; a JWKS failure is a `NetworkError`, not a verdict), `SsfReceiver.poll`
+  `issuer` matches — fetched over the client's TLS policy without its session), `SsfReceiver.poll`
   (only the members set, nothing acknowledged on the caller's behalf, §16 on transport/`5xx`/
   `408`/`429` only), `SetVerificationError` + `SetFailureReason` (`pushErrorCode()`),
   `SetErr.fromReason`, pluggable `ReplayStore` / `MemoryReplayStore`, the seven-day replay window
   as default and floor, `SsfEventTypes`.
 - **§33 — CIBA.** `AxiamClient.cibaInitiate` (never retried — OkHttp's own connection-failure
   retry is off for it too), `cibaPoll` (§16 within the call), `cibaAwait` (injectable
-  `CibaClock`; `slow_down` +5 s for good; client-side `expired_token` at the deadline),
-  `cibaHandlePing` (no I/O, `MessageDigest.isEqual`). Client authentication is mandatory
-  (`client_secret_post`, or the §6.1 certificate as `tls_client_auth`); `tenant_id` rides in the
-  query. `CibaUserHint` is a single hint; ping mode without a token is a local `ValidationError`.
-  `OAuthProtocolError.isAccessDenied` / `isExpiredToken`.
+  `CibaClock`; `slow_down` +5 s for good; client-side `expired_token` at the deadline, anchored at
+  `CibaInitiateResponse.receivedAt`), `cibaHandlePing` (no I/O, `MessageDigest.isEqual`). Client
+  authentication is mandatory (`client_secret_post`, or the §6.1 certificate as
+  `tls_client_auth`); `tenant_id` rides in the query. `CibaUserHint` is a single hint; ping mode
+  without a token is a local `ValidationError`. `OAuthProtocolError.isAccessDenied` /
+  `isExpiredToken`.
 - **§33.2 — the signed request form.** `CibaRequestSigner.fromPem` / `of` for `PS256`, `ES256` and
-  `EdDSA` (Nimbus + Tink, already dependencies), probe-signed at construction; the form then
-  carries only the client authentication and `request`.
+  `EdDSA`, probe-signed at construction; the form then carries only the client authentication and
+  `request`.
 - **§21.3.1 — the seventh alias.** `MtlsEndpointAliases.backchannel_authentication_endpoint`, and
   the four CIBA discovery members on `OidcConfiguration`.
 
 ### Changed
 
+- **Contract 1.60.** `CONTRACT.md`, `openapi.json`, `management-registry.json` and `proto/` are
+  re-vendored from `axiam` `3ed6547` and the §27 surface regenerated (190 operations, 28
+  namespaces; the spec's new §35 `pki` route is excluded from the registry and has no SDK surface).
+  The README states conformance at 1.60.
+- **A local refusal is a `ValidationError`** (§34.2 P12.2 (a), B5). Encoding a body that carries an
+  open enum's `UNKNOWN` or a union's `Unknown` arm used to fail with a bare
+  `NetworkError("could not encode the request body")`. `ValidationError` is still a `NetworkError`
+  by subtype (§27.4 rule 7), so existing `catch` blocks keep working, and nothing is sent.
+- **The SSF receiver's JWKS fetches** (§32.7 step 4, §34.2 P6). The cache expires 300 s after the
+  fetch that filled it (`SsfReceiver.JWKS_CACHE_LIFETIME`, inside P6's 10-minute bound), so a key
+  the transmitter removed stops verifying. A failed fill and a failed refresh of the expired cache
+  count toward the once-a-minute limit, so a JWKS outage costs one fetch a minute rather than one
+  per SET: a SET inside the minute after a failure makes no fetch and gets no verdict (a
+  `NetworkError`; `poll` raises it or lists the SET in `unjudged`). A fetch that succeeds is not
+  counted, so an unknown `kid` right after it is refetched once.
+- **§15.2 rule 9.** The `tokenExchange` / `TokenExchangeParams.actorToken` KDoc, the README and
+  `examples/token-exchange` obtain the actor token with `loginClientCredentials()` on the same
+  client; the server refuses an actor token issued to another client with `400 invalid_request`,
+  which surfaces unchanged. The SDK still supplies no default.
 - `OAuthProtocolError.errorDescription` defaults to `""`: RFC 6749 §5.2 makes it optional, and the
   §28.12 / §33 endpoints may omit it. A missing description no longer turns an error object into a
   generic error; the message is then just the code.
 - `ErrorMapper.fromOAuth2ResponseAtAnyStatus` — §2's `/oauth2` row at any status (§28.12.3,
-  §33.4) — used by the new operations; the existing §12 callers keep their 400/401 scope.
+  §33.4) — is used by the new operations; the existing §12 callers keep their 400/401 scope.
+
+### Fixed
+
+- **`SsfReceiver.poll` never keeps a `jti` it does not return** (§32.7, §34.2 P1, P3). A JWKS or
+  discovery fetch, or a `ReplayStore`, that failed partway through a batch used to escape `poll`
+  with the earlier SETs already recorded — offered again, they read `replayed` and were lost. Now
+  `poll` returns what it judged and leaves the rest unrecorded, listed in `unjudged`; when nothing
+  in the batch had been accepted yet, it raises the failure with nothing recorded.
+- **A `5xx` on `cibaPoll` is transient whatever its body** (§33.4, §33.7 rule 5, §34.2 P8). AXIAM's
+  `500 {"error":"server_error"}` (and a `503 temporarily_unavailable`) is a `NetworkError`, retried
+  under §16, and never ends `cibaAwait`; it used to be a terminal `OAuthProtocolError`.
+- **An unseen event-type URI survives a read-modify-write of an SSF stream** (§32.2, §34.2 P12.2
+  (b)): 1.59's `SsfEventType` decoded any URI but refused to encode one outside the six, so
+  updating a stream that carried a newer URI raised before the request.
+- **`oidcRefresh` reports the refresh response's `scope`** (§12.1, contract 1.60), which is
+  narrower than the grant's when the client's registration was narrowed since — never the original
+  grant's, and never the scope the caller asked for. Verified, with a test; no code change.
+- **Discovery documents from 1.0.0 servers** (§21.5): a document carrying the four revocation and
+  introspection auth members decodes as one without them does. Verified, with a test.
+
+### Security
+
+- **Management writes are never re-sent by OkHttp** (§29.7, §30.7, §31.7, §32's writes; §34.2
+  P11). Every management `POST`, `PUT`, `PATCH` and `DELETE` goes out with
+  `retryOnConnectionFailure(false)`; before, a write whose pooled connection dropped after the
+  server read it was silently sent a second time.
+- **A `ReplayStore` that cannot answer is never read as `replayed`** (§34.2 P4, B1): that would
+  have had the caller acknowledge a SET it never processed. It is no verdict — a `NetworkError`
+  with no reason code, the `jti` unrecorded.
+- **The clear-text `Sensitive` writer is internal** (§7 rules 2 – 3): only the management request
+  path can serialize a secret, and `expose()` is the one public path to a raw value.
+- **A SCIM target replacement can be made conditional on the version read** (§31.3 rule 4, T-416):
+  with `expectedUpdatedAt` set — as `toInput()` now sets it — two administrators who opened the
+  same version cannot silently overwrite each other.
+- **Federation configurations can opt out of SHA-1 and pin the IdP's metadata signer** (§27.15
+  notes 6 – 8): `allowSha1Signatures` stays `false` unless set, and `idpMetadataSigningCertPem` can
+  now be cleared as well as set.
 
 ## [1.0.0-beta17] - 2026-09-25
 
