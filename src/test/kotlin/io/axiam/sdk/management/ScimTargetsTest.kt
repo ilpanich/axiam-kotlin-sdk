@@ -159,11 +159,11 @@ class ScimTargetsTest : ManagementTestBase() {
         for (request in route.requests) {
             assertEquals("downstream", request.query["search"])
         }
-        // An unknown arm decodes but is never sent: encoding it fails locally.
-        val refused = assertThrows<NetworkError> { wire(first.auth) }
+        // An unknown arm decodes but is never sent: encoding it fails locally, as a ValidationError (B5).
+        val refused = assertThrows<ValidationError> { wire(first.auth) }
         assertTrue(refused.message.orEmpty().contains("never sent"))
         val updates = mount("PUT", "$targets/${first.id}", 200, targetBody())
-        assertThrows<NetworkError> { runBlocking { client.scimTargets.update(first.id, first.toInput()) } }
+        assertThrows<ValidationError> { runBlocking { client.scimTargets.update(first.id, first.toInput()) } }
         assertEquals(0, updates.calls(), "the unknown arm never reached the wire")
     }
 

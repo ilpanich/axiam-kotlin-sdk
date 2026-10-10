@@ -1,8 +1,10 @@
 package io.axiam.sdk.management
 
 import io.axiam.sdk.errors.NetworkError
+import io.axiam.sdk.errors.ValidationError
 import io.axiam.sdk.internal.ManagementTransport
 import kotlinx.serialization.DeserializationStrategy
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.SerializationStrategy
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -114,6 +116,14 @@ internal object ManagementSupport {
             dropEmptyAllowlisted(
                 ManagementTransport.WIRE.encodeToJsonElement(serializer, body),
             ).toString()
+        } catch (e: SerializationException) {
+            // A local, pre-request refusal: a value the SDK does not know (an open enum's
+            // UNKNOWN, a union's Unknown arm) is never sent (§34.2 P12.2). One category for every
+            // such refusal, the SDK's validation error and never a bare NetworkError (contract
+            // 1.60, B5) -- it is still a NetworkError by subtype (§27.4 rule 7).
+            throw ValidationError(
+                "$operation: refused locally, nothing was sent: ${e.message}",
+            )
         } catch (e: Exception) {
             throw NetworkError("$operation: could not encode the request body: ${e.message}", e)
         }

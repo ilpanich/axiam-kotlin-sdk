@@ -781,7 +781,9 @@ def field_list(schema_name: str, secrets: set[str]) -> tuple[list[dict[str, Any]
 # constants, rather than as a Kotlin enum. CONTRACT §32.2: "An SDK SHOULD model
 # event types as strings with the six URIs as named constants" -- an enum maps
 # an event-type URI it has not seen to UNKNOWN and loses it (contract 1.59,
-# R-22). The value is kept for reading; only a known one is ever sent.
+# R-22). The value is kept and sent back unchanged: an unseen URI read from the
+# server round-trips through ``update_stream`` and the server judges it
+# (contract 1.60, B4 / §34.2 P12.2 (b)); a client-side list of URIs goes stale.
 OPEN_STRING_TYPES = {"SsfEventType"}
 
 
@@ -790,8 +792,9 @@ def emit_open_string(name: str, schema: Any) -> str:
 
     Decodes ANY string, keeping it in ``wire``; the spec's values are companion
     constants (named as :func:`emit_enum` names them, so call sites read the
-    same); encoding refuses a value outside them, locally, before any request
-    (CONTRACT §34.2 P12.2).
+    same); encoding writes any string as it is held -- an event-type URI is not a value
+    "this SDK does not know" in P12.2's sense, because a client-side list of URIs
+    goes stale and the server judges it (contract 1.60, B4).
     """
     type_name = pascal(name)
     text = schema.get("description") or f"The {type_name} values the server uses."
@@ -801,13 +804,14 @@ def emit_open_string(name: str, schema: Any) -> str:
                 f"constants and in [{type_name}.KNOWN] (CONTRACT §32.2). A value the spec does "
                 "not list decodes with its spelling intact -- read it from [wire] -- rather than "
                 "failing the response it arrived in or collapsing to a placeholder (CONTRACT "
-                "§27.11 rule 1). Only a known value is ever sent: writing any other is refused "
-                "locally, before any request (CONTRACT §34.2 P12.2). Rendering one (`toString`, "
+                "§27.11 rule 1). Every value is sent as the string the caller holds -- one this SDK has "
+                "never seen, read from the server, goes back unchanged on a write and the server "
+                "judges it (CONTRACT §32.2, §34.2 P12.2). Rendering one (`toString`, "
                 "which is the wire spelling) never fails.\n\n"
                 "@property wire the value exactly as the server spells it")
     body.append(f"@Serializable(with = {type_name}.Companion.Serializer::class)")
     body.append(f"class {type_name}(val wire: String) {{")
-    body.append(f"    /** Whether this is one of [KNOWN] -- the only values ever sent. */")
+    body.append(f"    /** Whether this is one of [KNOWN]; informational -- an unknown value is still sent unchanged. */")
     body.append("    val isKnown: Boolean")
     body.append("        get() = this in KNOWN")
     body.append("")
@@ -829,8 +833,8 @@ def emit_open_string(name: str, schema: Any) -> str:
     body.append("        )")
     body.append("")
     body.append("        /**")
-    body.append("         * Decodes every string, keeping its spelling, and refuses to encode a")
-    body.append("         * value outside [KNOWN].")
+    body.append("         * Decodes and encodes every string, keeping its spelling: a value outside")
+    body.append("         * [KNOWN] round-trips unchanged and the server judges it (CONTRACT §32.2).")
     body.append("         */")
     body.append(f"        internal object Serializer : KSerializer<{type_name}> {{")
     body.append("            override val descriptor: SerialDescriptor =")
@@ -838,12 +842,6 @@ def emit_open_string(name: str, schema: Any) -> str:
                 "PrimitiveKind.STRING)")
     body.append("")
     body.append(f"            override fun serialize(encoder: Encoder, value: {type_name}) {{")
-    body.append("                if (!value.isKnown) {")
-    body.append("                    throw SerializationException(")
-    body.append(f'                        "{type_name} \\"${{value.wire}}\\" is not one this SDK knows, so it is " +')
-    body.append('                            "never sent (CONTRACT §34.2 P12.2)",')
-    body.append("                    )")
-    body.append("                }")
     body.append("                encoder.encodeString(value.wire)")
     body.append("            }")
     body.append("")
