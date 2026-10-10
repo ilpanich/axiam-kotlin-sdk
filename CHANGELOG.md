@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — contract 1.60 (ilpanich/axiam#588, phase 1)
+
+- **Contract 1.60.** Re-vendored `CONTRACT.md` from the `axiam` 1.60 revision (§34.4 assigns this
+  SDK A3, B1 *verify*, B4 *verify*, B5 and §15.2 rule 9). `openapi.json`, `management-registry.json`
+  and `proto/` are re-vendored, and the README's conformance statement bumped, in the second phase.
+- **A3 — a failed cold-cache JWKS fill counts toward the once-a-minute limit** (§32.7 step 4,
+  §34.2 P6). `SsfReceiver` used to count only forced refetches, so a JWKS outage cost one fetch per
+  SET. Now a fill that fails is counted: a SET inside the minute after it makes no fetch and is left
+  unjudged (a `NetworkError`, not a verdict; `poll` raises it, or lists the SET in `unjudged`). A
+  fill that succeeds is still not a refetch, so an unknown `kid` right after it is refetched once.
+  §32.8 helper test 7 gains both cases.
+- **B1 *verify* — a `ReplayStore` that cannot answer gives no verdict** (§32.7 step 9, §34.2 P4;
+  §32.8 helper test 6's store-failure case). `ReplayStore.checkAndRecord` already signalled "cannot
+  answer" by throwing, never by `false`, and `poll` left such a SET unjudged. Verified, with the
+  missing half fixed: `verifySet` let the store's own exception escape, which is not a §2 type; it now
+  raises a `NetworkError` (cause kept) with no reason code, records nothing, and never reads the
+  failure as `replayed`. The `ReplayStore` KDoc states the three answers. A store whose exception
+  was caught as its own type will now see `NetworkError` from `verifySet`/`poll`.
+- **B4 *verify* — an unseen event-type URI round-trips through `ssf.updateStream` unchanged**
+  (§32.2, §34.2 P12.2 (b)). The check failed: 1.59's `SsfEventType` decoded any URI but refused to
+  *encode* one outside the six (`isKnown`), so a read-modify-write of a stream carrying a URI added
+  later raised before the request. The generated serializer now writes any string as held and the
+  server judges it; `isKnown` and `KNOWN` remain, informational. **Behaviour change** for a caller
+  that relied on the local refusal of a typed, unlisted event-type URI (the server now answers it).
+- **B5 — the local refusal of an unknown open-enum value raises `ValidationError`, not a bare
+  `NetworkError`** (§34.2 P12.2 (a)). Encoding a request body that carries an open enum's `UNKNOWN`
+  or a union's `Unknown` arm failed with `NetworkError("could not encode the request body")`; it is
+  now `ValidationError` (still a `NetworkError` by subtype, §27.4 rule 7, so existing `catch`
+  blocks keep working), and nothing is sent.
+- **§15.2 rule 9 / §15.6 — the actor token is the exchanging client's own `client_credentials`
+  token.** The `tokenExchange` / `TokenExchangeParams.actorToken` KDoc, the README and
+  `examples/token-exchange` now obtain the actor token with `loginClientCredentials()` on the same
+  client. The SDK still supplies no default. Added §15.6's contract-1.60 test: an actor token the
+  mock answers `400 invalid_request` (`actor_token was not issued to the exchanging client`)
+  surfaces unchanged, with exactly one request and no rewriting.
+
 ### Fixed — contract 1.59 (follow-up F-59-08, ilpanich/axiam#583)
 
 - **Contract 1.59.** Re-vendored `CONTRACT.md` from `axiam` `fe369eb` (the merge carrying §34, the

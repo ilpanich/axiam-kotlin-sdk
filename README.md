@@ -790,7 +790,27 @@ val exchanged = client.tokenExchange(
 Most of what this method does is refuse to be helpful:
 
 - **No default `actorToken`.** Leaving it `null` asks for *impersonation*; the SDK will not quietly
-  substitute the client's own session token and turn that into a delegation.
+  substitute the client's own session token and turn that into a delegation. For a **delegation**
+  you pass the actor token yourself, and the server accepts only one **issued to the exchanging
+  client** (§15.2 rule 9, contract 1.60) — the usual one is the same client's own
+  `client_credentials` token, whose `sub` (and so the issued token's `act.sub`) is its `client_id`:
+
+  ```kotlin
+  val actor = client.loginClientCredentials()          // this client's client_credentials grant
+  val delegated = client.tokenExchange(
+      TokenExchangeParams(
+          subjectToken = Sensitive.of(userToken),
+          subjectTokenType = ACCESS_TOKEN_TYPE,
+          actorToken = actor.accessToken,              // issued to THIS client
+          scopes = listOf("orders:read"),
+          audience = "orders-service",
+      ),
+  )
+  ```
+
+  An actor token issued to another client, a console sign-in or a service account is answered
+  `400 invalid_request` (`actor_token was not issued to the exchanging client`); the SDK surfaces it
+  unchanged — one request, no retry, never rewritten into an impersonation.
 - **No auto-narrowing after `invalid_scope`.** The server refuses rather than silently narrowing
   precisely so the caller finds out here.
 - **No refresh token, ever** — `ExchangedToken` has no such property. Re-run the exchange.
@@ -1920,7 +1940,10 @@ Eight things worth knowing:
   unrecognised value back into a write is refused locally, before any request, rather than sent as
   `""` for the server to refuse (contract 1.59, §34.2 P12.2). §32's event types are the exception to
   the enum shape: `SsfEventType` is a string type with the six URIs as named constants (§32.2), so an
-  event-type URI this SDK has not seen decodes with its value in `wire` — and is likewise never sent.
+  event-type URI this SDK has not seen decodes with its value in `wire` and goes back **unchanged** on
+  `ssf.updateStream` — the server judges it (contract 1.60, §34.2 P12.2 (b)). A local refusal of an
+  unknown enum value or union arm is a `ValidationError` (a `NetworkError` by subtype), never a bare
+  `NetworkError` (contract 1.60, B5).
 
 Worked end to end in [`examples/management-basics`](examples/management-basics).
 
