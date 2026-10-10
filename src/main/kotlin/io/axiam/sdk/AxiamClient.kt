@@ -1587,8 +1587,10 @@ class AxiamClient private constructor(
      * `POST /oauth2/token` with the RFC 8693 grant (§15.1) — exchange a token
      * for a **narrower** one.
      *
-     * Requires confidential-client credentials. Never defaults `actorToken`,
-     * never auto-narrows after `invalid_scope`, never adopts the result.
+     * Requires confidential-client credentials. Never defaults `actorToken` (a
+     * delegation's actor token is this same client's `client_credentials` token,
+     * [loginClientCredentials]; one issued to another client is refused
+     * `invalid_request`, §15.2 rule 9), never auto-narrows after `invalid_scope`, never adopts the result.
      */
     suspend fun tokenExchange(params: TokenExchangeParams): ExchangedToken =
         oidcSupport.tokenExchange(params)
