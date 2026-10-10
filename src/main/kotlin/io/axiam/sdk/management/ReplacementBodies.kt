@@ -109,6 +109,11 @@ fun SsfStream.toInput(): SsfStreamInput = SsfStreamInput(
  * which needs it again (§31.3 rule 2). An unknown `auth` / `scope` arm is
  * carried over and refused locally on encode: replace it before writing back.
  *
+ * `expected_updated_at` is this read's `updated_at` (§31.3 rule 4, contract
+ * 1.60): the write lands only if no other administrator has written the target
+ * since, and is otherwise `409` — reload and retry. Set it to `null` with
+ * `copy()` for the earlier last-writer-wins replacement.
+ *
  * @return the replacement body
  */
 fun ScimTargetResponse.toInput(): ScimTargetInput = ScimTargetInput(
@@ -117,6 +122,7 @@ fun ScimTargetResponse.toInput(): ScimTargetInput = ScimTargetInput(
     credential = null,
     deprovision = deprovision,
     enabled = enabled,
+    expectedUpdatedAt = updatedAt,
     name = name,
     pushGroups = pushGroups,
     scope = scope,

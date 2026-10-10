@@ -27,6 +27,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import java.time.Instant
 import java.util.UUID
 
 /**
@@ -127,6 +128,23 @@ class ScimTargetsTest : ManagementTestBase() {
         for ((got, want) in shapes) {
             assertEquals(Json.parseToJsonElement(want), Json.parseToJsonElement(got))
         }
+
+        // expected_updated_at (contract 1.60): absent when unset, sent exactly as given when set.
+        assertFalse("expected_updated_at" in route.requests[0].json(), "unset: no key")
+        val read = "2026-10-05T07:08:09.123456Z"
+        client.scimTargets.update(id, input(null).copy(expectedUpdatedAt = Instant.parse(read)))
+        assertEquals(JsonPrimitive(read), route.requests[2].json()["expected_updated_at"])
+    }
+
+    @Test
+    fun `an overtaken update carrying expected_updated_at surfaces the 409 once`() = runTest {
+        val id = UUID.randomUUID()
+        val route = mount("PUT", "$targets/$id", 409, """{"error":"conflict","message":"the SCIM target changed since it was read"}""")
+        val read = "2026-10-05T00:00:00Z"
+        val body = input(null).copy(expectedUpdatedAt = Instant.parse(read))
+        assertThrows<ConflictError> { runBlocking { client.scimTargets.update(id, body) } }
+        assertEquals(1, route.calls(), "a 409 is not retried")
+        assertEquals(JsonPrimitive(read), route.last().json()["expected_updated_at"])
     }
 
     // -- 4. Open decoding and pagination ----------------------------------------------------
@@ -234,5 +252,6 @@ class ScimTargetsTest : ManagementTestBase() {
         assertNull(body.credential, "absent keeps the stored credential")
         assertEquals(t.baseUrl, body.baseUrl)
         assertEquals(true, body.enabled)
+        assertEquals(t.updatedAt, body.expectedUpdatedAt, "the read's version guards the write (§31.3 rule 4)")
     }
 }
