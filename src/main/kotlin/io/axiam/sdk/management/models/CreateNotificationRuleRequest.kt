@@ -13,6 +13,9 @@ import kotlinx.serialization.Serializable
  * @property events Event types that trigger this rule.
  * @property name Human-readable name for the rule.
  * @property recipientEmails Email addresses to notify.
+ * @property windowMinutes Minutes in which one event type mails each recipient at most once:
+ *     the first event of a window is mailed, the rest are counted and the next mail says how many
+ *     were not sent (#551). 1 … 1440; 15 when omitted.
  */
 @Serializable
 data class CreateNotificationRuleRequest(
@@ -20,4 +23,5 @@ data class CreateNotificationRuleRequest(
     @SerialName("events") val events: List<NotificationEventType>,
     @SerialName("name") val name: String,
     @SerialName("recipient_emails") val recipientEmails: List<String>,
+    @SerialName("window_minutes") val windowMinutes: Int? = null,
 )

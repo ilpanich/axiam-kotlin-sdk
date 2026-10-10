@@ -73,11 +73,21 @@ OPEN_UNIONS = {"ScimTargetAuth", "ScimTargetScope"}
 # §29.8 test 8 asks the same of a *response*: `SamlIdpInfo`'s two credential
 # ids are null when the slot is empty, and that null must stay distinct from an
 # absent member, so a server that stopped sending the member is noticed.
+#
+# §27.15 note 8 (contract 1.60) names ten on `UpdateFederationConfigRequest`:
+# each is cleared by an explicit `null` and left unchanged when omitted. Its
+# other members (`provider`, `client_id`, the booleans, the lists, ...) cannot
+# be cleared -- the server reads their `null` as absent -- so they stay `T?`.
 EXPLICIT_NULL_FIELDS = {
     ("UpdateDirectoryConfig", "group_base_dn"),
     ("UpdateDirectoryConfig", "group_filter"),
     ("SamlIdpInfo", "active_credential_id"),
     ("SamlIdpInfo", "next_credential_id"),
+    *(("UpdateFederationConfigRequest", wire) for wire in (
+        "metadata_url", "idp_signing_cert_pem", "idp_metadata_signing_cert_pem",
+        "provider_slug", "authorization_endpoint", "token_endpoint",
+        "userinfo_endpoint", "apple_team_id", "apple_key_id", "button_icon",
+    )),
 }
 
 # Call-site documentation the contract makes an SDK repeat (§29.3, §30.3,
@@ -185,8 +195,11 @@ CALL_SITE_NOTES: dict[str, str] = {
         "`auth.type`, without `credential` in the same write is refused `400` and "
         "changes nothing. The SDK holds no credential to re-send. Every other member "
         "left out takes its default (`ScimTargetResponse.toInput()` turns a read into "
-        "the body). An update overtaken by another administrator's write is `409` "
-        "(§31.3 rule 4): reload, then retry yourself."
+        "the body, carrying the `updated_at` it read as `expected_updated_at`). An "
+        "update overtaken by another administrator's write is `409` (§31.3 rule 4): "
+        "reload, then retry yourself. `expected_updated_at` is sent exactly as set "
+        "and only when set; without it the write is conditional only on the version "
+        "the server reads during the request (contract 1.60)."
     ),
     "scim_targets.delete": (
         "**Deprovisions nothing downstream** (§31.3 rule 8): the users and groups "
@@ -933,6 +946,12 @@ def emit_enum(name: str, schema: Any) -> str:
 # left as a hard requirement -- rather than the schema's literal "required".
 DEFAULT_TRUE_FIELDS = {"inherit"}
 
+# The same shape with the opposite default, keyed by (schema, member) because
+# the default is the contract's, per member. §27.15 note 6 (contract 1.60):
+# `FederationConfigResponse.allow_sha1_signatures` is required in the export,
+# but a server older than 1.0.0 sends none, and its absence means `false`.
+DEFAULT_FALSE_FIELDS = {("FederationConfigResponse", "allow_sha1_signatures")}
+
 
 def emit_data_class(name: str, secrets: set[str], replacement: bool) -> str:
     """A ``@Serializable data class`` for an object schema."""
@@ -968,6 +987,10 @@ def emit_data_class(name: str, secrets: set[str], replacement: bool) -> str:
             doc += (" -- NULL IS NOT ABSENT (§27.4 rule 5): `JsonNullable.Absent` (the "
                     "default) is not sent and was not received, `JsonNullable.Null` is an "
                     "explicit `null`, `JsonNullable.Value(x)` carries x.")
+        if (name, f["wire"]) in DEFAULT_FALSE_FIELDS and f["required"]:
+            doc += (" A server that omits this (older than 1.0.0) means `false`, which is "
+                    "this property's default rather than a decode failure on the whole "
+                    "response (CONTRACT §27.15 note 6).")
         if f["wire"] in DEFAULT_TRUE_FIELDS and f["required"]:
             doc += (" A server that omits this (older than contract 1.51) means `true` -- "
                     "reaches descendants -- which is this property's default rather than a "
@@ -986,6 +1009,9 @@ def emit_data_class(name: str, secrets: set[str], replacement: bool) -> str:
             # §27.13 S-10 rule 3: required-on-the-wire, defaulted here -- see
             # DEFAULT_TRUE_FIELDS. Neither nullable nor a hard requirement.
             default, nullable = " = true", ""
+        elif (name, f["wire"]) in DEFAULT_FALSE_FIELDS and f["required"] and f["type"] == "Boolean":
+            # §27.15 note 6: absent from an older server's response is `false`.
+            default, nullable = " = false", ""
         elif f.get("explicit_null"):
             # EXPLICIT_NULL_FIELDS: absent is the default, and it is not null.
             default, nullable = " = JsonNullable.Absent", ""

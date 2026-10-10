@@ -111,8 +111,10 @@ class ScimTargetsApi internal constructor(
      * a client-credentials target, or `auth.type`, without `credential` in the same write is
      * refused `400` and changes nothing. The SDK holds no credential to re-send. Every other
      * member left out takes its default (`ScimTargetResponse.toInput()` turns a read into the
-     * body). An update overtaken by another administrator's write is `409` (§31.3 rule 4): reload,
-     * then retry yourself.
+     * body, carrying the `updated_at` it read as `expected_updated_at`). An update overtaken by
+     * another administrator's write is `409` (§31.3 rule 4): reload, then retry yourself.
+     * `expected_updated_at` is sent exactly as set and only when set; without it the write is
+     * conditional only on the version the server reads during the request (contract 1.60).
      *
      * @param id the id to address
      * @param body the request body

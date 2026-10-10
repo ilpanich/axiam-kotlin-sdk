@@ -4,6 +4,8 @@
 package io.axiam.sdk.management.models
 
 import io.axiam.sdk.Sensitive
+import io.axiam.sdk.management.InstantSerializer
+import java.time.Instant
 import kotlinx.serialization.Contextual
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -29,6 +31,12 @@ import kotlinx.serialization.json.put
  *     toString and from every rendering except the one request body it is sent in
  * @property deprovision `deactivate` (default: `PATCH active=false`) or `delete`.
  * @property enabled `true` by default. A disabled target receives nothing.
+ * @property expectedUpdatedAt The `updated_at` of the target as the client read it (P23W5-09,
+ *     T-416). **Update only; create ignores it.** When present, the replacement lands only if the
+ *     target still has that version, else `409` (reload and retry): two administrators who opened
+ *     the form at the same version cannot silently overwrite each other. When absent the
+ *     replacement is conditional on the version the server reads during the request —
+ *     last-writer-wins between administrators, as before.
  * @property name 1–128 bytes.
  * @property pushGroups Push groups too (every group for `all_users`, the listed ones for
  *     `groups`). `false` by default.
@@ -43,6 +51,7 @@ data class ScimTargetInput(
     @SerialName("credential") val credential: @Contextual Sensitive<String>? = null,
     @SerialName("deprovision") val deprovision: DeprovisionPolicy? = null,
     @SerialName("enabled") val enabled: Boolean? = null,
+    @SerialName("expected_updated_at") val expectedUpdatedAt: @Serializable(with = InstantSerializer::class) Instant? = null,
     @SerialName("name") val name: String,
     @SerialName("push_groups") val pushGroups: Boolean? = null,
     @SerialName("scope") val scope: ScimTargetScope,
