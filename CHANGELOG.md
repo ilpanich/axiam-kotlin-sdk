@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-10
+
 `axiam-sdk-kotlin` 1.0.0 is the first stable release: from here on it follows Semantic Versioning.
 It is a coroutine-first, plain-JVM client (OkHttp, kotlinx.serialization; Kotlin 2.1.0 and JVM 17
 minimum) for AXIAM's **REST** surface, with an optional Ktor route guard, plus the §22 reactor
@@ -106,6 +108,18 @@ Since `v1.0.0-beta17`:
 - **§21.3.1 — the seventh alias.** `MtlsEndpointAliases.backchannel_authentication_endpoint`, and
   the four CIBA discovery members on `OidcConfiguration`.
 
+- The ssf_unjudged telemetry event; P6 expiry refresh and the §12.1 / §21.5 verify rows (contract 1.60)
+
+- Contract 1.60 model rows — expected_updated_at, window_minutes, the federation null rule
+
+- CIBA initiation, polling and ping helpers, signed form (CONTRACT §33, §21.3.1)
+
+- SSF stream management tests and the receiver helper (CONTRACT §32, §32.7)
+
+- Directory namespace semantics and generator infrastructure (CONTRACT §30)
+
+- RFC 7592 client configuration operations (CONTRACT §28.12)
+
 ### Changed
 
 - **Contract 1.60.** `CONTRACT.md`, `openapi.json`, `management-registry.json` and `proto/` are
@@ -133,6 +147,34 @@ Since `v1.0.0-beta17`:
 - `ErrorMapper.fromOAuth2ResponseAtAnyStatus` — §2's `/oauth2` row at any status (§28.12.3,
   §33.4) — is used by the new operations; the existing §12 callers keep their 400/401 scope.
 
+- re-vendor at axiam 8df0e11 (the R1W1 tls_client_auth note, the spec digest)
+
+- The not-a-verdict assertions are checked at run time
+
+- README at contract 1.60; the 1.0.0 changelog
+
+- re-vendor contract 1.60, the spec and the registry (axiam 3ed6547)
+
+- README and CHANGELOG for the contract 1.60 phase-1 rows
+
+- The token-exchange actor token is the client's own client_credentials token (contract 1.60 15.2 rule 9)
+
+- re-vendor CONTRACT.md at contract 1.60
+
+- Contract 1.59 conformance statement and changelog (F-59-08)
+
+- re-vendor CONTRACT.md at contract 1.59 (axiam fe369eb)
+
+- Contract 1.58 conformance statement, usage and changelog
+
+- scim_targets namespace required tests (CONTRACT §31)
+
+- Saml namespace required tests (CONTRACT §29)
+
+- re-vendor contract 1.58 artifacts and regenerate §27 surface
+
+- re-vendor openapi.json + management-registry.json after utoipa 6
+
 ### Fixed
 
 - **`SsfReceiver.poll` never keeps a `jti` it does not return** (§32.7, §34.2 P1, P3). A JWKS or
@@ -151,6 +193,22 @@ Since `v1.0.0-beta17`:
   grant's, and never the scope the caller asked for. Verified, with a test; no code change.
 - **Discovery documents from 1.0.0 servers** (§21.5): a document carrying the four revocation and
   introspection auth members decodes as one without them does. Verified, with a test.
+
+- An unseen event-type URI is sent back unchanged; a local refusal is a ValidationError (contract 1.60 B4, B5)
+
+- A failed JWKS fill counts toward the refetch limit; a store that cannot answer gives no verdict (contract 1.60 A3, B1)
+
+- Unknown values are refused locally; SSF event types are strings (R-22, F-KT-05, F-KT-06)
+
+- The clear-text Sensitive writer is not public (R-19, F-KT-04)
+
+- The receiver's JWKS cache expires (R-8, F-KT-10)
+
+- A 5xx on cibaPoll is transient whatever its body (R-11, F-KT-01)
+
+- Poll never keeps a jti it does not return (R-1, F-KT-02)
+
+- Writes never ride OkHttp's transparent re-send (R-17, F-KT-03)
 
 ### Security
 
