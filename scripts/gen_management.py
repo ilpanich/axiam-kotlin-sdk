@@ -181,8 +181,15 @@ CALL_SITE_NOTES: dict[str, str] = {
         "update moves `endpoint_url` to another scheme, host or port while a header "
         "is stored: then it must carry `authorization_header` again or "
         "`clear_authorization_header: true`, else `400` (§32.3 rule 5). An update "
-        "overtaken by the receiver's own write is `409`: read the stream again. "
-        "`SsfStream.toInput()` turns a read into the body."
+        "overtaken by the receiver's own write is `409`: read the stream again "
+        "(never retried). **Contract 1.61:** `expected_updated_at` (the `updated_at` "
+        "string you read, sent as given) makes the update conditional on that "
+        "version, `409` if the stream was written since; and `events_requested` has "
+        "three meanings on an update (§32.2): absent *resets* the stream to every "
+        "event of `events_allowed`, `[]` is stored as the receiver's \"none\", a "
+        "list is stored as given. An edit therefore sends back the "
+        "`events_requested` and `expected_updated_at` it read. "
+        "`SsfStream.toInput()` turns a read into the body, carrying both."
     ),
     "scim_targets.create": (
         "`credential` is required here (§31.3 rule 2). It is write-only: no "
@@ -778,6 +785,8 @@ def field_list(schema_name: str, secrets: set[str]) -> tuple[list[dict[str, Any]
             rendered = f"JsonNullable<{kotlin_type(props[wire])}>"
         else:
             rendered = kotlin_type(props[wire])
+        if (schema_name, wire) in DATE_TIME_AS_STRING:
+            rendered = "String"
         fields.append({
             "wire": wire,
             "name": prop(wire),
@@ -789,6 +798,15 @@ def field_list(schema_name: str, secrets: set[str]) -> tuple[list[dict[str, Any]
         })
     return fields, required, description
 
+
+# Timestamps an SDK passes through as the caller's string rather than as a
+# parsed Instant. CONTRACT.md §32.2 / §32.8 test 1 (contract 1.61):
+# `SsfStreamInput.expected_updated_at` is "sent exactly as given (the string,
+# not re-formatted)" -- an Instant has no spelling of its own, so a string with
+# a non-UTC offset or a trailing-zero fraction would come back different.
+# (`ScimTargetInput.expected_updated_at` shipped in 1.0.0 as an Instant and is
+# left as it is: changing the type of a published member is a breaking change.)
+DATE_TIME_AS_STRING = {("SsfStreamInput", "expected_updated_at")}
 
 # String enums modelled as an open STRING type with the known values as named
 # constants, rather than as a Kotlin enum. CONTRACT §32.2: "An SDK SHOULD model

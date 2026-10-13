@@ -21,7 +21,8 @@ import kotlinx.serialization.Serializable
  * @property backchannelAuthenticationRequestSigningAlg G-7 — see the create DTO. `""` clears.
  * @property backchannelClientNotificationEndpoint G-7 — see the create DTO. `""` clears.
  * @property backchannelLogoutUri Pass an empty string to clear a previously registered URI —
- *     the one edit an operator makes when an RP is decommissioned.
+ *     the one edit an operator makes when an RP is decommissioned. Any other value is held to the
+ *     same rule as on create.
  * @property backchannelTokenDeliveryMode G-7 — see the create DTO. `""` clears.
  * @property backchannelUserCodeParameter G-7 — `true` refused, as on create.
  * @property browserSso X7.3 — see &#91;`CreateOAuth2ClientRequest::browser_sso`&#93;.

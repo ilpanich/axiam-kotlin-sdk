@@ -34,7 +34,12 @@ import kotlinx.serialization.Serializable
  *     the webhook address policy (no credentials, no fragment, no private, loopback or internal
  *     host).
  * @property backchannelLogoutUri B5 — where OIDC back-channel logout tokens are delivered.
- *     Omit for a client that does not participate.
+ *     Omit for a client that does not participate. Must be an absolute `https` URL with no
+ *     credentials and no fragment, naming a public host: an IP literal that is loopback, private,
+ *     link-local or the cloud metadata address, and the names `localhost`, `*.localhost`,
+ *     `*.local` and `*.internal`, are refused with `400`. Delivery is one request that does not
+ *     follow redirects, and a name that resolves to a non-public address is refused when it is
+ *     sent.
  * @property backchannelTokenDeliveryMode G-7 — CIBA Core §4 `backchannel_token_delivery_mode`:
  *     `poll` or `ping`. Required when `grant_types` holds `urn:openid:params:grant-type:ciba`,
  *     refused otherwise; `push` is not offered. A CIBA client must be confidential; a `fapi2` one

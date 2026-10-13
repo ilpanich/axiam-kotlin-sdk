@@ -22,6 +22,11 @@ import kotlinx.serialization.json.JsonElement
  *     refused for every other type. Each name, and the common name, must be admitted by the
  *     tenant's effective `server_cert_allowed_names`, which is empty — refusing every `Server`
  *     request — until an organization administrator lists names.
+ * @property userId The user account a `User` certificate is issued for (#533), returned as the
+ *     certificate's `user_id`. Optional; accepted only for `cert_type: User`, and it must name a
+ *     user of this tenant that has not been deleted or erased. A `metadata.user_id` in the same
+ *     request must agree with it. Revoking the account's certificates — directory linking,
+ *     deletion, erasure — matches on it.
  * @property validityDays Validity duration in days.
  */
 @Serializable
@@ -32,5 +37,6 @@ data class CreateCertificateRequest(
     @SerialName("metadata") val metadata: JsonElement? = null,
     @SerialName("subject") val subject: String,
     @SerialName("subject_alt_names") val subjectAltNames: List<SubjectAltName>? = null,
+    @SerialName("user_id") val userId: @Serializable(with = UuidSerializer::class) UUID? = null,
     @SerialName("validity_days") val validityDays: Int,
 )

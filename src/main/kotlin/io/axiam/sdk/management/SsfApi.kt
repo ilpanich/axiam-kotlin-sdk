@@ -117,8 +117,14 @@ class SsfApi internal constructor(
      * which absent keeps the stored one** — unless the update moves `endpoint_url` to another
      * scheme, host or port while a header is stored: then it must carry `authorization_header`
      * again or `clear_authorization_header: true`, else `400` (§32.3 rule 5). An update overtaken
-     * by the receiver's own write is `409`: read the stream again. `SsfStream.toInput()` turns a
-     * read into the body.
+     * by the receiver's own write is `409`: read the stream again (never retried). **Contract
+     * 1.61:** `expected_updated_at` (the `updated_at` string you read, sent as given) makes the
+     * update conditional on that version, `409` if the stream was written since; and
+     * `events_requested` has three meanings on an update (§32.2): absent *resets* the stream to
+     * every event of `events_allowed`, `&#91;&#93;` is stored as the receiver's "none", a list is
+     * stored as given. An edit therefore sends back the `events_requested` and
+     * `expected_updated_at` it read. `SsfStream.toInput()` turns a read into the body, carrying
+     * both.
      *
      * @param streamId the stream id to address
      * @param body the request body

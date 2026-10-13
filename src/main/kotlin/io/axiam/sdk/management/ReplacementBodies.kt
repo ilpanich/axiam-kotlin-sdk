@@ -84,6 +84,15 @@ fun SamlServiceProvider.toInput(): SamlServiceProviderInput = SamlServiceProvide
  * keeps the stored header — unless the update moves `endpoint_url` to another
  * origin, which needs one or the other (§32.3 rule 5).
  *
+ * Contract 1.61 (§32.2): the body carries the `events_requested` **and** the
+ * `expected_updated_at` that were read. An `events_requested` of `[]` (the
+ * receiver's "none") stays `[]` — omitting it would reset the stream to every
+ * allowed event — and `expected_updated_at` is this read's `updated_at`, so the
+ * write lands only on the version that was read and is otherwise `409` (the
+ * receiver's own writes included): reload and retry. When you lower
+ * `eventsAllowed` with `copy()`, cut `eventsRequested` to the new ceiling in the
+ * same call; set `expectedUpdatedAt` to `null` to replace whatever is stored.
+ *
  * @return the replacement body
  */
 fun SsfStream.toInput(): SsfStreamInput = SsfStreamInput(
@@ -95,6 +104,7 @@ fun SsfStream.toInput(): SsfStreamInput = SsfStreamInput(
     endpointUrl = endpointUrl,
     eventsAllowed = eventsAllowed,
     eventsRequested = eventsRequested,
+    expectedUpdatedAt = updatedAt.toString(),
     receiverClientId = receiverClientId,
     status = status,
     statusReason = statusReason,
