@@ -23,6 +23,7 @@ import kotlinx.serialization.json.JsonElement
  *     Stated here and never in the CSR, which is still refused if it requests a `subjectAltName`.
  *     Under a CA whose key is held by `vault_pki` a `Server` request on this path is refused; use
  *     `POST /api/v1/certificates`.
+ * @property userId See &#91;`CreateCertificateRequest::user_id`&#93;.
  * @property validityDays Validity duration in days.
  */
 @Serializable
@@ -32,5 +33,6 @@ data class SignCertificateCsrRequest(
     @SerialName("issuer_ca_id") val issuerCaId: @Serializable(with = UuidSerializer::class) UUID,
     @SerialName("metadata") val metadata: JsonElement? = null,
     @SerialName("subject_alt_names") val subjectAltNames: List<SubjectAltName>? = null,
+    @SerialName("user_id") val userId: @Serializable(with = UuidSerializer::class) UUID? = null,
     @SerialName("validity_days") val validityDays: Int,
 )

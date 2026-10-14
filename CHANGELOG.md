@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-10-13
+
+Contract 1.61 (accompanying the AXIAM 1.0.1 release), additive and clarifying: `CONTRACT.md`,
+`openapi.json` and `management-registry.json` re-vendored byte for byte from `ilpanich/axiam`
+`058d8e0` (branch `claude/release-1.0.1`; `proto/` is unchanged), the §27 surface regenerated
+(190 operations across 28 namespaces), and the README states conformance at contract 1.61.
+
+### Added
+
+- **`Certificate.userId` (§27.11 rule 5).** On `Certificate` and `GeneratedCertificate`
+  (`UUID? = null`): `null` and an absent member both decode as "no account named" (a server before
+  1.0.1 omits it); never required, coalesced or synthesised from `metadata` or the subject.
+  `CreateCertificateRequest.userId` and `SignCertificateCsrRequest.userId` are sent exactly as
+  given; the key is omitted, never `null`, when the caller names no account.
+- **`SsfStreamInput.expectedUpdatedAt` (§32.2, §32.3 rule 4).** A `String?`, the `updated_at` of
+  the stream as read, sent on `ssf.updateStream` exactly as given (an `Instant` would re-render it)
+  and omitted when unset; a `409` is a `ConflictError` and is not retried. An `eventsRequested` of
+  `[]` is sent as `[]` and an unset one is omitted (the three meanings of §32.2).
+  `SsfStream.toInput()` now sends the `eventsRequested` and the `updated_at` it read. This answers
+  ilpanich/axiam#631.
+- `CibaPendingList.total_pending` / `truncated` (§33.3 rule 16) are not modelled: no registry
+  operation returns the type and the generator emits only the models its operations carry.
+
+### Changed
+
+- The generated `Certificate`, `GeneratedCertificate`, `CreateCertificateRequest`,
+  `SignCertificateCsrRequest` and `SsfStreamInput` gain a property (in the generator's
+  alphabetical order; all are named-argument data classes with a default, so source compatibility
+  holds for named arguments). KDoc follows the 1.61 `openapi.json`.
+
+### Tests
+
+- `Contract161ModelsTest`: §27.11 rule 5's required test; §32.8 test 1's additions
+  (`expected_updated_at` as given and absent, `[]` as `[]`), the `409`, and `toInput()`.
+
 ## [1.0.0] - 2026-10-10
 
 `axiam-sdk-kotlin` 1.0.0 is the first stable release: from here on it follows Semantic Versioning.

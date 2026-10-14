@@ -123,6 +123,12 @@ class UsersApi internal constructor(
     }
 
     /**
+     * Revokes the account's sessions and its still-active `User` certificates — those issued for
+     * it (`user_id`), and, for a certificate issued without that binding, those its
+     * `metadata.user_id` or subject common name ties to it — before the account is tombstoned. A
+     * revoked certificate goes on its issuer's revocation list, and on Vault's for a `vault_pki`
+     * issuer through the cleanup job's sweep (#533).
+     *
      * Issues `DELETE /api/v1/users/{user_id}`.
      *
      * Not retried: §27.4 rule 8 makes every write on this surface single-shot, including the ones

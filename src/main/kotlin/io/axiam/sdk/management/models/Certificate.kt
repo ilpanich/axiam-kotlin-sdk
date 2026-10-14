@@ -25,7 +25,10 @@ import kotlinx.serialization.json.JsonElement
  * @property id the server's id field
  * @property issuerCaId The CA certificate that signed this certificate.
  * @property keyAlgorithm the server's key_algorithm field
- * @property metadata Arbitrary key-value metadata (e.g., device serial, user ID binding).
+ * @property metadata Arbitrary key-value metadata (e.g., a device serial). Free-form and never
+ *     authoritative: the account a `User` certificate was issued for is `user_id`. A
+ *     `metadata.user_id` is still read, by the revocation of a user's certificates, for a row
+ *     issued before the binding existed (schema v98, #533).
  * @property notAfter Validity end.
  * @property notBefore Validity start.
  * @property publicCertPem PEM-encoded public certificate.
@@ -34,6 +37,14 @@ import kotlinx.serialization.json.JsonElement
  *     `CN=` prefix in the request is understood and stripped, so this always says what the
  *     certificate's subject DN says (DF-023).
  * @property tenantId The tenant this certificate belongs to.
+ * @property userId The user account a `User` certificate was issued for, in this tenant
+ *     (#533); `null` for every other type, for a `User` certificate issued without one, and for
+ *     every certificate issued before schema v98. What revoking a user's certificates matches on —
+ *     directory linking, administrator deletion and Art. 17 erasure. A row with `None` is matched
+ *     by the older convention instead (`metadata.user_id`, or a subject common name equal to the
+ *     account's username or email); a row naming another account never is. It does not make the
+ *     certificate authenticate as the user: a certificate authenticates only as the service
+ *     account it is bound to.
  */
 @Serializable
 data class Certificate(
@@ -51,4 +62,5 @@ data class Certificate(
     @SerialName("status") val status: CertificateStatus,
     @SerialName("subject") val subject: String,
     @SerialName("tenant_id") val tenantId: @Serializable(with = UuidSerializer::class) UUID,
+    @SerialName("user_id") val userId: @Serializable(with = UuidSerializer::class) UUID? = null,
 )

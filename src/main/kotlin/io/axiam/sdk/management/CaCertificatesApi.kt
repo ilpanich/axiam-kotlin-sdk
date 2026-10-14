@@ -157,6 +157,11 @@ class CaCertificatesApi internal constructor(
     }
 
     /**
+     * A subordinate CA its parent signed through Vault's PKI engine is revoked on the parent's
+     * list in Vault as well (#612). A Vault that refuses or cannot be reached does not undo or
+     * fail the revocation: it is recorded (`ca_certificate.vault_revocation_pending`, in the
+     * organization's own audit log) and retried by the cleanup job.
+     *
      * Issues `POST /api/v1/organizations/{org_id}/ca-certificates/{id}/revoke`.
      *
      * Not retried: §27.4 rule 8 makes every write on this surface single-shot, including the ones

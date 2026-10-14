@@ -30,7 +30,16 @@ import kotlinx.serialization.json.put
  *     policy), refused for `poll`.
  * @property eventsAllowed 1–6 event types.
  * @property eventsRequested A subset of `events_allowed`; absent means all of them. The
- *     receiver may narrow it later, never widen it.
+ *     receiver may narrow it later, never widen it. On update, absent therefore *resets* a
+ *     narrowing the receiver made to every allowed event, and `&#91;&#93;` keeps a receiver's
+ *     "none": a client that edits a stream sends the value it read (cut to the new
+ *     `events_allowed`), never an absent field.
+ * @property expectedUpdatedAt The `updated_at` of the stream as the client read it (R1W2-03,
+ *     T-406). **Update only; create ignores it.** When present, the replacement lands only if the
+ *     stream still has that version, else `409` (reload and retry): a pause or a narrowing the
+ *     receiver made after the form was read is not silently reverted. When absent the replacement
+ *     is conditional on the version the server reads during the request — an old client keeps that
+ *     behaviour, and the console always sends it.
  * @property receiverClientId An OAuth2 client of the tenant with the `client_credentials`
  *     grant and the `ssf.manage` scope.
  * @property status `enabled` by default.
@@ -47,6 +56,7 @@ data class SsfStreamInput(
     @SerialName("endpoint_url") val endpointUrl: String? = null,
     @SerialName("events_allowed") val eventsAllowed: List<SsfEventType>,
     @SerialName("events_requested") val eventsRequested: List<SsfEventType>? = null,
+    @SerialName("expected_updated_at") val expectedUpdatedAt: String? = null,
     @SerialName("receiver_client_id") val receiverClientId: String,
     @SerialName("status") val status: SsfStreamStatus? = null,
     @SerialName("status_reason") val statusReason: String? = null,
