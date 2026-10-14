@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html class="no-js">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" charset="UTF-8">
+    <title>updateClientRegistration</title>
+    <link href="../../../images/logo-icon.svg" rel="icon" type="image/svg">
+    <script>var pathToRoot = "../../../";</script>
+    <script>document.documentElement.classList.replace("no-js","js");</script>
+    <script>const storage = localStorage.getItem("dokka-dark-mode")
+    if (storage == null) {
+        const osDarkSchemePreferred = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+        if (osDarkSchemePreferred === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    } else {
+        const savedDarkMode = JSON.parse(storage)
+        if(savedDarkMode === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    }
+    </script>
+<script type="text/javascript" src="https://unpkg.com/kotlin-playground@1/dist/playground.min.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/sourceset_dependencies.js" async="async"></script>
+<link href="../../../styles/style.css" rel="Stylesheet">
+<link href="../../../styles/main.css" rel="Stylesheet">
+<link href="../../../styles/prism.css" rel="Stylesheet">
+<link href="../../../styles/logo-styles.css" rel="Stylesheet">
+<link href="../../../styles/font-jb-sans-auto.css" rel="Stylesheet">
+<script type="text/javascript" src="../../../scripts/clipboard.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/navigation-loader.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/platform-content-handler.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/main.js" defer="defer"></script>
+<script type="text/javascript" src="../../../scripts/prism.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/symbol-parameters-wrapper_deferred.js" defer="defer"></script>
+</head>
+<body>
+    <div class="root">
+<nav class="navigation" id="navigation-wrapper">
+    <div class="navigation--inner">
+        <div class="navigation-title">
+            <button class="menu-toggle" id="menu-toggle" type="button">toggle menu</button>
+            <div class="library-name">
+                    <a class="library-name--link" href="../../../index.html">
+                            axiam-sdk-kotlin
+                    </a>
+            </div>
+            <div class="library-version">
+1.0.0            </div>
+        </div>
+        <div class="filter-section" id="filter-section">
+                <button class="platform-tag platform-selector jvm-like" data-active="" data-filter=":dokkaHtml/main">jvm</button>
+        </div>
+    </div>
+    <div class="navigation-controls">
+        <button class="navigation-controls--btn navigation-controls--theme" id="theme-toggle-button" type="button">switch theme</button>
+        <div class="navigation-controls--btn navigation-controls--search" id="searchBar" role="button">search in API</div>
+    </div>
+</nav>
+        <div id="container">
+            <div class="sidebar" id="leftColumn">
+                <div class="sidebar--inner" id="sideMenu"></div>
+            </div>
+            <div id="main">
+<div class="main-content" data-page-type="member" id="content" pageIds="axiam-sdk-kotlin::io.axiam.sdk/AxiamClient/updateClientRegistration/#kotlin.String#io.axiam.sdk.Sensitive[kotlin.String]#io.axiam.sdk.oidc.ClientRegistration/PointingToDeclaration//769193423">
+  <div class="breadcrumbs"><a href="../../../index.html">axiam-sdk-kotlin</a><span class="delimiter">/</span><a href="../index.html">io.axiam.sdk</a><span class="delimiter">/</span><a href="index.html">AxiamClient</a><span class="delimiter">/</span><span class="current">updateClientRegistration</span></div>
+  <div class="cover ">
+    <h1 class="cover"><span>update</span><wbr></wbr><span>Client</span><wbr></wbr><span><span>Registration</span></span></h1>
+  </div>
+  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="update-client-registration.html"><span class="token function">updateClientRegistration</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">registrationClientUri<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token punctuation">, </span></span><span class="parameter ">registrationAccessToken<span class="token operator">: </span><a href="../-sensitive/index.html">Sensitive</a><span class="token operator">&lt;</span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">&gt;</span><span class="token punctuation">, </span></span><span class="parameter ">metadata<span class="token operator">: </span><a href="../../io.axiam.sdk.oidc/-client-registration/index.html">ClientRegistration</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../../io.axiam.sdk.oidc/-client-registration/index.html">ClientRegistration</a></div><p class="paragraph"><code class="lang-kotlin">PUT registration_client_uri</code> (RFC 7592 §2.2, CONTRACT.md §28.12) — <strong>replace</strong> this client's registration, and receive a <strong>rotated</strong> token.</p><p class="paragraph"><a href="update-client-registration.html">metadata</a> is the <strong>whole</strong> registration: a member it omits is a member the server deletes. Start from <a href="read-client-registration.html">readClientRegistration</a>'s result (it keeps unknown members, <code class="lang-kotlin">jwks</code> / <code class="lang-kotlin">jwks_uri</code> included, in <code class="lang-kotlin">ClientRegistration.extra</code>) and <code class="lang-kotlin">copy()</code> in what you mean to change. The SDK sets <code class="lang-kotlin">client_id</code> to <code class="lang-kotlin">metadata.clientId</code> and never sends <code class="lang-kotlin">registration_access_token</code>, <code class="lang-kotlin">registration_client_uri</code>, <code class="lang-kotlin">client_secret_expires_at</code>, <code class="lang-kotlin">client_id_issued_at</code> or <code class="lang-kotlin">client_secret</code>.</p><p class="paragraph"><strong>Persist the returned </strong><code class="strong lang-kotlin"><strong>registrationAccessToken</strong></code><strong> before doing anything else.</strong> From the moment the server answers it is the only valid token: the one you presented is dead for every operation.</p><p class="paragraph"><strong>Never retried</strong> — not on a transport error, not on a <code class="lang-kotlin">5xx</code>. An update that reached the server and lost its response has already rotated the token; repeating it with the old one is a <code class="lang-kotlin">401</code> that locks you out of your own registration. On a lost answer, read the registration with the token you hold: a <code class="lang-kotlin">401</code> means the update landed.</p><span class="kdoc-tag"><h4 class="">Return</h4><p class="paragraph">the stored registration, carrying the rotated token</p></span><h4 class="">Parameters</h4><div class="table"><div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main"><div class="main-subrow keyValue "><div class=""><span class="inline-flex"><div><u><span>registration</span><wbr></wbr><span>Client</span><wbr></wbr><span><span>Uri</span></span></u></div></span></div><div><div class="title"><p class="paragraph">the registration's URI</p></div></div></div></div><div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main"><div class="main-subrow keyValue "><div class=""><span class="inline-flex"><div><u><span>registration</span><wbr></wbr><span>Access</span><wbr></wbr><span><span>Token</span></span></u></div></span></div><div><div class="title"><p class="paragraph">the registration's current bearer token</p></div></div></div></div><div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main"><div class="main-subrow keyValue "><div class=""><span class="inline-flex"><div><u><span><span>metadata</span></span></u></div></span></div><div><div class="title"><p class="paragraph">the complete registration to store</p></div></div></div></div></div><h4 class="">Throws</h4><div class="table"><div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main"><div class="main-subrow keyValue "><div class=""><span class="inline-flex"><div><a href="../../io.axiam.sdk.errors/-validation-error/index.html"><span>Validation</span><wbr></wbr><span><span>Error</span></span></a></div></span></div><div><div class="title"><p class="paragraph">locally, for an off-origin URI</p></div></div></div></div><div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main"><div class="main-subrow keyValue "><div class=""><span class="inline-flex"><div><a href="../../io.axiam.sdk.errors/-o-auth-protocol-error/index.html"><span>OAuth</span><wbr></wbr><span>Protocol</span><wbr></wbr><span><span>Error</span></span></a></div></span></div><div><div class="title"><p class="paragraph">for the server's refusals (<code class="lang-kotlin">invalid_client_metadata</code>, <code class="lang-kotlin">invalid_redirect_uri</code>, <code class="lang-kotlin">invalid_token</code>)</p></div></div></div></div></div></div></div>
+</div>
+      <div class="footer">
+        <span class="go-to-top-icon"><a href="#content" id="go-to-top-link"></a></span><span>© 2026 Copyright</span><span
+                class="pull-right"><span>Generated by </span><a
+                href="https://github.com/Kotlin/dokka"><span>dokka</span><span class="padded-icon"></span></a></span>
+      </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

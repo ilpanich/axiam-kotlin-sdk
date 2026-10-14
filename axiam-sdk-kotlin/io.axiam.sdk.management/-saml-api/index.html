@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html class="no-js">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" charset="UTF-8">
+    <title>SamlApi</title>
+    <link href="../../../images/logo-icon.svg" rel="icon" type="image/svg">
+    <script>var pathToRoot = "../../../";</script>
+    <script>document.documentElement.classList.replace("no-js","js");</script>
+    <script>const storage = localStorage.getItem("dokka-dark-mode")
+    if (storage == null) {
+        const osDarkSchemePreferred = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+        if (osDarkSchemePreferred === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    } else {
+        const savedDarkMode = JSON.parse(storage)
+        if(savedDarkMode === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    }
+    </script>
+<script type="text/javascript" src="https://unpkg.com/kotlin-playground@1/dist/playground.min.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/sourceset_dependencies.js" async="async"></script>
+<link href="../../../styles/style.css" rel="Stylesheet">
+<link href="../../../styles/main.css" rel="Stylesheet">
+<link href="../../../styles/prism.css" rel="Stylesheet">
+<link href="../../../styles/logo-styles.css" rel="Stylesheet">
+<link href="../../../styles/font-jb-sans-auto.css" rel="Stylesheet">
+<script type="text/javascript" src="../../../scripts/clipboard.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/navigation-loader.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/platform-content-handler.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/main.js" defer="defer"></script>
+<script type="text/javascript" src="../../../scripts/prism.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/symbol-parameters-wrapper_deferred.js" defer="defer"></script>
+</head>
+<body>
+    <div class="root">
+<nav class="navigation" id="navigation-wrapper">
+    <div class="navigation--inner">
+        <div class="navigation-title">
+            <button class="menu-toggle" id="menu-toggle" type="button">toggle menu</button>
+            <div class="library-name">
+                    <a class="library-name--link" href="../../../index.html">
+                            axiam-sdk-kotlin
+                    </a>
+            </div>
+            <div class="library-version">
+1.0.0            </div>
+        </div>
+        <div class="filter-section" id="filter-section">
+                <button class="platform-tag platform-selector jvm-like" data-active="" data-filter=":dokkaHtml/main">jvm</button>
+        </div>
+    </div>
+    <div class="navigation-controls">
+        <button class="navigation-controls--btn navigation-controls--theme" id="theme-toggle-button" type="button">switch theme</button>
+        <div class="navigation-controls--btn navigation-controls--search" id="searchBar" role="button">search in API</div>
+    </div>
+</nav>
+        <div id="container">
+            <div class="sidebar" id="leftColumn">
+                <div class="sidebar--inner" id="sideMenu"></div>
+            </div>
+            <div id="main">
+<div class="main-content" data-page-type="classlike" id="content" pageIds="axiam-sdk-kotlin::io.axiam.sdk.management/SamlApi///PointingToDeclaration//769193423">
+  <div class="breadcrumbs"><a href="../../../index.html">axiam-sdk-kotlin</a><span class="delimiter">/</span><a href="../index.html">io.axiam.sdk.management</a><span class="delimiter">/</span><span class="current">SamlApi</span></div>
+  <div class="cover ">
+    <h1 class="cover"><span>Saml</span><wbr></wbr><span><span>Api</span></span></h1>
+    <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">class </span><a href="index.html">SamlApi</a></div><p class="paragraph">The saml management operations.</p><p class="paragraph">A view over the client that created it, not a connection: constructing one performs no I/O (§27.2 rule 1), so there is nothing to cache and nothing to close.</p></div></div>
+  </div>
+  <div class="tabbedcontent">
+    <div class="tabs-section" tabs-section="tabs-section"><button class="section-tab" data-active="" data-togglable="CONSTRUCTOR,TYPE,PROPERTY,FUNCTION">Members</button></div>
+    <div class="tabs-section-body">
+      <div data-togglable="FUNCTION">
+        <h2 class="">Functions</h2>
+        <div class="table"><a data-name="-158470121%2FFunctions%2F769193423" anchor-label="createServiceProvider" id="-158470121%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="create-service-provider.html"><span>create</span><wbr></wbr><span>Service</span><wbr></wbr><span><span>Provider</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-158470121%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="create-service-provider.html"><span class="token function">createServiceProvider</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">body<span class="token operator">: </span><a href="../../io.axiam.sdk.management.models/-saml-service-provider-input/index.html">SamlServiceProviderInput</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../../io.axiam.sdk.management.models/-saml-service-provider/index.html">SamlServiceProvider</a></div><div class="brief "><p class="paragraph">Issues <code class="lang-kotlin">POST /api/v1/tenants/{tenant_id}/saml/service-providers</code>.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-93567191%2FFunctions%2F769193423" anchor-label="deleteServiceProvider" id="-93567191%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="delete-service-provider.html"><span>delete</span><wbr></wbr><span>Service</span><wbr></wbr><span><span>Provider</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-93567191%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="delete-service-provider.html"><span class="token function">deleteServiceProvider</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">spId<span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/util/UUID.html">UUID</a></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">Removes the registration and what the datastore holds for it, in one transaction. Ends no session: users already signed in to the SP stay signed in there until their SP session ends.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="1706108657%2FFunctions%2F769193423" anchor-label="forTenant" id="1706108657%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="for-tenant.html"><span>for</span><wbr></wbr><span><span>Tenant</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="1706108657%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">fun </span><a href="for-tenant.html"><span class="token function">forTenant</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">tenantId<span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/util/UUID.html">UUID</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="index.html">SamlApi</a></div><div class="brief "><p class="paragraph">Returns a handle addressing <a href="for-tenant.html">tenantId</a> instead of the client's tenant.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-1818021188%2FFunctions%2F769193423" anchor-label="getIdp" id="-1818021188%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="get-idp.html"><span>get</span><wbr></wbr><span><span>Idp</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1818021188%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="get-idp.html"><span class="token function">getIdp</span></a><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../../io.axiam.sdk.management.models/-saml-idp-info/index.html">SamlIdpInfo</a></div><div class="brief "><p class="paragraph">The tenant's IdP as an SP will meet it, and whether it answers yet: readiness is visible only here, never on the unauthenticated metadata route (T-368).</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-1355710576%2FFunctions%2F769193423" anchor-label="getServiceProvider" id="-1355710576%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="get-service-provider.html"><span>get</span><wbr></wbr><span>Service</span><wbr></wbr><span><span>Provider</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1355710576%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="get-service-provider.html"><span class="token function">getServiceProvider</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">spId<span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/util/UUID.html">UUID</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../../io.axiam.sdk.management.models/-saml-service-provider/index.html">SamlServiceProvider</a></div><div class="brief "><p class="paragraph">Issues <code class="lang-kotlin">GET /api/v1/tenants/{tenant_id}/saml/service-providers/{sp_id}</code>.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-1758667409%2FFunctions%2F769193423" anchor-label="issueIdpCredential" id="-1758667409%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="issue-idp-credential.html"><span>issue</span><wbr></wbr><span>Idp</span><wbr></wbr><span><span>Credential</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1758667409%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="issue-idp-credential.html"><span class="token function">issueIdpCredential</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">body<span class="token operator">: </span><a href="../../io.axiam.sdk.management.models/-issue-saml-idp-credential/index.html">IssueSamlIdpCredential</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../../io.axiam.sdk.management.models/-saml-idp-credential/index.html">SamlIdpCredential</a></div><div class="brief "><p class="paragraph">Generates an RSA-4096 key and a leaf under <code class="lang-kotlin">issuer_ca_id</code> into an <strong>empty</strong> slot. Takes seconds. The key is sealed at rest and never returned.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-1192233290%2FFunctions%2F769193423" anchor-label="listIdpCredentials" id="-1192233290%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="list-idp-credentials.html"><span>list</span><wbr></wbr><span>Idp</span><wbr></wbr><span><span>Credentials</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1192233290%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="list-idp-credentials.html"><span class="token function">listIdpCredentials</span></a><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-list/index.html">List</a><span class="token operator">&lt;</span><a href="../../io.axiam.sdk.management.models/-saml-idp-credential/index.html">SamlIdpCredential</a><span class="token operator">&gt;</span></div><div class="brief "><p class="paragraph">Issues <code class="lang-kotlin">GET /api/v1/tenants/{tenant_id}/saml/idp-credentials</code>.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-578323374%2FFunctions%2F769193423" anchor-label="listServiceProviders" id="-578323374%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="list-service-providers.html"><span>list</span><wbr></wbr><span>Service</span><wbr></wbr><span><span>Providers</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-578323374%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="list-service-providers.html"><span class="token function">listServiceProviders</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">page<span class="token operator">: </span><a href="../-page-request/index.html">PageRequest</a><span class="token operator">?</span></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../-page/index.html">Page</a><span class="token operator">&lt;</span><a href="../../io.axiam.sdk.management.models/-saml-service-provider/index.html">SamlServiceProvider</a><span class="token operator">&gt;</span></div><div class="brief "><p class="paragraph">Issues <code class="lang-kotlin">GET /api/v1/tenants/{tenant_id}/saml/service-providers</code>.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-1513175573%2FFunctions%2F769193423" anchor-label="listServiceProvidersAll" id="-1513175573%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="list-service-providers-all.html"><span>list</span><wbr></wbr><span>Service</span><wbr></wbr><span>Providers</span><wbr></wbr><span><span>All</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1513175573%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="list-service-providers-all.html"><span class="token function">listServiceProvidersAll</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">start<span class="token operator">: </span><a href="../-page-request/index.html">PageRequest</a><span class="token operator">?</span><span class="token operator"> = </span>null</span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-list/index.html">List</a><span class="token operator">&lt;</span><a href="../../io.axiam.sdk.management.models/-saml-service-provider/index.html">SamlServiceProvider</a><span class="token operator">&gt;</span></div><div class="brief "><p class="paragraph">Walks <code class="lang-kotlin">listServiceProviders</code> to exhaustion and returns every item (§27.4 rule 4).</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="1074328729%2FFunctions%2F769193423" anchor-label="parseSpMetadata" id="1074328729%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="parse-sp-metadata.html"><span>parse</span><wbr></wbr><span>Sp</span><wbr></wbr><span><span>Metadata</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="1074328729%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="parse-sp-metadata.html"><span class="token function">parseSpMetadata</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">body<span class="token operator">: </span><a href="../../io.axiam.sdk.management.models/-parse-saml-sp-metadata/index.html">ParseSamlSpMetadata</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../../io.axiam.sdk.management.models/-saml-sp-metadata-draft/index.html">SamlSpMetadataDraft</a></div><div class="brief "><p class="paragraph"><strong>A parse to a draft, never a write.</strong> Takes exactly one of <code class="lang-kotlin">metadata_xml</code> and <code class="lang-kotlin">metadata_url</code> and returns what a registration of that SP could look like, the fingerprints of the certificates it carries and warnings. A URL is fetched once, through the SSRF guard (<code class="lang-kotlin">https</code> only; loopback, private, link-local and cloud-metadata addresses refused; every redirect hop checked); a document is refused if it holds a DTD or entity declaration, is not UTF-8, is over 512 KiB, or is not exactly one <code class="lang-kotlin">EntityDescriptor</code> with one SAML 2.0 <code class="lang-kotlin">SPSSODescriptor</code>. Every refusal is a generic message that never carries the document, a status line or an address. The document's own signature is not evaluated.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-214170348%2FFunctions%2F769193423" anchor-label="promoteIdpCredential" id="-214170348%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="promote-idp-credential.html"><span>promote</span><wbr></wbr><span>Idp</span><wbr></wbr><span><span>Credential</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-214170348%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="promote-idp-credential.html"><span class="token function">promoteIdpCredential</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">credentialId<span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/util/UUID.html">UUID</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../../io.axiam.sdk.management.models/-saml-idp-credential-promotion/index.html">SamlIdpCredentialPromotion</a></div><div class="brief "><p class="paragraph">In <strong>one transaction</strong>, retires the <code class="lang-kotlin">active</code> credential (its key destroyed) and makes the <code class="lang-kotlin">next</code> one <code class="lang-kotlin">active</code>. The id must be the tenant's current <code class="lang-kotlin">next</code> credential and inside its validity window.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-242134797%2FFunctions%2F769193423" anchor-label="retireIdpCredential" id="-242134797%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="retire-idp-credential.html"><span>retire</span><wbr></wbr><span>Idp</span><wbr></wbr><span><span>Credential</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-242134797%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="retire-idp-credential.html"><span class="token function">retireIdpCredential</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">credentialId<span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/util/UUID.html">UUID</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../../io.axiam.sdk.management.models/-saml-idp-credential/index.html">SamlIdpCredential</a></div><div class="brief "><p class="paragraph">Retires a <code class="lang-kotlin">next</code> or an <code class="lang-kotlin">active</code> credential and destroys its key. Retiring the <code class="strong lang-kotlin"><strong>active</strong></code> one with no successor stops SAML sign-on for the whole tenant at once — the incident response to a leaked key. Retiring a retired credential returns it unchanged and writes no audit row.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-2097905772%2FFunctions%2F769193423" anchor-label="updateServiceProvider" id="-2097905772%2FFunctions%2F769193423" data-filterable-set=":dokkaHtml/main"></a>
+          <div class="table-row" data-filterable-current=":dokkaHtml/main" data-filterable-set=":dokkaHtml/main">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="update-service-provider.html"><span>update</span><wbr></wbr><span>Service</span><wbr></wbr><span><span>Provider</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-2097905772%2FFunctions%2F769193423"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":dokkaHtml/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="update-service-provider.html"><span class="token function">updateServiceProvider</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">spId<span class="token operator">: </span><a href="https://docs.oracle.com/javase/8/docs/api/java/util/UUID.html">UUID</a><span class="token punctuation">, </span></span><span class="parameter ">body<span class="token operator">: </span><a href="../../io.axiam.sdk.management.models/-saml-service-provider-input/index.html">SamlServiceProviderInput</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../../io.axiam.sdk.management.models/-saml-service-provider/index.html">SamlServiceProvider</a></div><div class="brief "><p class="paragraph">Issues <code class="lang-kotlin">PUT /api/v1/tenants/{tenant_id}/saml/service-providers/{sp_id}</code>.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      <div class="footer">
+        <span class="go-to-top-icon"><a href="#content" id="go-to-top-link"></a></span><span>© 2026 Copyright</span><span
+                class="pull-right"><span>Generated by </span><a
+                href="https://github.com/Kotlin/dokka"><span>dokka</span><span class="padded-icon"></span></a></span>
+      </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
