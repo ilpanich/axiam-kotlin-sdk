@@ -41,9 +41,18 @@ class AuthHeaderInterceptor(private val session: SessionState) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val original = chain.request()
         val sameHost = session.isBaseHost(original.url.host)
-        val credentialFree = original.header(NO_SESSION_CREDENTIALS_HEADER) != null
+        // CONTRACT.md §12.1 rule 3 / §6.1 rule 11 / §14.6 (contract 1.62, C162-05):
+        // a request to `/oauth2/*` never carries a session's or an adopted
+        // (device) credential — it authenticates itself (client credentials in
+        // the form body). A credential the caller put on THIS request (RFC 7591
+        // / 7592 registration tokens) is left exactly as set: this interceptor
+        // adds nothing and removes nothing there.
+        val oauth2 = sameHost && session.isOauth2Path(original.url.encodedPath)
+        val credentialFree = oauth2 || original.header(NO_SESSION_CREDENTIALS_HEADER) != null
 
         val builder = original.newBuilder()
+        // Mark so the network interceptor also drops the jar's cookies.
+        if (oauth2) builder.header(NO_SESSION_CREDENTIALS_HEADER, "1")
 
         if (sameHost) {
             builder.header("X-Tenant-ID", session.tenantId())

@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.1.0] - 2026-10-16
 
 Contract 1.62 (accompanying the AXIAM 1.1.0 release): `CONTRACT.md`, `openapi.json` and
-`management-registry.json` re-vendored byte for byte from `ilpanich/axiam` `d76c5a80b` (`proto/` is
+`management-registry.json` re-vendored byte for byte from `ilpanich/axiam` `d25413506` (`proto/` is
 unchanged), the §27 surface regenerated (202 operations across 29 namespaces: the new `network`
 namespace has twelve), and the README states conformance at contract 1.62. **1.0.1 was never
 tagged**, so the contract-1.61 entries that were written for it (re-vendored from `058d8e0`: the
@@ -102,6 +102,14 @@ Named in the order of the contract's items; each is a minor-release change under
   The generated `CreateCaCertificateRequest`, `CreateCertificateRequest`, `GeneratedCaCertificate`,
   `GeneratedCertificate`, `SignCertificateCsrRequest`, `UpdateOAuth2ClientRequest` and
   `CaCertificatesApi` gain no property: their documentation is corrected to what the server does.
+- **No session or adopted credential on any `/oauth2/*` request** (§12.1 rule 3, §6.1 rule 11, §14.6;
+  C162-05): the auth interceptor withholds the session bearer, the adopted device token, the CSRF
+  header and the jar's cookies from every request under the base URL's `/oauth2/`, not only the two
+  device operations (token, refresh, client-credentials, exchange, introspect, revoke, PAR, CIBA,
+  JWKS and the revocation feed). A credential the caller sets on that one request, such as the
+  RFC 7591 / 7592 registration token, is untouched. Contract 1.62 corrections re-vendored from
+  `ilpanich/axiam` `d25413506` (§34.6 items x to ae); the README names §36 in its conformance
+  sentence and states that manifest pruning is not offered in any namespace (§27.10).
 
 ### Fixed
 
@@ -126,6 +134,10 @@ Named in the order of the contract's items; each is a minor-release change under
 - `OidcDeviceClientAuthTest` — §14.6's contract 1.62 tests at both endpoints, for a confidential, a
   certificate and a public client, and the `401 invalid_client` cases.
 - `ManagementClientAccessorsTest` pins 29 namespaces.
+- `Oauth2NoSessionCredentialTest` — §14.6's contract 1.62 test: after a password login and after a
+  device login, `deviceAuthorize`, `devicePoll` and a token request (`loginClientCredentials`,
+  `oidcRefresh`) carry no `Authorization` header and no cookie, the next management request carries
+  the credential (control), and an explicit `Authorization` header on a `/oauth2/` request survives.
 
 ### Contract 1.61 (folded in from the never-tagged 1.0.1)
 
