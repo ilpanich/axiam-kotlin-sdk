@@ -6,6 +6,7 @@ import io.axiam.sdk.errors.AxiamException
 import io.axiam.sdk.errors.ErrorMapper
 import io.axiam.sdk.errors.NetworkError
 import io.axiam.sdk.errors.OAuthProtocolError
+import io.axiam.sdk.internal.AuthHeaderInterceptor
 import io.axiam.sdk.internal.JwksVerifier
 import io.axiam.sdk.internal.SessionState
 import io.axiam.sdk.internal.SingleFlight
@@ -955,14 +956,33 @@ internal class OidcSupport(
      * `POST /oauth2/device_authorization` (§14.1) — start the grant and obtain
      * the code pair.
      *
-     * **Unauthenticated by design.** A device that cannot show a browser also
-     * cannot hold a client secret, so this never sends `client_secret` and
-     * never refuses a client built without one (§14.1).
+     * **Client authentication (contract 1.62, §14.1 rules 1–2).** A **public**
+     * client — one built with no `oidcClientSecret` and no client certificate,
+     * the usual device — sends `client_id` and **no** credential, and is never
+     * refused here for having none. A client built with a secret sends it as
+     * `client_secret` **in the form body**, exactly as it does at the token
+     * endpoint (§12.1 rule 3), and **never** as `Authorization: Basic`, even
+     * when the client is registered `client_secret_basic`: the server accepts
+     * either form, and the SDK's choice is the body. A client built with a §6.1
+     * client certificate presents it on the connection (and, as at every other
+     * token request, uses the `mtls_endpoint_aliases` host when one is
+     * published). A credential is sent **only** when the caller configured one:
+     * none is borrowed from elsewhere, and none is invented. No session
+     * credential rides on the request either (no `Authorization` header, no
+     * cookie), so the one credential that reaches the server is the client's.
+     *
+     * This SDK has no `private_key_jwt` client role (§21.8 is optional), so no
+     * `client_assertion` is ever sent.
      *
      * @throws AuthError when the discovery document advertises no
      *   `device_authorization_endpoint`. The URL is never built by
      *   concatenation onto the issuer: that works against AXIAM and breaks
      *   against every other OP the same code is pointed at.
+     * @throws io.axiam.sdk.errors.OAuthProtocolError `invalid_client` on a `401`
+     *   (an unknown client, a failed or missing credential, a credential sent
+     *   by a public client): never retried, never refreshed (§14.2 rule 5). At
+     *   this endpoint a client that does not hold the grant is `400
+     *   unauthorized_client`.
      */
     suspend fun deviceAuthorize(params: DeviceAuthorizeParams): DeviceAuthorization {
         val configuration = params.configuration ?: oidcDiscover()
@@ -980,9 +1000,12 @@ internal class OidcSupport(
         val form = buildForm(
             "client_id" to requireClientId(),
             "scope" to params.scope,
+            // §14.1 rule 2: the configured credential, in the form body — never
+            // `Authorization: Basic` (§12.1 rule 3 stands). Null for a public client.
+            "client_secret" to oidcClientSecret?.expose(),
         )
         val url = endpointUrl(endpoint, params.tenantId)
-        val json = postOAuth2Form(url, form, "device authorization request failed")
+        val json = postOAuth2Form(url, form, "device authorization request failed", withoutSession = true)
 
         val interval = json.intOrNull("interval")
         return DeviceAuthorization(
@@ -1007,6 +1030,23 @@ internal class OidcSupport(
      * as [OAuthProtocolError] — `authorization_pending` and `slow_down`
      * included — so a hand-rolled loop sees exactly what [deviceLogin] sees.
      * Most callers want [deviceLogin].
+     *
+     * **Client authentication (contract 1.62, §14.1 rules 2–4).** The poll names
+     * its client — `client_id` goes on **every** poll — and a client configured
+     * with a secret sends it as `client_secret` in the form body, by the same
+     * rules as [deviceAuthorize]: never `Authorization: Basic`, no credential for
+     * a public client, the §6.1 certificate on the connection for an mTLS client.
+     * A `401 invalid_client` (an unknown client, a failed or missing credential,
+     * a client that no longer holds the grant, or a bound client's missing proof
+     * or certificate) is an [io.axiam.sdk.errors.OAuthProtocolError] with that
+     * `error`: terminal, never retried, and it never enters the §9 refresh guard
+     * (§14.2 rule 5).
+     *
+     * **DPoP (§14.2 rule 8).** This SDK verifies DPoP proofs but does not generate
+     * them, so it cannot drive a client registered for DPoP-bound tokens: such a
+     * client's poll is refused `401 invalid_client`, and that refusal surfaces as
+     * above. A client registered for mTLS-bound tokens works: the certificate
+     * accompanies each poll.
      */
     suspend fun devicePoll(params: DevicePollParams): OidcTokenSet {
         val configuration = params.configuration ?: oidcDiscover()
@@ -1015,8 +1055,9 @@ internal class OidcSupport(
             "grant_type" to DEVICE_CODE_GRANT_TYPE,
             "device_code" to params.deviceCode.expose(),
             "client_id" to clientId,
+            "client_secret" to oidcClientSecret?.expose(),
         )
-        val json = postToken(configuration, form, params.tenantId)
+        val json = postToken(configuration, form, params.tenantId, withoutSession = true)
         // No nonce: the device grant has no authorization request to carry one.
         val expectations = OidcIdToken.Expectations(
             issuer = configuration.issuer,
@@ -1800,12 +1841,17 @@ internal class OidcSupport(
         return VerifiedLogoutToken(sid = sid, sub = sub, jti = jti)
     }
 
-    private suspend fun postToken(configuration: OidcConfiguration, form: RequestBody, tenantIdOverride: String?): JsonObject {
+    private suspend fun postToken(
+        configuration: OidcConfiguration,
+        form: RequestBody,
+        tenantIdOverride: String?,
+        withoutSession: Boolean = false,
+    ): JsonObject {
         val url = endpointUrl(
             preferredEndpoint(configuration, { it.token_endpoint }, configuration.token_endpoint)!!,
             tenantIdOverride,
         )
-        return postOAuth2Form(url, form, "token request failed")
+        return postOAuth2Form(url, form, "token request failed", withoutSession)
     }
 
     /**
@@ -1814,8 +1860,17 @@ internal class OidcSupport(
      * `X-Tenant-ID` header and §6 TLS transport apply unconditionally).
      * Non-2xx responses are mapped via [mapOAuth2ErrorResponse].
      */
-    private suspend fun postOAuth2Form(url: String, form: RequestBody, fallbackMessage: String): JsonObject {
-        val request = Request.Builder().url(url).post(form).build()
+    private suspend fun postOAuth2Form(
+        url: String,
+        form: RequestBody,
+        fallbackMessage: String,
+        withoutSession: Boolean = false,
+    ): JsonObject {
+        // [withoutSession]: the §14 device operations carry the CLIENT's credential
+        // and nothing else — no session bearer, no cookie (contract 1.62, §14.6).
+        val builder = Request.Builder().url(url).post(form)
+        if (withoutSession) builder.header(AuthHeaderInterceptor.NO_SESSION_CREDENTIALS_HEADER, "1")
+        val request = builder.build()
         val response = executeRequest(request)
         response.use {
             if (!it.isSuccessful) throw mapOAuth2ErrorResponse(it, fallbackMessage)

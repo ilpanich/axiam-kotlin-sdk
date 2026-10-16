@@ -1573,9 +1573,14 @@ class AxiamClient private constructor(
     /**
      * `POST /oauth2/device_authorization` (§14.1) — start the device grant.
      *
-     * **Unauthenticated by design**: a device that cannot show a browser also
-     * cannot hold a client secret, so this never sends `client_secret` and
-     * never refuses a client built without one.
+     * **Client authentication (contract 1.62, §14.1):** a **public** client — the
+     * usual device, built with no `oidcClientSecret` and no client certificate —
+     * sends `client_id` and no credential, and is never refused for having none. A
+     * client built with a secret sends it as `client_secret` in the form body
+     * (never `Authorization: Basic`, whichever of `client_secret_post` and
+     * `client_secret_basic` it is registered for); a client built with a §6.1
+     * client certificate presents it on the connection. A `401 invalid_client`
+     * is an [io.axiam.sdk.errors.OAuthProtocolError], never retried.
      */
     suspend fun deviceAuthorize(params: DeviceAuthorizeParams = DeviceAuthorizeParams()): DeviceAuthorization =
         oidcSupport.deviceAuthorize(params)
@@ -1583,7 +1588,10 @@ class AxiamClient private constructor(
     /**
      * `POST /oauth2/token` with the device-code grant (§14.1) — **one** poll
      * attempt, for an application driving its own loop. Most callers want
-     * [deviceLogin].
+     * [deviceLogin]. Sends `client_id` on every poll and the client's configured
+     * credential by the same rules as [deviceAuthorize] (contract 1.62, §14.1);
+     * this SDK generates no DPoP proof, so it cannot drive a DPoP-bound client
+     * (that client's poll is a `401 invalid_client`, surfaced as given).
      */
     suspend fun devicePoll(params: DevicePollParams): OidcTokenSet = oidcSupport.devicePoll(params)
 
