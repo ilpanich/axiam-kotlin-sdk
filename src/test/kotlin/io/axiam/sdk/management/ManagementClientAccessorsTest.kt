@@ -46,10 +46,10 @@ class ManagementClientAccessorsTest : ManagementTestBase() {
                 "§27.3 puts `$name` on the client as a property, not only behind management()",
             )
         }
-        // 28 namespaces (contract 1.58 added directory, saml, scim_targets and ssf).
-        // Pinned so a partial regeneration that dropped one fails here rather than
-        // quietly shipping 27.
-        assertEquals(28, onAggregate.size)
+        // 29 namespaces (contract 1.58 added directory, saml, scim_targets and ssf;
+        // contract 1.62 added network). Pinned so a partial regeneration that dropped
+        // one fails here rather than quietly shipping 28.
+        assertEquals(29, onAggregate.size)
     }
 
     /** Both forms reach the same route with the client's own scope. */

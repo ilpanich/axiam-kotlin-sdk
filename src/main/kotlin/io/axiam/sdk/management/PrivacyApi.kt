@@ -86,9 +86,9 @@ class PrivacyApi internal constructor(
      *
      * Issues `GET /api/v1/auth/account/delete/cancel`.
      *
-     * @param token the optional token filter, or null to omit it
+     * @param token the required token query parameter
      */
-    suspend fun cancelDelete(token: String?) {
+    suspend fun cancelDelete(token: String) {
         val path = "/api/v1/auth/account/delete/cancel"
         val query = mapOf("token" to token)
         transport.send(

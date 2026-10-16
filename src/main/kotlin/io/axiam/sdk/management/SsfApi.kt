@@ -113,18 +113,26 @@ class SsfApi internal constructor(
      * Not retried: §27.4 rule 8 makes every write on this surface single-shot, including the ones
      * that look idempotent.
      *
-     * An omitted optional member takes its default (§32.2) — **except `authorization_header`,
-     * which absent keeps the stored one** — unless the update moves `endpoint_url` to another
-     * scheme, host or port while a header is stored: then it must carry `authorization_header`
-     * again or `clear_authorization_header: true`, else `400` (§32.3 rule 5). An update overtaken
-     * by the receiver's own write is `409`: read the stream again (never retried). **Contract
-     * 1.61:** `expected_updated_at` (the `updated_at` string you read, sent as given) makes the
-     * update conditional on that version, `409` if the stream was written since; and
-     * `events_requested` has three meanings on an update (§32.2): absent *resets* the stream to
-     * every event of `events_allowed`, `&#91;&#93;` is stored as the receiver's "none", a list is
-     * stored as given. An edit therefore sends back the `events_requested` and
-     * `expected_updated_at` it read. `SsfStream.toInput()` turns a read into the body, carrying
-     * both.
+     * **The three meanings of `events_requested` on an update (§32.2, contract 1.62):** *absent*
+     * **resets** the stream to every event of `events_allowed` (as on create), widening a
+     * narrowing the receiver made; `&#91;&#93;` is stored as the receiver's "none" (it does not
+     * widen, and the stream carries nothing); a list of event types is stored as given and refused
+     * `400` if any is outside `events_allowed`. A raw API client, with no SDK, is bound by the
+     * same meaning: an `events_requested` left out of the `PUT` resets the stream. **An omitted
+     * optional member takes its default on every update** (`description`, `endpoint_url` and
+     * `status_reason` null; `subject_format` `iss_sub`; `status` `enabled`;
+     * `clear_authorization_header` false) — **except `authorization_header`, which absent keeps
+     * the stored one** — unless the update moves `endpoint_url` to another scheme, host or port
+     * while a header is stored: then it must carry `authorization_header` again or
+     * `clear_authorization_header: true`, else `400` (§32.3 rule 5). `expected_updated_at` (the
+     * `updated_at` string you read, sent exactly as given; an assigned `null` is "none" and the
+     * key is left out) makes the update conditional on that version: `409` if the stream was
+     * written since, the receiver's own writes included (never retried): read the stream again.
+     * **To edit a stream you read, use `SsfStream.toInput(changes)`**: it sends the
+     * `events_requested` and `expected_updated_at` as read and cuts `events_requested` to a
+     * lowered `events_allowed`. The plain `SsfStream.toInput()` sends the stream back as read and
+     * cannot know that you are about to lower the ceiling: cutting `events_requested` to the new
+     * `events_allowed` is then your duty.
      *
      * @param streamId the stream id to address
      * @param body the request body

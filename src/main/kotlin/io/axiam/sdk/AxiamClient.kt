@@ -736,6 +736,19 @@ class AxiamClient private constructor(
         get() = management().scimTargets()
 
     /**
+     * The network operations (CONTRACT.md §36, contract 1.62): the tenant's
+     * segments, reply profiles and `Session-Timeout` cap.
+     *
+     * Acquiring the handle performs no I/O (§27.2 rule 1). The same handle as
+     * `management().network()` (§27.2 rule 4). The namespace is human-only: a
+     * service-account token meets `401`. There is no method for the placement
+     * decision `POST /api/v1/network/decide`: its caller is a FreeRADIUS server,
+     * not an SDK client (§36.11).
+     */
+    val network: io.axiam.sdk.management.NetworkApi
+        get() = management().network()
+
+    /**
      * The organization UUID this client can address, if one has resolved.
      *
      * The value §27.4 rule 3 interpolates into every `{org_id}` path: the

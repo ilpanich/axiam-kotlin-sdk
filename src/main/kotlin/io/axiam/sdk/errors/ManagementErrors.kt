@@ -40,8 +40,23 @@ class NotFoundError(message: String) : AuthzError(message)
  *
  * Never retried: a conflict is the server telling the truth, not a transient
  * fault, and repeating the request cannot change it (§27.4 rule 8).
+ *
+ * **[reasonCode]** (contract 1.62, §36.4): the `network` operations name which
+ * conflict a `409` is in a `reason_code` member beside `error` (`stale_version`,
+ * `strands_profile`, `has_children`, `duplicate_vlan`, `profile_exists`, …).
+ * It is surfaced verbatim: the vocabulary is **open** (§36.3 rule 2), so a value
+ * this SDK has never seen arrives as the string the server sent, and `null`
+ * means the body carried none (a server that predates it, or an operation that
+ * does not name one). Branch on it, never on the message — which an SDK does not
+ * parse and a caller must not either. It is not the `reason` of an authorization
+ * decision (§3).
+ *
+ * @property reasonCode the body's `reason_code`, verbatim, or `null` when absent
  */
-class ConflictError(message: String) : AuthzError(message)
+class ConflictError @JvmOverloads constructor(
+    message: String,
+    val reasonCode: String? = null,
+) : AuthzError(message)
 
 /**
  * A §27 management request body the server refused (HTTP 400 or 422).

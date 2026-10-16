@@ -9,6 +9,7 @@ import java.time.Instant
 import java.util.UUID
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.put
 
 /**
  * A registered SSF stream, as the management API returns it. **The push `Authorization` header is
@@ -38,6 +39,11 @@ import kotlinx.serialization.Serializable
  *     inactive transmitter is kept, and carries nothing.
  * @property transmitterInactiveReason Why the transmitter is inactive, when it is.
  * @property updatedAt When it was last written.
+ * @property updatedAtRaw The server's OWN string for `updated_at`, exactly as the response
+ *     carried it (another spelling of the offset, and the fraction digits, are preserved), next to
+ *     the parsed value above (CONTRACT.md §32.2, contract 1.62). This is what
+ *     `expected_updated_at` must be sent as, and what `toInput()` sends. `null` only on a value
+ *     built by hand rather than decoded from a response.
  */
 @Serializable
 data class SsfStream(
@@ -61,4 +67,5 @@ data class SsfStream(
     @SerialName("transmitter_active") val transmitterActive: Boolean,
     @SerialName("transmitter_inactive_reason") val transmitterInactiveReason: String? = null,
     @SerialName("updated_at") val updatedAt: @Serializable(with = InstantSerializer::class) Instant,
+    @SerialName("updated_at_raw") val updatedAtRaw: String? = null,
 )
