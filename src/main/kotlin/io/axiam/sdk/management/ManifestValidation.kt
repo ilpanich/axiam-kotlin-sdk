@@ -1,6 +1,9 @@
 package io.axiam.sdk.management
 
 import io.axiam.sdk.errors.NetworkError
+import io.axiam.sdk.management.models.NetworkSegmentKind
+import io.axiam.sdk.management.models.RadiusServiceType
+import io.axiam.sdk.management.models.RadiusTerminationAction
 
 /**
  * Checks a [ManagementManifest] before a single request goes out
@@ -79,6 +82,7 @@ internal object ManifestValidation {
         }
 
         cycle(manifest)?.let { problems += it }
+        network(manifest.network, problems)
 
         if (problems.isNotEmpty()) {
             throw NetworkError(
@@ -131,6 +135,54 @@ internal object ManifestValidation {
                         "(has_role is UNIQUE(subject, role))"
                 }
             }
+        }
+    }
+
+    /**
+     * §27.6.2 item 1: the `network` section's checks, all answerable from the
+     * manifest alone and therefore made before a single request — a duplicate
+     * natural key (two segments with one site, kind and name; two profiles for one
+     * segment), a profile naming a segment the manifest does not declare, a segment
+     * listing one Filter-Id twice (`filter_ids` compares as a set, and a set has no
+     * repeated member), and a value this SDK does not know (it is never sent, so
+     * refusing it here is better than refusing it half-way through an apply).
+     */
+    private fun network(network: ManagementManifest.NetworkSpec, problems: MutableList<String>) {
+        duplicates(network.segments.map { it.key }, "network segment", problems)
+        network.segments
+            .groupingBy { Triple(it.site, it.kind.wire, it.name) }.eachCount()
+            .filterValues { it > 1 }.keys
+            .sortedWith(compareBy({ it.first }, { it.second }, { it.third }))
+            .forEach { (site, kind, name) ->
+                problems += "network segment '$site/$kind/$name' is declared more than once; a segment's " +
+                    "natural key is site + kind + name and cannot be reconciled with one server row twice"
+            }
+        val segmentKeys = network.segments.map { it.key }.toSet()
+        for (segment in network.segments) {
+            if (segment.kind == NetworkSegmentKind.UNKNOWN) {
+                problems += "network segment '${segment.key}' has a kind this SDK does not know; it is " +
+                    "never sent (§34.2 P12.2) — state access or quarantine"
+            }
+            segment.filterIds?.groupingBy { it }?.eachCount()?.filterValues { it > 1 }?.keys?.sorted()?.forEach {
+                problems += "network segment '${segment.key}' lists Filter-Id '$it' more than once; " +
+                    "filter_ids is compared as a set (§27.6.2 item 1)"
+            }
+        }
+        for (profile in network.profiles) {
+            if (profile.segment !in segmentKeys) {
+                problems += "network profile names segment '${profile.segment}', which no network " +
+                    "segment declares"
+            }
+            if (profile.terminationAction == RadiusTerminationAction.UNKNOWN ||
+                profile.serviceType.valueOrNull == RadiusServiceType.UNKNOWN
+            ) {
+                problems += "network profile of segment '${profile.segment}' states a value this SDK " +
+                    "does not know; it is never sent (§34.2 P12.2)"
+            }
+        }
+        network.profiles.groupingBy { it.segment }.eachCount().filterValues { it > 1 }.keys.sorted().forEach {
+            problems += "network segment '$it' has more than one profile; a profile is keyed by its " +
+                "segment, so a segment has at most one"
         }
     }
 
