@@ -7,20 +7,141 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.0.1] - 2026-10-13
+## [1.1.0] - 2026-10-16
+
+Contract 1.62 (accompanying the AXIAM 1.1.0 release): `CONTRACT.md`, `openapi.json` and
+`management-registry.json` re-vendored byte for byte from `ilpanich/axiam` `d76c5a80b` (`proto/` is
+unchanged), the §27 surface regenerated (202 operations across 29 namespaces: the new `network`
+namespace has twelve), and the README states conformance at contract 1.62. **1.0.1 was never
+tagged**, so the contract-1.61 entries that were written for it (re-vendored from `058d8e0`: the
+1.0.1 fields) are part of this release and are kept below, under "Contract 1.61". The README's
+SemVer promise now says that a contract record may add a member or widen a type in a minor release
+and that a removal waits for 2.0.0.
+
+### Source-breaking changes
+
+Named in the order of the contract's items; each is a minor-release change under that promise.
+
+- **The request `userId` is a `String?`, no longer a `UUID?`** (§27.11 rule 5, contract 1.62 item
+  (i)). `CreateCertificateRequest.userId` and `SignCertificateCsrRequest.userId` take the text of a
+  UUID and send it exactly as given, so a value that is not a UUID reaches the server and its `400`
+  is surfaced (a `UUID`-typed member made it unrepresentable). `Certificate.userId` and
+  `GeneratedCertificate.userId` — the response — stay `UUID?`. *Migration:* pass `userId.toString()`.
+  An assigned `null` is "none": the key is omitted and `null` is never sent.
+- **A required query parameter is a required argument.** The generator typed every query parameter
+  `String?`, optional. `privacy.cancelDelete(token)` now takes a `String` (the route's `token` is
+  required), and the new `network.deleteSegment` / `deleteProfile` take a `version: Long` (§36.8
+  test 2: they cannot be called without one). *Migration:* a caller that passed `null` to
+  `cancelDelete` was sending a request the server refuses; pass the token.
+- **`ManagementManifest` has a seventh, defaulted component, `network`** (§27.6.2), and
+  **`ManagementPlan.Target` has three more entries** (`NETWORK_POLICY`, `NETWORK_SEGMENT`,
+  `NETWORK_PROFILE`). Construction by name is unaffected; a `when` over `Target` used as an
+  expression needs branches for them (or an `else`). `ApplyReport.StepOutcome` gains a trailing
+  `reasonCode`.
+- **`ConflictError` has a `reasonCode`** (§36.4): `ConflictError(message, reasonCode = null)`, with
+  `@JvmOverloads` so the one-argument constructor still exists.
+- **`SsfStream` has a trailing `updatedAtRaw: String? = null`** (§32.2, item (g)), the server's own
+  `updated_at` string next to the parsed `updatedAt`. Positional construction of a `SsfStream` by
+  hand still compiles; one decoded with a bare `Json` rather than by the client has `null` there.
+
+### Added
+
+- **The `network` namespace** (§36, §27.1, contract 1.62 item (l)): `client.network` /
+  `client.management().network()`, twelve operations — `listSegments`, `listSegmentsAll`,
+  `createSegment`, `getSegment`, `replaceSegment`, `deleteSegment`, `listProfiles`,
+  `listProfilesAll`, `createProfile`, `getProfile`, `replaceProfile`, `deleteProfile`, `getPolicy`,
+  `replacePolicy` — with the models `NetworkSegmentResponse`, `NetworkReplyProfile`,
+  `NetworkReplyProfileInput`, `NetworkPolicyResponse`, `CreateNetworkSegmentRequest`,
+  `ReplaceNetworkSegmentRequest`, `CreateNetworkReplyProfileRequest`,
+  `ReplaceNetworkReplyProfileRequest`, `ReplaceNetworkPolicyRequest` and the open enums
+  `NetworkSegmentKind`, `RadiusTerminationAction`, `RadiusServiceType`. Every write is
+  version-conditional and never retried. `POST /api/v1/network/decide` is not SDK work (§36.11, item
+  (p)) and has no method; the registry excludes it by name.
+- **`ConflictError.reasonCode`** (§36.4): a `409`'s `reason_code`, verbatim (the vocabulary is
+  open), `null` when absent; never parsed from the message.
+- **`network` in a manifest** (§27.6.2, item (n), with (u), (v), (w)): `ManagementManifest.network`
+  (`NetworkSpec`, `NetworkSegmentSpec`, `NetworkProfileSpec`, `NetworkPolicySpec`) and the builder
+  calls `networkPolicy`, `networkSegment`, `networkProfile`. Natural keys: a segment by site + kind
+  (the wire spelling `access` | `quarantine`) + name, a profile by its segment, the policy a
+  singleton; the order is the policy, the segments, then the profiles. `filter_ids` compare as a
+  **set** and a duplicate within a segment is refused at `plan` with zero wire calls; every stated
+  member is judged on the value as read (a stated `sessionTimeoutSecs` above the cap is an `Update`
+  whose `apply` the server refuses with `403`: reported, `apply` stops). An `Update` sends the full
+  replacement body built from the read, `version` exactly as read, and a profile's `segment_version`
+  from the segment write of the same `apply`. A `409` is the action's failure and
+  `StepOutcome.reasonCode` carries its `reason_code`. This SDK implements no pruning, so there is no
+  network `Delete` action.
+- **The change-taking read-modify-write form for a stream** (§32.2, item (e)):
+  `SsfStream.toInput(SsfStreamChanges(...))` applies the changes over the read, sends the
+  `eventsRequested` and `expectedUpdatedAt` as read (an `[]` stays `[]`), and cuts `eventsRequested`
+  to a lowered `eventsAllowed`. The plain `toInput()` remains and its KDoc names the caller's duty.
+- **`SsfStream.updatedAtRaw`** (§32.2, item (g)): the server's own string for `updated_at`, kept
+  next to the parsed `updatedAt`; both converters send it as `expectedUpdatedAt`.
+- **`AxiamClient.network`**, the direct property for the new namespace (§27.3).
+
+### Changed
+
+- **`deviceAuthorize` and `devicePoll` authenticate the client** (§14.1 rules 1 – 4, §14.6; items
+  (m) and (t)). A client built with `oidcClientSecret` sends it as `client_secret` **in the form
+  body** at both and on every poll — never `Authorization: Basic`, whatever the client is registered
+  for (§12.1 rule 3 stands); a certificate client presents its certificate; a **public** client
+  sends none and is not refused client-side. `devicePoll` sends `client_id` on every poll. Neither
+  request carries a session credential (no `Authorization` header, no cookie), so the one credential
+  that reaches the server is the client's. A `401 invalid_client` from either is an
+  `OAuthProtocolError`, sent once, never refreshed. *Behaviour change:* 1.0.0 and 1.0.1 sent no
+  secret at the device endpoints; a confidential client against a 1.1.0 server needed this, and a
+  public client sees no difference. Not applicable here: `private_key_jwt` (no client-assertion role)
+  and a DPoP proof per poll (this SDK generates no proof; a DPoP-bound client's poll is refused `401
+  invalid_client` and that surfaces as above).
+- **The `ssf.updateStream` documentation states the three meanings of `events_requested` at the call
+  site** (§32.2, item (h)): absent resets to every allowed event, `[]` is none, a list is stored as
+  given and refused `400` outside `events_allowed`; the omitted members take their defaults.
+- **`SsfStream.toInput()` sends the server's own `updated_at` string** (§32.2, item (g)), not
+  `updatedAt.toString()`: a `+00:00` offset and nine fraction digits come back byte for byte.
+- **The generated `network`, certificate, CA and OAuth2-client KDoc follows the 1.62 `openapi.json`.**
+  The generated `CreateCaCertificateRequest`, `CreateCertificateRequest`, `GeneratedCaCertificate`,
+  `GeneratedCertificate`, `SignCertificateCsrRequest`, `UpdateOAuth2ClientRequest` and
+  `CaCertificatesApi` gain no property: their documentation is corrected to what the server does.
+
+### Fixed
+
+- **A management `403` carries the server's message** beside `action` and `resourceId` (§36.3 rule
+  1): a refusal that names no permission — the write gate's refusal of a value above the tenant's
+  cap — used to read only "`<operation>` failed", and `apply` reported nothing to act on.
+- **An assigned `null` is "none"** (§27.11 rule 5, item (f)): for `userId` on the two certificate
+  requests and `expectedUpdatedAt` on `ssf.updateStream` and `scimTargets.update` the key is omitted
+  and `null` is never sent. Kotlin cannot tell an assigned `null` from an unset member, so this
+  already held; it is now pinned by a test for all four.
+
+### Tests
+
+- `NetworkManagementTest` — §36.8's five tests (surface, versions, closed bodies, open decoding and
+  pagination, errors), the `409` `reason_code` and the one-request rule for each write.
+- `ManifestNetworkTest` — §27.9's "Manifest, `network`" tests: GET-only `plan`, create order and the
+  profile's `segment_id` / `segment_version`, the full replacement body with no `kind`/`site_key`/
+  `name`, the segment write's version, `409` and `403` as the action's failure, the refusals made
+  with zero wire calls, the wire `kind`, the `filter_ids` set and the clamped profile.
+- `Contract162ModelsTest` — §32.8 test 7 (the change-taking form, the raw `updated_at`, an assigned
+  `null`), the `update_stream` documentation check, and the untyped request `user_id`.
+- `OidcDeviceClientAuthTest` — §14.6's contract 1.62 tests at both endpoints, for a confidential, a
+  certificate and a public client, and the `401 invalid_client` cases.
+- `ManagementClientAccessorsTest` pins 29 namespaces.
+
+### Contract 1.61 (folded in from the never-tagged 1.0.1)
 
 Contract 1.61 (accompanying the AXIAM 1.0.1 release), additive and clarifying: `CONTRACT.md`,
 `openapi.json` and `management-registry.json` re-vendored byte for byte from `ilpanich/axiam`
 `058d8e0` (branch `claude/release-1.0.1`; `proto/` is unchanged), the §27 surface regenerated
 (190 operations across 28 namespaces), and the README states conformance at contract 1.61.
 
-### Added
+#### Added
 
 - **`Certificate.userId` (§27.11 rule 5).** On `Certificate` and `GeneratedCertificate`
   (`UUID? = null`): `null` and an absent member both decode as "no account named" (a server before
   1.0.1 omits it); never required, coalesced or synthesised from `metadata` or the subject.
   `CreateCertificateRequest.userId` and `SignCertificateCsrRequest.userId` are sent exactly as
-  given; the key is omitted, never `null`, when the caller names no account.
+  given; the key is omitted, never `null`, when the caller names no account. *(They were `UUID?`;
+  contract 1.62 made them `String?`, see "Source-breaking changes" above.)*
 - **`SsfStreamInput.expectedUpdatedAt` (§32.2, §32.3 rule 4).** A `String?`, the `updated_at` of
   the stream as read, sent on `ssf.updateStream` exactly as given (an `Instant` would re-render it)
   and omitted when unset; a `409` is a `ConflictError` and is not retried. An `eventsRequested` of
@@ -30,14 +151,14 @@ Contract 1.61 (accompanying the AXIAM 1.0.1 release), additive and clarifying: `
 - `CibaPendingList.total_pending` / `truncated` (§33.3 rule 16) are not modelled: no registry
   operation returns the type and the generator emits only the models its operations carry.
 
-### Changed
+#### Changed
 
 - The generated `Certificate`, `GeneratedCertificate`, `CreateCertificateRequest`,
   `SignCertificateCsrRequest` and `SsfStreamInput` gain a property (in the generator's
   alphabetical order; all are named-argument data classes with a default, so source compatibility
   holds for named arguments). KDoc follows the 1.61 `openapi.json`.
 
-### Tests
+#### Tests
 
 - `Contract161ModelsTest`: §27.11 rule 5's required test; §32.8 test 1's additions
   (`expected_updated_at` as given and absent, `[]` as `[]`), the `409`, and `toInput()`.
