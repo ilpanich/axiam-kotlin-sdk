@@ -9,8 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.1.0] - 2026-10-16
 
-Contract 1.62 (accompanying the AXIAM 1.1.0 release): `CONTRACT.md`, `openapi.json` and
-`management-registry.json` re-vendored byte for byte from `ilpanich/axiam` `d25413506` (`proto/` is
+Contract 1.62 (accompanying the AXIAM 1.1.0 release): `CONTRACT.md`
+re-vendored byte for byte from `ilpanich/axiam` `d25413506`, `openapi.json` and
+`management-registry.json` from `e8722b668` (spec digest `sha256:7c3a5091…c8a1`; `proto/` is
 unchanged), the §27 surface regenerated (202 operations across 29 namespaces: the new `network`
 namespace has twelve), and the README states conformance at contract 1.62. **1.0.1 was never
 tagged**, so the contract-1.61 entries that were written for it (re-vendored from `058d8e0`: the
@@ -108,7 +109,8 @@ Named in the order of the contract's items; each is a minor-release change under
   device operations (token, refresh, client-credentials, exchange, introspect, revoke, PAR, CIBA,
   JWKS and the revocation feed). A credential the caller sets on that one request, such as the
   RFC 7591 / 7592 registration token, is untouched. Contract 1.62 corrections re-vendored from
-  `ilpanich/axiam` `d25413506` (§34.6 items x to ae); the README names §36 in its conformance
+  `ilpanich/axiam` (`CONTRACT.md` at `d25413506`, `openapi.json` and `management-registry.json` at
+  `e8722b668`, spec digest `sha256:7c3a5091…c8a1`; §34.6 items x to ae); the README names §36 in its conformance
   sentence and states that manifest pruning is not offered in any namespace (§27.10).
 
 ### Fixed

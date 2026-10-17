@@ -156,7 +156,8 @@ rather than folded into the range because they landed after this SDK already sta
 would turn a statement that was true when written into a different claim without anyone editing it.
 
 `CONTRACT.md`, `openapi.json`, `management-registry.json` and `proto/` are vendored byte for byte
-from `axiam` at `d25413506` (contract 1.62), and the §27 surface is generated from them. See
+from `axiam` (contract 1.62): `CONTRACT.md` and `proto/` at `d25413506`, `openapi.json` and
+`management-registry.json` at `e8722b668` (spec digest `sha256:7c3a5091…c8a1`), and the §27 surface is generated from them. See
 [MCP resource-server helpers](#mcp-resource-server-helpers-ioaxiamsdkmcp-28-opt-in) below for §28.
 
 **§27 is the Management API** — all 202 operations across 29 namespaces, with the §27.6 declarative
