@@ -16,7 +16,12 @@ import kotlinx.serialization.json.JsonElement
  * @property issuerCaId the server's issuer_ca_id field
  * @property keyAlgorithm the server's key_algorithm field
  * @property metadata the server's metadata field
- * @property subject the server's subject field
+ * @property subject The certificate's common name, e.g. `device-001`: a bare name or one `CN=`
+ *     component, at most 64 characters (RFC 5280 `ub-common-name`), printable — a control
+ *     character, tab or line break, an invisible or bidirectional formatting character, or two
+ *     spaces in a row is refused with `400`. A name that is to be written into another system's
+ *     configuration (a FreeRADIUS table, an ACL) should match
+ *     `^&#91;A-Za-z0-9&#93;&#91;A-Za-z0-9._-&#93;{0,63}$`.
  * @property subjectAltNames The names a `Server` certificate is issued for, as `&#91;{"dns":
  *     "api.lakeside.internal"}, {"ip": "10.0.0.5"}&#93;`. Required for `cert_type: Server` and
  *     refused for every other type. Each name, and the common name, must be admitted by the
@@ -26,7 +31,10 @@ import kotlinx.serialization.json.JsonElement
  *     certificate's `user_id`. Optional; accepted only for `cert_type: User`, and it must name a
  *     user of this tenant that has not been deleted or erased. A `metadata.user_id` in the same
  *     request must agree with it. Revoking the account's certificates — directory linking,
- *     deletion, erasure — matches on it.
+ *     deletion, erasure — matches on it. Passed as a plain string, untyped (CONTRACT.md §27.11
+ *     rule 5, contract 1.62): the text of a UUID, sent exactly as given so that a value that is
+ *     not one reaches the server and its `400` is surfaced. Never `null` on the wire: an assigned
+ *     `null` is the same as leaving it unset.
  * @property validityDays Validity duration in days.
  */
 @Serializable
@@ -37,6 +45,6 @@ data class CreateCertificateRequest(
     @SerialName("metadata") val metadata: JsonElement? = null,
     @SerialName("subject") val subject: String,
     @SerialName("subject_alt_names") val subjectAltNames: List<SubjectAltName>? = null,
-    @SerialName("user_id") val userId: @Serializable(with = UuidSerializer::class) UUID? = null,
+    @SerialName("user_id") val userId: String? = null,
     @SerialName("validity_days") val validityDays: Int,
 )

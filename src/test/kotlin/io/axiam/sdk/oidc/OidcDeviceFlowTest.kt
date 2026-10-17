@@ -44,7 +44,7 @@ class OidcDeviceFlowTest {
 
     private fun base() = server.url("/").toString()
 
-    /** A device client: no client secret, per §14.1. */
+    /** A public device client: no client secret and no certificate, so it sends no credential (§14.1 rule 1). */
     private fun deviceClient() = OidcTestKit.clientFor(server)
 
     private fun mountAuthorization(expiresIn: Int = 30, interval: Int? = 1) {
@@ -79,7 +79,7 @@ class OidcDeviceFlowTest {
     // -----------------------------------------------------------------------
 
     @Test
-    fun `deviceAuthorize is unauthenticated, form-encoded, and sends tenant_id as a query param`(): Unit = runBlocking {
+    fun `a public client's deviceAuthorize sends no credential, is form-encoded, and sends tenant_id as a query param`(): Unit = runBlocking {
         mountAuthorization()
         val client = deviceClient()
 
@@ -96,7 +96,7 @@ class OidcDeviceFlowTest {
         val body = java.net.URLDecoder.decode(request.body.readUtf8(), "UTF-8")
 
         assertTrue(request.getHeader("Content-Type")!!.startsWith("application/x-www-form-urlencoded"))
-        assertFalse(body.contains("client_secret"), "§14.1: deviceAuthorize MUST NOT send client_secret")
+        assertFalse(body.contains("client_secret"), "§14.1 rule 1: a public client sends no credential")
         assertTrue(body.contains("scope=openid profile"))
         assertFalse(body.contains("tenant_id"), "§12.1 note 2: tenant_id is a query parameter")
         assertEquals(tenantId, request.requestUrl!!.queryParameter("tenant_id"))

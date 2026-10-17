@@ -1,11 +1,14 @@
 package io.axiam.sdk.management
 
+import io.axiam.sdk.errors.ConflictError
 import io.axiam.sdk.errors.NetworkError
 import io.axiam.sdk.management.models.AddMemberRequest
 import io.axiam.sdk.management.models.AssignRoleToGroupRequest
 import io.axiam.sdk.management.models.AssignRoleToServiceAccountRequest
 import io.axiam.sdk.management.models.AssignRoleToUserRequest
 import io.axiam.sdk.management.models.CreateGroupRequest
+import io.axiam.sdk.management.models.CreateNetworkReplyProfileRequest
+import io.axiam.sdk.management.models.CreateNetworkSegmentRequest
 import io.axiam.sdk.management.models.CreatePermissionRequest
 import io.axiam.sdk.management.models.CreateResourceRequest
 import io.axiam.sdk.management.models.CreateRoleRequest
@@ -14,8 +17,15 @@ import io.axiam.sdk.management.models.CreateServiceAccountRequest
 import io.axiam.sdk.management.models.CreateUserRequest
 import io.axiam.sdk.management.models.Group
 import io.axiam.sdk.management.models.GrantPermissionRequest
+import io.axiam.sdk.management.models.NetworkPolicyResponse
+import io.axiam.sdk.management.models.NetworkReplyProfile
+import io.axiam.sdk.management.models.NetworkReplyProfileInput
+import io.axiam.sdk.management.models.NetworkSegmentResponse
 import io.axiam.sdk.management.models.Permission
 import io.axiam.sdk.management.models.PermissionEffect
+import io.axiam.sdk.management.models.ReplaceNetworkPolicyRequest
+import io.axiam.sdk.management.models.ReplaceNetworkReplyProfileRequest
+import io.axiam.sdk.management.models.ReplaceNetworkSegmentRequest
 import io.axiam.sdk.management.models.Resource
 import io.axiam.sdk.management.models.Role
 import io.axiam.sdk.management.models.ServiceAccountResponse
@@ -31,7 +41,9 @@ import java.util.UUID
 /**
  * The CONTRACT.md §27.6 declarative layer: describe the tenant you want, then
  * reconcile toward it. §27.6.1 (contract 1.51) adds resource `metadata`,
- * resource-scoped role bindings with `inherit`, and service accounts.
+ * resource-scoped role bindings with `inherit`, and service accounts; §27.6.2
+ * (contract 1.62) adds the `network` namespace — the tenant's cap, segments and
+ * reply profiles — whose writes are version-conditional and never retried.
  *
  * Two operations, and the difference between them is the whole design.
  * [plan] issues reads and nothing else, so it can be run against production to
@@ -67,6 +79,9 @@ class ManifestApi internal constructor(private val api: ManagementApi) {
         val roleUserBindings = mutableMapOf<UUID, Map<UUID, ExistingBinding>>()
         val roleServiceAccountBindings = mutableMapOf<UUID, Map<UUID, ExistingBinding>>()
         val groupMembers = mutableMapOf<UUID, List<UUID>>()
+        var networkPolicy: NetworkPolicyResponse? = null
+        var networkSegments: List<NetworkSegmentResponse> = emptyList()
+        var networkProfiles: List<NetworkReplyProfile> = emptyList()
     }
 
     /** Manifest keys resolved to the server identifiers they name. */
@@ -78,6 +93,16 @@ class ManifestApi internal constructor(private val api: ManagementApi) {
         val groups = mutableMapOf<String, UUID>()
         val users = mutableMapOf<String, UUID>()
         val serviceAccounts = mutableMapOf<String, UUID>()
+
+        /** §27.6.2 item 4: a segment's id, from the read or from the write that made it. */
+        val networkSegmentIds = mutableMapOf<String, UUID>()
+
+        /**
+         * §27.6.2 item 4: a segment's `version` — the read's, replaced by the
+         * response of this `apply`'s own write of the segment, because a profile's
+         * `segment_version` must be the one the segment write moved it to.
+         */
+        val networkSegmentVersions = mutableMapOf<String, Long>()
     }
 
     /** What a step will actually do, kept separate from how it is described. */
@@ -89,6 +114,9 @@ class ManifestApi internal constructor(private val api: ManagementApi) {
         CREATE_GROUP, UPDATE_GROUP, BIND_GROUP_ROLE,
         CREATE_USER, UPDATE_USER, BIND_USER_ROLE, ADD_GROUP_MEMBER,
         CREATE_SERVICE_ACCOUNT, UPDATE_SERVICE_ACCOUNT, BIND_SERVICE_ACCOUNT_ROLE,
+        UPDATE_NETWORK_POLICY,
+        CREATE_NETWORK_SEGMENT, UPDATE_NETWORK_SEGMENT,
+        CREATE_NETWORK_PROFILE, UPDATE_NETWORK_PROFILE,
     }
 
     /** One executable step, carrying manifest keys rather than identifiers. */
@@ -106,6 +134,25 @@ class ManifestApi internal constructor(private val api: ManagementApi) {
         val binding: ManagementManifest.RoleBinding,
         val isUpdate: Boolean,
         val existing: ExistingBinding?,
+    )
+
+    /** The payload of a segment step: the spec, and the read an `Update` replaces. */
+    private data class SegmentOp(
+        val spec: ManagementManifest.NetworkSegmentSpec,
+        val read: NetworkSegmentResponse?,
+    )
+
+    /** The payload of a profile step: the spec, and the read an `Update` replaces. */
+    private data class ProfileOp(
+        val spec: ManagementManifest.NetworkProfileSpec,
+        val segmentKey: String,
+        val read: NetworkReplyProfile?,
+    )
+
+    /** The payload of the policy step: the cap stated, and the policy as read. */
+    private data class PolicyOp(
+        val spec: ManagementManifest.NetworkPolicySpec,
+        val read: NetworkPolicyResponse,
     )
 
     /**
@@ -214,7 +261,26 @@ class ManifestApi internal constructor(private val api: ManagementApi) {
                     api.groups().listMembersAll(group.id, planPage).map { it.id }
             }
         }
+        readNetwork(manifest, snapshot)
         return snapshot
+    }
+
+    /**
+     * §27.6.2 item 3: `get_policy`, `list_segments` and `list_profiles`, each
+     * walked to exhaustion, and only for what the manifest states — a manifest
+     * with no `network` section makes no new request, so it plans exactly as it
+     * did before contract 1.62. GETs only (§27.6 rule 1).
+     */
+    private suspend fun readNetwork(manifest: ManagementManifest, snapshot: Snapshot) {
+        val network = manifest.network
+        if (network.isEmpty) return
+        if (network.policy != null) snapshot.networkPolicy = api.network().getPolicy()
+        if (network.segments.isNotEmpty()) {
+            snapshot.networkSegments = api.network().listSegmentsAll(null, planPage)
+        }
+        if (network.profiles.isNotEmpty()) {
+            snapshot.networkProfiles = api.network().listProfilesAll(planPage)
+        }
     }
 
     private fun derive(
@@ -401,10 +467,111 @@ class ManifestApi internal constructor(private val api: ManagementApi) {
             }
         }
 
-        // §27.6 rule 5: service accounts and their bindings are ordered LAST.
+        // §27.6 rule 5: service accounts and their bindings come next.
         deriveServiceAccounts(out, manifest, snap, res)
 
+        // §27.6 rule 5 (contract 1.62): the `network` namespace is appended last, so
+        // that a manifest without one plans exactly as it did before 1.62.
+        deriveNetwork(out, manifest, snap, res)
+
         return out
+    }
+
+    /**
+     * §27.6.2: the policy, then the segments, then the profiles — and the
+     * profiles in the segments' order, so that `plan` is stable (rule 8).
+     *
+     * Every stated member is compared with the value **as the read returns it**
+     * (item 3): for a profile that is the effective, clamped one, so a stated
+     * `session_timeout_secs` above the cap is an `Update` here and the server's
+     * refusal at `apply`; no hidden or stored value is compared. A segment's
+     * `kind`, `site` and `name` are the key and never drift (§36.3 rule 4).
+     */
+    private fun deriveNetwork(
+        out: MutableList<Step>,
+        manifest: ManagementManifest,
+        snap: Snapshot,
+        res: Resolved,
+    ) {
+        val network = manifest.network
+
+        network.policy?.let { spec ->
+            val read = snap.networkPolicy ?: error("the policy was not read")
+            val drifted = spec.sessionTimeoutMaxSecs != read.sessionTimeoutMaxSecs
+            out += step(
+                if (drifted) ManagementPlan.Change.UPDATE else ManagementPlan.Change.NO_CHANGE,
+                ManagementPlan.Target.NETWORK_POLICY, NETWORK_POLICY_KEY,
+                "network policy (Session-Timeout cap ${spec.sessionTimeoutMaxSecs}s)",
+                if (drifted) Kind.UPDATE_NETWORK_POLICY else Kind.NOOP, PolicyOp(spec, read),
+            )
+        }
+
+        for (spec in network.segments) {
+            val summary = "network segment '${spec.site}/${spec.kind.wire}/${spec.name}'"
+            val found = snap.networkSegments.firstOrNull {
+                it.siteKey == spec.site && it.kind == spec.kind && it.name == spec.name
+            }
+            if (found == null) {
+                out += step(
+                    ManagementPlan.Change.CREATE, ManagementPlan.Target.NETWORK_SEGMENT, spec.key, summary,
+                    Kind.CREATE_NETWORK_SEGMENT, SegmentOp(spec, null),
+                )
+                continue
+            }
+            res.networkSegmentIds[spec.key] = found.id
+            res.networkSegmentVersions[spec.key] = found.version
+            val drifted = found.vlanId != spec.vlanId ||
+                !spec.rank.matches(found.rank) ||
+                (spec.filterIds != null && spec.filterIds.toSet() != found.filterIds.toSet()) ||
+                (spec.enabled != null && spec.enabled != found.enabled)
+            out += step(
+                if (drifted) ManagementPlan.Change.UPDATE else ManagementPlan.Change.NO_CHANGE,
+                ManagementPlan.Target.NETWORK_SEGMENT, spec.key, summary,
+                if (drifted) Kind.UPDATE_NETWORK_SEGMENT else Kind.NOOP, SegmentOp(spec, found),
+            )
+        }
+
+        val bySegment = network.profiles.associateBy { it.segment }
+        for (segment in network.segments) {
+            val spec = bySegment[segment.key] ?: continue
+            val summary = "network profile of segment '${segment.site}/${segment.kind.wire}/${segment.name}'"
+            val segmentId = res.networkSegmentIds[segment.key]
+            val found = segmentId?.let { id -> snap.networkProfiles.firstOrNull { it.segmentId == id } }
+            if (found == null) {
+                out += step(
+                    ManagementPlan.Change.CREATE, ManagementPlan.Target.NETWORK_PROFILE, segment.key, summary,
+                    Kind.CREATE_NETWORK_PROFILE, ProfileOp(spec, segment.key, null),
+                )
+                continue
+            }
+            val drifted = found.sessionTimeoutSecs != spec.sessionTimeoutSecs ||
+                (spec.terminationAction != null && spec.terminationAction != found.terminationAction) ||
+                !spec.idleTimeoutSecs.matches(found.idleTimeoutSecs) ||
+                !spec.filterId.matches(found.filterId) ||
+                !spec.serviceType.matches(found.serviceType)
+            out += step(
+                if (drifted) ManagementPlan.Change.UPDATE else ManagementPlan.Change.NO_CHANGE,
+                ManagementPlan.Target.NETWORK_PROFILE, segment.key, summary,
+                if (drifted) Kind.UPDATE_NETWORK_PROFILE else Kind.NOOP, ProfileOp(spec, segment.key, found),
+            )
+        }
+    }
+
+    /**
+     * Whether a stated optional member agrees with the read: unstated
+     * ([JsonNullable.Absent]) is silent and always agrees; "none"
+     * ([JsonNullable.Null]) agrees with a read that has none.
+     */
+    private fun <T> JsonNullable<T>.matches(read: T?): Boolean =
+        this === JsonNullable.Absent ||
+            (this === JsonNullable.Null && read == null) ||
+            (this is JsonNullable.Value && value == read)
+
+    /** The member's value in a body built from [read]: stated, none, or carried from the read. */
+    private fun <T> JsonNullable<T>.orRead(read: T?): T? = when (this) {
+        JsonNullable.Absent -> read
+        JsonNullable.Null -> null
+        is JsonNullable.Value -> value
     }
 
     /**
@@ -576,7 +743,12 @@ class ManifestApi internal constructor(private val api: ManagementApi) {
                 applied += ApplyReport.AppliedStep(s.action, outcome)
             } catch (e: RuntimeException) {
                 applied += ApplyReport.AppliedStep(
-                    s.action, ApplyReport.StepOutcome(ApplyReport.Status.FAILED, e.message),
+                    s.action,
+                    // §27.6.2 item 5: a 409's `reason_code` is exposed as data, so the
+                    // caller branches on it and never on the message.
+                    ApplyReport.StepOutcome(
+                        ApplyReport.Status.FAILED, e.message, reasonCode = (e as? ConflictError)?.reasonCode,
+                    ),
                 )
                 stopped = true
             }
@@ -841,8 +1013,103 @@ class ManifestApi internal constructor(private val api: ManagementApi) {
                 )
                 return ApplyReport.StepOutcome(ApplyReport.Status.UPDATED)
             }
+            Kind.UPDATE_NETWORK_POLICY -> {
+                val op = s.spec as PolicyOp
+                // The version `plan` read, exactly (§27.6.2 item 4); no retry, no re-read.
+                api.network().replacePolicy(
+                    ReplaceNetworkPolicyRequest(
+                        sessionTimeoutMaxSecs = op.spec.sessionTimeoutMaxSecs,
+                        version = op.read.version,
+                    ),
+                )
+                return ApplyReport.StepOutcome(ApplyReport.Status.UPDATED)
+            }
+            Kind.CREATE_NETWORK_SEGMENT -> {
+                val spec = (s.spec as SegmentOp).spec
+                val created = api.network().createSegment(
+                    CreateNetworkSegmentRequest(
+                        enabled = spec.enabled,
+                        // In the order the manifest states (item 3).
+                        filterIds = spec.filterIds,
+                        kind = spec.kind,
+                        name = spec.name,
+                        rank = spec.rank.orRead(null),
+                        siteKey = spec.site,
+                        vlanId = spec.vlanId,
+                    ),
+                )
+                // A new segment's id, and the version of THIS write's response, are what
+                // its profile is created against (item 4).
+                res.networkSegmentIds[spec.key] = created.id
+                res.networkSegmentVersions[spec.key] = created.version
+                return ApplyReport.StepOutcome(ApplyReport.Status.CREATED)
+            }
+            Kind.UPDATE_NETWORK_SEGMENT -> {
+                val op = s.spec as SegmentOp
+                val read = op.read!!
+                val replaced = api.network().replaceSegment(
+                    read.id,
+                    // Full body, built from the read: the stated members replace the read's,
+                    // every unstated one is carried, a stated `null` is left out. No `kind`,
+                    // `site_key` or `name`: they do not change (§36.2).
+                    ReplaceNetworkSegmentRequest(
+                        enabled = op.spec.enabled ?: read.enabled,
+                        filterIds = op.spec.filterIds ?: read.filterIds,
+                        rank = op.spec.rank.orRead(read.rank),
+                        version = read.version,
+                        vlanId = op.spec.vlanId,
+                    ),
+                )
+                res.networkSegmentVersions[op.spec.key] = replaced.version
+                return ApplyReport.StepOutcome(ApplyReport.Status.UPDATED)
+            }
+            Kind.CREATE_NETWORK_PROFILE -> {
+                val op = s.spec as ProfileOp
+                val spec = op.spec
+                api.network().createProfile(
+                    CreateNetworkReplyProfileRequest(
+                        profile = NetworkReplyProfileInput(
+                            filterId = spec.filterId.orRead(null),
+                            idleTimeoutSecs = spec.idleTimeoutSecs.orRead(null),
+                            serviceType = spec.serviceType.orRead(null),
+                            sessionTimeoutSecs = spec.sessionTimeoutSecs,
+                            terminationAction = spec.terminationAction,
+                        ),
+                        segmentId = res.networkSegmentIds.getValue(op.segmentKey),
+                        segmentVersion = res.networkSegmentVersions.getValue(op.segmentKey),
+                    ),
+                )
+                return ApplyReport.StepOutcome(ApplyReport.Status.CREATED)
+            }
+            Kind.UPDATE_NETWORK_PROFILE -> {
+                val op = s.spec as ProfileOp
+                val spec = op.spec
+                val read = op.read!!
+                api.network().replaceProfile(
+                    read.segmentId,
+                    ReplaceNetworkReplyProfileRequest(
+                        profile = NetworkReplyProfileInput(
+                            dictionary = read.dictionary,
+                            filterId = spec.filterId.orRead(read.filterId),
+                            idleTimeoutSecs = spec.idleTimeoutSecs.orRead(read.idleTimeoutSecs),
+                            serviceType = spec.serviceType.orRead(read.serviceType),
+                            sessionTimeoutSecs = spec.sessionTimeoutSecs,
+                            terminationAction = spec.terminationAction ?: read.terminationAction,
+                        ),
+                        // The segment's version as this apply left it (item 4), not the one plan read.
+                        segmentVersion = res.networkSegmentVersions.getValue(op.segmentKey),
+                        version = read.version,
+                    ),
+                )
+                return ApplyReport.StepOutcome(ApplyReport.Status.UPDATED)
+            }
             Kind.BIND_GROUP_ROLE, Kind.BIND_USER_ROLE, Kind.BIND_SERVICE_ACCOUNT_ROLE, Kind.NOOP ->
                 error("handled by execute() before reaching run()")
         }
+    }
+
+    private companion object {
+        /** The key a plan action for the singleton `network.policy` carries (it has none of its own). */
+        const val NETWORK_POLICY_KEY = "network.policy"
     }
 }

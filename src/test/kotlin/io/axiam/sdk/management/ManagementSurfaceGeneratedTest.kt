@@ -22,6 +22,8 @@ import io.axiam.sdk.management.models.CreateCertificateRequest
 import io.axiam.sdk.management.models.CreateFederationConfigRequest
 import io.axiam.sdk.management.models.CreateGroupRequest
 import io.axiam.sdk.management.models.CreateIntermediateCaRequest
+import io.axiam.sdk.management.models.CreateNetworkReplyProfileRequest
+import io.axiam.sdk.management.models.CreateNetworkSegmentRequest
 import io.axiam.sdk.management.models.CreateNotificationRuleRequest
 import io.axiam.sdk.management.models.CreateOAuth2ClientRequest
 import io.axiam.sdk.management.models.CreatePermissionRequest
@@ -65,6 +67,11 @@ import io.axiam.sdk.management.models.MdsStatusResponse
 import io.axiam.sdk.management.models.MfaMethodResponse
 import io.axiam.sdk.management.models.MigrateCustodyResponse
 import io.axiam.sdk.management.models.MtlsTrustAnchorResponse
+import io.axiam.sdk.management.models.NetworkPolicyResponse
+import io.axiam.sdk.management.models.NetworkReplyProfile
+import io.axiam.sdk.management.models.NetworkReplyProfileInput
+import io.axiam.sdk.management.models.NetworkSegmentKind
+import io.axiam.sdk.management.models.NetworkSegmentResponse
 import io.axiam.sdk.management.models.NotificationRuleResponse
 import io.axiam.sdk.management.models.OAuth2ClientCreatedResponse
 import io.axiam.sdk.management.models.OAuth2ClientResponse
@@ -85,6 +92,9 @@ import io.axiam.sdk.management.models.ReactorMode
 import io.axiam.sdk.management.models.ReactorResponse
 import io.axiam.sdk.management.models.ReadyResponse
 import io.axiam.sdk.management.models.RegistrationTokenResponse
+import io.axiam.sdk.management.models.ReplaceNetworkPolicyRequest
+import io.axiam.sdk.management.models.ReplaceNetworkReplyProfileRequest
+import io.axiam.sdk.management.models.ReplaceNetworkSegmentRequest
 import io.axiam.sdk.management.models.ResolvedPermissionGrant
 import io.axiam.sdk.management.models.Resource
 import io.axiam.sdk.management.models.Role
@@ -1625,6 +1635,118 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
         assertDecodedEveryField(result, ScimReconcileAccepted.serializer(), body)
     }
 
+    /** Exercises network.list_segments. */
+    @Test
+    fun `network list_segments`() = runTest {
+        val body = "{\"items\": [{\"created_at\": \"2026-08-26T00:00:00Z\", \"created_by\": \"11111111-1111-4111-8111-111111111111\", \"enabled\": true, \"filter_ids\": [], \"id\": \"11111111-1111-4111-8111-111111111111\", \"kind\": \"access\", \"name\": \"example\", \"path\": \"example\", \"site_key\": \"example\", \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"updated_at\": \"2026-08-26T00:00:00Z\", \"updated_by\": \"11111111-1111-4111-8111-111111111111\", \"version\": 1, \"vlan_id\": 1}], \"total\": 1, \"offset\": 0, \"limit\": 200}"
+        mount("GET", "/api/v1/network/segments", 200, body)
+        val result = client.management().network().listSegments(site = null, page = PageRequest.of(50))
+        val item = (Json.parseToJsonElement(body) as JsonObject)["items"]!!.jsonArray.first().toString()
+        assertDecodedEveryField(result.items.first(), NetworkSegmentResponse.serializer(), item)
+        client.management().network().listSegmentsAll(site = null, start = PageRequest.of(50))
+        client.management().network().listSegmentsAll(site = null)
+    }
+
+    /** Exercises network.create_segment. */
+    @Test
+    fun `network create_segment`() = runTest {
+        val body = "{\"created_at\": \"2026-08-26T00:00:00Z\", \"created_by\": \"11111111-1111-4111-8111-111111111111\", \"enabled\": true, \"filter_ids\": [], \"id\": \"11111111-1111-4111-8111-111111111111\", \"kind\": \"access\", \"name\": \"example\", \"path\": \"example\", \"site_key\": \"example\", \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"updated_at\": \"2026-08-26T00:00:00Z\", \"updated_by\": \"11111111-1111-4111-8111-111111111111\", \"version\": 1, \"vlan_id\": 1}"
+        mount("POST", "/api/v1/network/segments", 201, body)
+        val result = client.management().network().createSegment(body = CreateNetworkSegmentRequest(kind = NetworkSegmentKind.ACCESS, name = "example", siteKey = "example", vlanId = 1))
+        assertDecodedEveryField(result, NetworkSegmentResponse.serializer(), body)
+    }
+
+    /** Exercises network.get_segment. */
+    @Test
+    fun `network get_segment`() = runTest {
+        val body = "{\"created_at\": \"2026-08-26T00:00:00Z\", \"created_by\": \"11111111-1111-4111-8111-111111111111\", \"enabled\": true, \"filter_ids\": [], \"id\": \"11111111-1111-4111-8111-111111111111\", \"kind\": \"access\", \"name\": \"example\", \"path\": \"example\", \"site_key\": \"example\", \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"updated_at\": \"2026-08-26T00:00:00Z\", \"updated_by\": \"11111111-1111-4111-8111-111111111111\", \"version\": 1, \"vlan_id\": 1}"
+        mount("GET", "/api/v1/network/segments/$EXAMPLE_ID", 200, body)
+        val result = client.management().network().getSegment(id = EXAMPLE_ID)
+        assertDecodedEveryField(result, NetworkSegmentResponse.serializer(), body)
+    }
+
+    /** Exercises network.replace_segment. */
+    @Test
+    fun `network replace_segment`() = runTest {
+        val body = "{\"created_at\": \"2026-08-26T00:00:00Z\", \"created_by\": \"11111111-1111-4111-8111-111111111111\", \"enabled\": true, \"filter_ids\": [], \"id\": \"11111111-1111-4111-8111-111111111111\", \"kind\": \"access\", \"name\": \"example\", \"path\": \"example\", \"site_key\": \"example\", \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"updated_at\": \"2026-08-26T00:00:00Z\", \"updated_by\": \"11111111-1111-4111-8111-111111111111\", \"version\": 1, \"vlan_id\": 1}"
+        mount("PUT", "/api/v1/network/segments/$EXAMPLE_ID", 200, body)
+        val result = client.management().network().replaceSegment(id = EXAMPLE_ID, body = ReplaceNetworkSegmentRequest(enabled = true, filterIds = emptyList(), version = 1L, vlanId = 1))
+        assertDecodedEveryField(result, NetworkSegmentResponse.serializer(), body)
+    }
+
+    /** Exercises network.delete_segment. */
+    @Test
+    fun `network delete_segment`() = runTest {
+        val body = ""
+        mount("DELETE", "/api/v1/network/segments/$EXAMPLE_ID", 204, body)
+        client.management().network().deleteSegment(id = EXAMPLE_ID, version = 7L)
+    }
+
+    /** Exercises network.list_profiles. */
+    @Test
+    fun `network list_profiles`() = runTest {
+        val body = "{\"items\": [{\"created_at\": \"2026-08-26T00:00:00Z\", \"created_by\": \"11111111-1111-4111-8111-111111111111\", \"dictionary\": \"example\", \"segment_id\": \"11111111-1111-4111-8111-111111111111\", \"session_timeout_clamped\": true, \"session_timeout_secs\": 1, \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"termination_action\": \"default\", \"updated_at\": \"2026-08-26T00:00:00Z\", \"updated_by\": \"11111111-1111-4111-8111-111111111111\", \"version\": 1}], \"total\": 1, \"offset\": 0, \"limit\": 200}"
+        mount("GET", "/api/v1/network/profiles", 200, body)
+        val result = client.management().network().listProfiles(page = PageRequest.of(50))
+        val item = (Json.parseToJsonElement(body) as JsonObject)["items"]!!.jsonArray.first().toString()
+        assertDecodedEveryField(result.items.first(), NetworkReplyProfile.serializer(), item)
+        client.management().network().listProfilesAll(start = PageRequest.of(50))
+        client.management().network().listProfilesAll()
+    }
+
+    /** Exercises network.create_profile. */
+    @Test
+    fun `network create_profile`() = runTest {
+        val body = "{\"created_at\": \"2026-08-26T00:00:00Z\", \"created_by\": \"11111111-1111-4111-8111-111111111111\", \"dictionary\": \"example\", \"segment_id\": \"11111111-1111-4111-8111-111111111111\", \"session_timeout_clamped\": true, \"session_timeout_secs\": 1, \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"termination_action\": \"default\", \"updated_at\": \"2026-08-26T00:00:00Z\", \"updated_by\": \"11111111-1111-4111-8111-111111111111\", \"version\": 1}"
+        mount("POST", "/api/v1/network/profiles", 201, body)
+        val result = client.management().network().createProfile(body = CreateNetworkReplyProfileRequest(profile = NetworkReplyProfileInput(sessionTimeoutSecs = 1), segmentId = EXAMPLE_ID, segmentVersion = 1L))
+        assertDecodedEveryField(result, NetworkReplyProfile.serializer(), body)
+    }
+
+    /** Exercises network.get_profile. */
+    @Test
+    fun `network get_profile`() = runTest {
+        val body = "{\"created_at\": \"2026-08-26T00:00:00Z\", \"created_by\": \"11111111-1111-4111-8111-111111111111\", \"dictionary\": \"example\", \"segment_id\": \"11111111-1111-4111-8111-111111111111\", \"session_timeout_clamped\": true, \"session_timeout_secs\": 1, \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"termination_action\": \"default\", \"updated_at\": \"2026-08-26T00:00:00Z\", \"updated_by\": \"11111111-1111-4111-8111-111111111111\", \"version\": 1}"
+        mount("GET", "/api/v1/network/profiles/$EXAMPLE_ID", 200, body)
+        val result = client.management().network().getProfile(segmentId = EXAMPLE_ID)
+        assertDecodedEveryField(result, NetworkReplyProfile.serializer(), body)
+    }
+
+    /** Exercises network.replace_profile. */
+    @Test
+    fun `network replace_profile`() = runTest {
+        val body = "{\"created_at\": \"2026-08-26T00:00:00Z\", \"created_by\": \"11111111-1111-4111-8111-111111111111\", \"dictionary\": \"example\", \"segment_id\": \"11111111-1111-4111-8111-111111111111\", \"session_timeout_clamped\": true, \"session_timeout_secs\": 1, \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"termination_action\": \"default\", \"updated_at\": \"2026-08-26T00:00:00Z\", \"updated_by\": \"11111111-1111-4111-8111-111111111111\", \"version\": 1}"
+        mount("PUT", "/api/v1/network/profiles/$EXAMPLE_ID", 200, body)
+        val result = client.management().network().replaceProfile(segmentId = EXAMPLE_ID, body = ReplaceNetworkReplyProfileRequest(profile = NetworkReplyProfileInput(sessionTimeoutSecs = 1), segmentVersion = 1L, version = 1L))
+        assertDecodedEveryField(result, NetworkReplyProfile.serializer(), body)
+    }
+
+    /** Exercises network.delete_profile. */
+    @Test
+    fun `network delete_profile`() = runTest {
+        val body = ""
+        mount("DELETE", "/api/v1/network/profiles/$EXAMPLE_ID", 204, body)
+        client.management().network().deleteProfile(segmentId = EXAMPLE_ID, version = 7L)
+    }
+
+    /** Exercises network.get_policy. */
+    @Test
+    fun `network get_policy`() = runTest {
+        val body = "{\"session_timeout_max_secs\": 1, \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"version\": 1}"
+        mount("GET", "/api/v1/network/policy", 200, body)
+        val result = client.management().network().getPolicy()
+        assertDecodedEveryField(result, NetworkPolicyResponse.serializer(), body)
+    }
+
+    /** Exercises network.replace_policy. */
+    @Test
+    fun `network replace_policy`() = runTest {
+        val body = "{\"session_timeout_max_secs\": 1, \"tenant_id\": \"11111111-1111-4111-8111-111111111111\", \"version\": 1}"
+        mount("PUT", "/api/v1/network/policy", 200, body)
+        val result = client.management().network().replacePolicy(body = ReplaceNetworkPolicyRequest(sessionTimeoutMaxSecs = 1, version = 1L))
+        assertDecodedEveryField(result, NetworkPolicyResponse.serializer(), body)
+    }
+
     /** Exercises settings.get_org. */
     @Test
     fun `settings get_org`() = runTest {
@@ -1852,7 +1974,7 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
     fun `privacy cancel_delete`() = runTest {
         val body = ""
         mount("GET", "/api/v1/auth/account/delete/cancel", 200, body)
-        client.management().privacy().cancelDelete(token = null)
+        client.management().privacy().cancelDelete(token = "example")
     }
 
     /** Exercises privacy.list_consents. */
@@ -2083,7 +2205,7 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
     }
 
     /**
-     * §27.9: a partial regeneration must fail here, not ship 183 of 190.
+     * §27.9: a partial regeneration must fail here, not ship 195 of 202.
      *
      * Asserting the whole set rather than the count catches a regeneration that dropped one
      * operation and gained another.
@@ -2143,6 +2265,18 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
             "groups.remove_member",
             "groups.remove_service_account",
             "groups.update",
+            "network.create_profile",
+            "network.create_segment",
+            "network.delete_profile",
+            "network.delete_segment",
+            "network.get_policy",
+            "network.get_profile",
+            "network.get_segment",
+            "network.list_profiles",
+            "network.list_segments",
+            "network.replace_policy",
+            "network.replace_profile",
+            "network.replace_segment",
             "notification_rules.create",
             "notification_rules.delete",
             "notification_rules.get",
@@ -2282,7 +2416,7 @@ class ManagementSurfaceGeneratedTest : ManagementTestBase() {
             "webhooks.list",
             "webhooks.update",
         )
-        assertEquals(190, exercised.size,
+        assertEquals(202, exercised.size,
             "the generated surface must reach every operation the registry declares")
         assertEquals(expectedSurface(), exercised,
             "the generated surface and the registry must name the same operations")

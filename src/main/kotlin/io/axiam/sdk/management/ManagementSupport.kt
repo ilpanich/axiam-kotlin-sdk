@@ -4,12 +4,14 @@ import io.axiam.sdk.errors.NetworkError
 import io.axiam.sdk.errors.ValidationError
 import io.axiam.sdk.internal.ManagementTransport
 import kotlinx.serialization.DeserializationStrategy
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.SerializationStrategy
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -136,16 +138,42 @@ internal object ManagementSupport {
         return JsonObject(obj.filterKeys { it !in empty })
     }
 
+    /**
+     * Response timestamps whose OWN string a model keeps beside the parsed value
+     * (CONTRACT.md §32.2, contract 1.62, item (g)): the model's serial name ->
+     * (the wire member, the synthetic member the model declares for its text).
+     *
+     * `expected_updated_at` is compared as an instant but is sent as the string
+     * the response carried, and a helper that renders the parsed `Instant` again
+     * is not conformant. `scripts/gen_management.py` declares the same pairs in
+     * `RAW_TIMESTAMP_MEMBERS`; `Contract162ModelsTest` fails if the two disagree.
+     */
+    internal val RAW_TIMESTAMPS: Map<String, Pair<String, String>> = mapOf(
+        "io.axiam.sdk.management.models.SsfStream" to ("updated_at" to "updated_at_raw"),
+    )
+
     /** Converts a response node into a model, or throws a [NetworkError]. */
     fun <T> decode(operation: String, deserializer: DeserializationStrategy<T>, node: JsonElement?): T {
         val element = node ?: throw NetworkError(
             "$operation: the server returned no body where one was expected",
         )
         return try {
-            ManagementTransport.READER.decodeFromJsonElement(deserializer, element)
+            ManagementTransport.READER.decodeFromJsonElement(deserializer, keepRawTimestamps(deserializer, element))
         } catch (e: Exception) {
             throw NetworkError("$operation: the server's response did not match: ${e.message}", e)
         }
+    }
+
+    /**
+     * Copies the response's own timestamp string into the model's raw member
+     * ([RAW_TIMESTAMPS]), before the typed one is parsed from the same text.
+     */
+    @OptIn(ExperimentalSerializationApi::class)
+    private fun keepRawTimestamps(deserializer: DeserializationStrategy<*>, element: JsonElement): JsonElement {
+        val (wire, rawWire) = RAW_TIMESTAMPS[deserializer.descriptor.serialName] ?: return element
+        val obj = element as? JsonObject ?: return element
+        val text = (obj[wire] as? JsonPrimitive)?.takeIf { it.isString } ?: return element
+        return JsonObject(obj + (rawWire to text))
     }
 
     /** Converts a bare-array response into a list of models (§27.4 rule 4). */

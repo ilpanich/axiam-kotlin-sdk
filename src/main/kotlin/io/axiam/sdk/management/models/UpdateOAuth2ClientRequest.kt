@@ -37,7 +37,9 @@ import kotlinx.serialization.Serializable
  * @property profile the server's profile field
  * @property redirectUris the server's redirect_uris field
  * @property requirePar the server's require_par field
- * @property scopes the server's scopes field
+ * @property scopes Replace the client's scopes. On a `managed_by: dcr | cimd` client a scope
+ *     the request adds that is outside the tenant's effective `dcr_allowed_scopes` is refused with
+ *     `422` (#636); an administrator-managed client is not bounded.
  * @property selfSignedTlsClientAuthThumbprints the server's
  *     self_signed_tls_client_auth_thumbprints field
  * @property tlsClientAuthSanDns the server's tls_client_auth_san_dns field

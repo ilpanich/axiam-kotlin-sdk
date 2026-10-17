@@ -25,9 +25,12 @@ object DeviceLoginExample {
         val tenantId = System.getenv("AXIAM_TENANT_ID") ?: "11111111-2222-3333-4444-555555555555"
         val clientId = System.getenv("AXIAM_OIDC_CLIENT_ID") ?: "my-device"
 
-        // No client secret: a device that cannot show a browser cannot keep one
-        // either, and §14.1 makes `deviceAuthorize` unauthenticated for that
-        // reason.
+        // No client secret: this is a PUBLIC client, the usual device — one that
+        // cannot show a browser cannot keep a secret either. A public client sends
+        // `client_id` and no credential at `deviceAuthorize` or at any poll
+        // (§14.1 rule 1). A confidential client would add
+        // `.oidcClientSecret(...)` (sent as `client_secret` in the form body at
+        // both endpoints, contract 1.62) or a §6.1 `.clientCertificate(...)`.
         val client = AxiamClient.builder(baseUrl, tenantId)
             .oidcClientId(clientId)
             .build()

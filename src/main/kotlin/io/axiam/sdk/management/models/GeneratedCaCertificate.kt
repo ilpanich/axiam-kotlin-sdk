@@ -56,11 +56,13 @@ import kotlinx.serialization.Serializable
  *     organization-level CA, which is either self-signed or imported and has no parent inside
  *     AXIAM.
  * @property privateKeyPem PEM-encoded private key — returned only on generation, and only when
- *     there is one to return. Absent under `vault_pki` custody, where the key was generated inside
- *     Vault and no API exports it. The field is omitted rather than sent as `null` so a client
- *     that has always read it keeps working unchanged for every custodian that does produce a key.
- *     -- SECRET: redacted from toString and from every rendering except the one request body it is
- *     sent in
+ *     there is one to return. An unencrypted PKCS#8 `PRIVATE KEY` block. An Ed25519 key is RFC
+ *     8410 version 1 (`version` INTEGER 0, the 32-byte seed and no embedded public key), which
+ *     OpenSSL 3.0 reads; an RSA-4096 key is the usual PKCS#8 `RSAPrivateKey`. Absent under
+ *     `vault_pki` custody, where the key was generated inside Vault and no API exports it. The
+ *     field is omitted rather than sent as `null` so a client that has always read it keeps
+ *     working unchanged for every custodian that does produce a key. -- SECRET: redacted from
+ *     toString and from every rendering except the one request body it is sent in
  * @property publicCertPem PEM-encoded public certificate. The certificate that *signs*, which
  *     under `vault_pki` custody is the intermediate rather than the root beneath which it was
  *     created.
