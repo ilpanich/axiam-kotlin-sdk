@@ -2,6 +2,9 @@ package io.axiam.sdk.management
 
 import io.axiam.sdk.Sensitive
 import io.axiam.sdk.errors.NetworkError
+import io.axiam.sdk.management.models.NetworkSegmentKind
+import io.axiam.sdk.management.models.RadiusServiceType
+import io.axiam.sdk.management.models.RadiusTerminationAction
 import kotlinx.serialization.json.JsonElement
 
 /**
@@ -30,6 +33,9 @@ import kotlinx.serialization.json.JsonElement
  * @property users the users, with their roles and group memberships
  * @property serviceAccounts the service accounts, with the roles they hold
  *   (§27.6.1 item 3, contract 1.51)
+ * @property network the tenant's network segments, reply profiles and
+ *   `Session-Timeout` cap (§27.6.2, contract 1.62); empty by default, and a
+ *   manifest with none plans exactly as it did before 1.62
  */
 data class ManagementManifest(
     val resources: List<ResourceSpec> = emptyList(),
@@ -38,6 +44,7 @@ data class ManagementManifest(
     val groups: List<GroupSpec> = emptyList(),
     val users: List<UserSpec> = emptyList(),
     val serviceAccounts: List<ServiceAccountSpec> = emptyList(),
+    val network: NetworkSpec = NetworkSpec(),
 ) {
 
     /**
@@ -235,6 +242,103 @@ data class ManagementManifest(
         val roles: List<RoleBinding> = emptyList(),
     )
 
+    /**
+     * The `network` section of a manifest (CONTRACT.md §27.6.2, contract 1.62):
+     * a tenant's cap, segments and reply profiles. The namespace is
+     * **human-only**: an `apply` whose manifest has a `network` section needs a
+     * human caller, and a service-account token meets `401` at the first network
+     * action.
+     *
+     * @property policy the tenant's `Session-Timeout` cap, a **singleton** (the
+     *   tenant has exactly one, so it has no key); `null` leaves the cap alone
+     * @property segments the segments, each keyed by site + kind + name
+     * @property profiles the reply profiles, each keyed by its segment
+     */
+    data class NetworkSpec(
+        val policy: NetworkPolicySpec? = null,
+        val segments: List<NetworkSegmentSpec> = emptyList(),
+        val profiles: List<NetworkProfileSpec> = emptyList(),
+    ) {
+        /** `true` when the section states nothing, so that `plan` reads nothing for it. */
+        val isEmpty: Boolean get() = policy == null && segments.isEmpty() && profiles.isEmpty()
+    }
+
+    /**
+     * The tenant's `Session-Timeout` cap (`network.policy`, §27.6.2 item 1).
+     *
+     * The tenant's policy always exists (the default, version 0, until it first
+     * writes one), so it is never a `Create`: it is `NoChange` or `Update`. It is
+     * written **first** of the network actions, because a profile's timeout is
+     * checked against the cap at the write.
+     *
+     * @property sessionTimeoutMaxSecs the cap, 300–86 400; the server judges it
+     */
+    data class NetworkPolicySpec(val sessionTimeoutMaxSecs: Int)
+
+    /**
+     * One network segment (`network.segments[]`, §27.6.2 item 1).
+     *
+     * The natural key is **[site] + [kind] + [name]**, where [kind] is the wire
+     * spelling `access` or `quarantine` (`NetworkSegmentKind.ACCESS.wire`); there
+     * is no `zones` spelling anywhere in a manifest. The three are the key and so
+     * never drift (§36.3 rule 4). Every other member is a field: unstated is
+     * silent (§27.6 rule 3) and, on an `Update`, carried from the read.
+     *
+     * [filterIds] compares as a **set** (a reorder is `NoChange`); a segment that
+     * lists one Filter-Id twice is refused at `plan`, with zero wire calls. When
+     * the SDK writes it, it sends them in the order stated here.
+     *
+     * @property key manifest-local identifier, referenced by [NetworkProfileSpec.segment]
+     * @property site the site key (the wire `site_key`)
+     * @property kind `access` or `quarantine`
+     * @property name the segment's name within its site
+     * @property vlanId the VLAN, 1–4094
+     * @property rank placement order for an `access` segment. [JsonNullable.Absent]
+     *   (the default) is unstated; [JsonNullable.Null] is "none" (the key is left
+     *   out of the body)
+     * @property filterIds the segment's envelope (the Filter-Id names its profile
+     *   may choose from); `null` is unstated, an empty list states "none"
+     * @property enabled whether the segment is a placement candidate; `null` is
+     *   unstated (the server's default is `true`)
+     */
+    data class NetworkSegmentSpec(
+        val key: String,
+        val site: String,
+        val kind: NetworkSegmentKind,
+        val name: String,
+        val vlanId: Int,
+        val rank: JsonNullable<Int> = JsonNullable.Absent,
+        val filterIds: List<String>? = null,
+        val enabled: Boolean? = null,
+    )
+
+    /**
+     * One segment's reply profile (`network.profiles[]`, §27.6.2 item 1), keyed
+     * by **its segment**: a profile has no name or id of its own.
+     *
+     * Every stated member is compared with the **effective** profile as the read
+     * returns it (§27.6.2 item 3, §36.3 rule 6): a stated [sessionTimeoutSecs]
+     * above the tenant's cap differs from the read, `plan` shows an `Update`, and
+     * the server refuses `apply`'s replace with `403`, which is the action's
+     * failure (`apply` stops; nothing is retried or lowered to the cap).
+     *
+     * @property segment the [NetworkSegmentSpec.key] of a segment of this manifest
+     * @property sessionTimeoutSecs `Session-Timeout`, from 300 to the tenant's cap
+     * @property terminationAction `null` is unstated (the server's default is
+     *   `radius_request`)
+     * @property idleTimeoutSecs [JsonNullable.Absent] unstated; [JsonNullable.Null] none
+     * @property filterId [JsonNullable.Absent] unstated; [JsonNullable.Null] none
+     * @property serviceType [JsonNullable.Absent] unstated; [JsonNullable.Null] none
+     */
+    data class NetworkProfileSpec(
+        val segment: String,
+        val sessionTimeoutSecs: Int,
+        val terminationAction: RadiusTerminationAction? = null,
+        val idleTimeoutSecs: JsonNullable<Int> = JsonNullable.Absent,
+        val filterId: JsonNullable<String> = JsonNullable.Absent,
+        val serviceType: JsonNullable<RadiusServiceType> = JsonNullable.Absent,
+    )
+
     companion object {
         /** A manifest that describes nothing, and therefore changes nothing. */
         fun empty(): ManagementManifest = ManagementManifest()
@@ -267,6 +371,9 @@ data class ManagementManifest(
         private val userGroups = mutableMapOf<String, MutableList<String>>()
         private val serviceAccounts = mutableListOf<ServiceAccountSpec>()
         private val serviceAccountRoles = mutableMapOf<String, MutableList<RoleBinding>>()
+        private var networkPolicy: NetworkPolicySpec? = null
+        private val networkSegments = mutableListOf<NetworkSegmentSpec>()
+        private val networkProfiles = mutableListOf<NetworkProfileSpec>()
         private val problems = mutableListOf<String>()
 
         /**
@@ -529,6 +636,46 @@ data class ManagementManifest(
         }
 
         /**
+         * Declares the tenant's `Session-Timeout` cap (§27.6.2). A manifest carries
+         * at most one: a second call is a problem [build] reports.
+         *
+         * @param sessionTimeoutMaxSecs the cap
+         * @return this builder
+         */
+        fun networkPolicy(sessionTimeoutMaxSecs: Int): Builder = apply {
+            if (networkPolicy != null) {
+                problems += "networkPolicy(...) is called more than once; the tenant has exactly " +
+                    "one policy, so a manifest carries at most one"
+                return@apply
+            }
+            networkPolicy = NetworkPolicySpec(sessionTimeoutMaxSecs)
+        }
+
+        /**
+         * Declares a network segment (§27.6.2), keyed by [site] + [kind] + [name].
+         *
+         * @param spec the segment
+         * @return this builder
+         */
+        fun networkSegment(spec: NetworkSegmentSpec): Builder = apply { networkSegments += spec }
+
+        /**
+         * Declares the reply profile of a segment declared earlier (§27.6.2).
+         *
+         * @param spec the profile; its [NetworkProfileSpec.segment] names an
+         *   already-declared segment key
+         * @return this builder
+         */
+        fun networkProfile(spec: NetworkProfileSpec): Builder = apply {
+            if (networkSegments.none { it.key == spec.segment }) {
+                problems += "networkProfile names segment '${spec.segment}', " +
+                    "which no networkSegment(...) call has declared yet"
+                return@apply
+            }
+            networkProfiles += spec
+        }
+
+        /**
          * Assembles the manifest, or throws if any back-reference is dangling.
          *
          * @return the assembled manifest
@@ -554,6 +701,7 @@ data class ManagementManifest(
                     )
                 },
                 serviceAccounts = serviceAccounts.map { it.copy(roles = serviceAccountRoles[it.key].orEmpty()) },
+                network = NetworkSpec(networkPolicy, networkSegments.toList(), networkProfiles.toList()),
             )
         }
     }

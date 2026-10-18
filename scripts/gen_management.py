@@ -176,20 +176,30 @@ CALL_SITE_NOTES: dict[str, str] = {
         "into `next`, wait until every SP has refreshed the metadata, then promote."
     ),
     "ssf.update_stream": (
-        "An omitted optional member takes its default (§32.2) — **except "
-        "`authorization_header`, which absent keeps the stored one** — unless the "
-        "update moves `endpoint_url` to another scheme, host or port while a header "
-        "is stored: then it must carry `authorization_header` again or "
-        "`clear_authorization_header: true`, else `400` (§32.3 rule 5). An update "
-        "overtaken by the receiver's own write is `409`: read the stream again "
-        "(never retried). **Contract 1.61:** `expected_updated_at` (the `updated_at` "
-        "string you read, sent as given) makes the update conditional on that "
-        "version, `409` if the stream was written since; and `events_requested` has "
-        "three meanings on an update (§32.2): absent *resets* the stream to every "
-        "event of `events_allowed`, `[]` is stored as the receiver's \"none\", a "
-        "list is stored as given. An edit therefore sends back the "
-        "`events_requested` and `expected_updated_at` it read. "
-        "`SsfStream.toInput()` turns a read into the body, carrying both."
+        "**The three meanings of `events_requested` on an update (§32.2, contract "
+        "1.62):** *absent* **resets** the stream to every event of `events_allowed` "
+        "(as on create), widening a narrowing the receiver made; `[]` is stored as "
+        "the receiver's \"none\" (it does not widen, and the stream carries nothing); "
+        "a list of event types is stored as given and refused `400` if any is "
+        "outside `events_allowed`. A raw API client, with no SDK, is bound by the "
+        "same meaning: an `events_requested` left out of the `PUT` resets the stream. "
+        "**An omitted optional member takes its default on every update** "
+        "(`description`, `endpoint_url` and `status_reason` null; `subject_format` "
+        "`iss_sub`; `status` `enabled`; `clear_authorization_header` false) — "
+        "**except `authorization_header`, which absent keeps the stored one** — unless "
+        "the update moves `endpoint_url` to another scheme, host or port while a "
+        "header is stored: then it must carry `authorization_header` again or "
+        "`clear_authorization_header: true`, else `400` (§32.3 rule 5). "
+        "`expected_updated_at` (the `updated_at` string you read, sent exactly as "
+        "given; an assigned `null` is \"none\" and the key is left out) makes the "
+        "update conditional on that version: `409` if the stream was written since, "
+        "the receiver's own writes included (never retried): read the stream again. "
+        "**To edit a stream you read, use `SsfStream.toInput(changes)`**: it sends "
+        "the `events_requested` and `expected_updated_at` as read and cuts "
+        "`events_requested` to a lowered `events_allowed`. The plain "
+        "`SsfStream.toInput()` sends the stream back as read and cannot know that "
+        "you are about to lower the ceiling: cutting `events_requested` to the new "
+        "`events_allowed` is then your duty."
     ),
     "scim_targets.create": (
         "`credential` is required here (§31.3 rule 2). It is write-only: no "
@@ -787,15 +797,38 @@ def field_list(schema_name: str, secrets: set[str]) -> tuple[list[dict[str, Any]
             rendered = kotlin_type(props[wire])
         if (schema_name, wire) in DATE_TIME_AS_STRING:
             rendered = "String"
+        doc = props[wire].get("description") or f"the server's {wire} field"
+        if (schema_name, wire) in UNTYPED_STRING_MEMBERS:
+            rendered = "String"
+            doc += (" Passed as a plain string, untyped (CONTRACT.md §27.11 rule 5, contract "
+                    "1.62): the text of a UUID, sent exactly as given so that a value that is "
+                    "not one reaches the server and its `400` is surfaced. Never `null` on the "
+                    "wire: an assigned `null` is the same as leaving it unset.")
         fields.append({
             "wire": wire,
             "name": prop(wire),
             "type": rendered,
             "required": wire in required,
-            "doc": props[wire].get("description") or f"the server's {wire} field",
+            "doc": doc,
             "secret": wire in secrets,
             "explicit_null": explicit_null,
         })
+        raw = RAW_TIMESTAMP_MEMBERS.get((schema_name, wire))
+        if raw:
+            fields.append({
+                "wire": raw,
+                "name": prop(raw),
+                "type": "String",
+                "required": False,
+                "doc": (f"The server's OWN string for `{wire}`, exactly as the response carried "
+                        "it (another spelling of the offset, and the fraction digits, are "
+                        "preserved), next to the parsed value above (CONTRACT.md §32.2, contract "
+                        "1.62). This is what `expected_updated_at` must be sent as, and what "
+                        "`toInput()` sends. `null` only on a value built by hand rather than "
+                        "decoded from a response."),
+                "secret": False,
+                "explicit_null": False,
+            })
     return fields, required, description
 
 
@@ -807,6 +840,27 @@ def field_list(schema_name: str, secrets: set[str]) -> tuple[list[dict[str, Any]
 # (`ScimTargetInput.expected_updated_at` shipped in 1.0.0 as an Instant and is
 # left as it is: changing the type of a published member is a breaking change.)
 DATE_TIME_AS_STRING = {("SsfStreamInput", "expected_updated_at")}
+
+# Request members the contract wants passed as the language's plain optional
+# string rather than as its UUID type (CONTRACT.md §27.11 rule 5, contract 1.62,
+# item (i)): a UUID-typed member makes a malformed value unrepresentable, which
+# is a client-side judgement of the value however it is spelled, and the caller
+# would never see the server's `400`. The RESPONSE member (`Certificate.user_id`)
+# stays a UUID. Source-breaking for the two requests; recorded in the change log.
+UNTYPED_STRING_MEMBERS = {
+    ("CreateCertificateRequest", "user_id"),
+    ("SignCertificateCsrRequest", "user_id"),
+}
+
+# Response timestamps that keep the SERVER'S OWN STRING next to the parsed
+# value (CONTRACT.md §32.2, contract 1.62, item (g)): `expected_updated_at` is
+# compared as an instant but is sent as the string the response carried, and a
+# helper that renders the parsed `Instant` again (another spelling of the
+# offset, regrouped fraction digits) is not conformant. The raw member is not a
+# wire member: ManagementSupport.decode copies the response's own `updated_at`
+# string into it before the model is built (the table there names the same
+# types). Maps (schema, wire name) -> the synthetic member's wire name.
+RAW_TIMESTAMP_MEMBERS = {("SsfStream", "updated_at"): "updated_at_raw"}
 
 # String enums modelled as an open STRING type with the known values as named
 # constants, rather than as a Kotlin enum. CONTRACT §32.2: "An SDK SHOULD model
@@ -1346,7 +1400,21 @@ def operation_params(namespace: str, opname: str, op: dict[str, Any]) -> list[di
             "doc": "the request body",
         })
     _, other = split_query(op)
+    required_query = {q["name"]: q for q in op["query_params"] if q.get("required")}
     for query in other:
+        if query in required_query:
+            # A REQUIRED query parameter is a required argument (§36.8 test 2: the
+            # delete "cannot be called without" its `version`). An integer one is a
+            # Long, sent as its decimal text -- exactly as given, never re-derived.
+            wire_type = required_query[query].get("type")
+            params.append({
+                "name": prop(query),
+                "type": "Long" if wire_type == "integer" else "String",
+                "wire": query,
+                "doc": f"the required {query.replace('_', ' ')} query parameter",
+                "required_query": True,
+            })
+            continue
         params.append({
             "name": prop(query),
             "type": "String?",
@@ -1454,7 +1522,10 @@ def emit_operation(namespace: str, opname: str, op: dict[str, Any]) -> list[str]
 
     _, other = split_query(op)
     if other or op["paginated"]:
-        entries = ", ".join(f'"{q}" to {prop(q)}' for q in other)
+        required_names = {q["name"]: q for q in op["query_params"] if q.get("required")}
+        entries = ", ".join(
+            f'"{q}" to {prop(q)}' + (".toString()" if q in required_names and required_names[q].get("type") == "integer" else "")
+            for q in other)
         base = f"mapOf({entries})" if other else "emptyMap()"
         if op["paginated"]:
             lines.append(f"        val query = ManagementSupport.pageQuery({base}, page)")
@@ -1780,8 +1851,14 @@ def call_arguments(namespace: str, opname: str, op: dict[str, Any],
         else:
             args.append(f"body = {literal_for(schema, secrets.get(schema, set()))}")
     _, other = split_query(op)
+    required_query = {q["name"]: q for q in op["query_params"] if q.get("required")}
     for query in other:
-        args.append(f"{prop(query)} = null")
+        if query in required_query:
+            # A required query parameter is a required argument (§36.8 test 2).
+            example = "7L" if required_query[query].get("type") == "integer" else '"example"'
+            args.append(f"{prop(query)} = {example}")
+        else:
+            args.append(f"{prop(query)} = null")
     if op["paginated"]:
         args.append("page = PageRequest.of(50)")
     return args, route

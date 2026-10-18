@@ -18,20 +18,55 @@ Source: [ilpanich/axiam-kotlin-sdk](https://github.com/ilpanich/axiam-kotlin-sdk
 - **GroupId:** `io.github.ilpanich`
 - **ArtifactId:** `axiam-sdk-kotlin`
 - **Registry:** Maven Central (Sonatype Central Portal)
-- **Versioning:** stable from 1.0.0; follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
+- **Versioning:** stable from 1.0.0; follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+  **A contract record may add a member or widen a type in a minor release** — a generated model
+  gains a property, a request member loses a narrower type, an enum gains a constant — and a
+  removal waits for 2.0.0. Adding a constructor parameter to a Kotlin data class or an entry to a
+  public enum can break a call that builds one positionally or a `when` that was exhaustive, so each
+  such change is named in [CHANGELOG.md](CHANGELOG.md), under "Changed (source-breaking)" where it
+  applies.
 - **API docs:** [javadoc.io](https://javadoc.io/doc/io.github.ilpanich/axiam-sdk-kotlin) — served from the Dokka `-javadoc.jar`
 - **License:** Apache-2.0
 - **Kotlin:** 2.1.0 minimum · **JVM:** 17 minimum — see [Supported Kotlin and JVM versions](#supported-kotlin-and-jvm-versions)
 
 ## Contract conformance
 
-This SDK conforms to **contract 1.61**: CONTRACT.md §1–§7 (§1.1's `getUserInfo` and §1.1.1's
+This SDK conforms to **contract 1.62**: CONTRACT.md §1–§7 (§1.1's `getUserInfo` and §1.1.1's
 `validateToken`/`introspectToken` declined — gRPC-only, and this SDK ships no gRPC transport; see
 [Scope of this SDK (v1)](#scope-of-this-sdk-v1) below), §9–§13 and §12.7, §14, §15, §17, §19,
-§20, §21, §22, §23, §24, §25, §26, §27, §28 (including §6.1 mTLS), and §28.12, §29, §30, §31, §32
-and §33, with §32.7 and §33.2 signed. §12 is implemented in full at its
+§20, §21, §22, §23, §24, §25, §26, §27, §28 (including §6.1 mTLS), and §28.12, §29, §30, §31, §32,
+§33 and §36, with §32.7 and §33.2 signed. Manifest pruning: not offered in any namespace (§27.10). §12 is implemented in full at its
 1.38 shape: all **thirteen** operations, including the four public "Sign in with X" entry points,
 as `suspend` functions on the same `AxiamClient`.
+
+**Contract 1.62 — the 1.1.0 release (§34.6).** The claim above holds at 1.62 with these:
+
+- **§36, §27.1 — the `network` namespace** (`client.network`, 12 operations; 202 operations across
+  29 namespaces now): segments, reply profiles and the tenant's `Session-Timeout` cap. Every write
+  is version-conditional and never retried; a `409` is a `ConflictError` whose `reasonCode` is the
+  body's `reason_code` (verbatim, an open vocabulary). `POST /api/v1/network/decide` is not SDK
+  work (§36.11) and has no method. See [Network segments and reply profiles](#network-segments-and-reply-profiles-36).
+- **§27.6.2 — `network` in a manifest.** `ManagementManifest.network`
+  (`NetworkSpec` / `NetworkSegmentSpec` / `NetworkProfileSpec` / `NetworkPolicySpec`), reconciled
+  after everything else: the policy, then the segments, then the profiles. See
+  [Declarative manifests](#declarative-manifests-276).
+- **§14.1, §14.2 — the device grant authenticates its client.** A client built with an
+  `oidcClientSecret` sends it as `client_secret` **in the form body** at both `deviceAuthorize` and
+  every `devicePoll` — never `Authorization: Basic`, whatever the client is registered for; a client
+  built with a §6.1 certificate presents it; a **public** client sends neither and is never refused
+  client-side. `devicePoll` names its client (`client_id`) on every poll, and a `401 invalid_client`
+  from either is an `OAuthProtocolError`, never retried, never refreshed. See
+  [Device authorization grant](#device-authorization-grant-14).
+- **§32.2 — the change-taking form for a stream:** `SsfStream.toInput(SsfStreamChanges(...))` sends
+  the `eventsRequested` and `expectedUpdatedAt` it read and cuts `eventsRequested` to a lowered
+  `eventsAllowed`; the plain `toInput()` remains and its KDoc names the caller's duty. The three
+  meanings of `events_requested` are stated in the KDoc of `ssf.updateStream` itself.
+- **§32.2 (g) — `expected_updated_at` is the server's own string.** `SsfStream.updatedAtRaw` keeps
+  the spelling the response carried next to the parsed `updatedAt`, and both converters send it.
+- **§27.11 rule 5 (i), (f)** — the request `userId` of `CreateCertificateRequest` and
+  `SignCertificateCsrRequest` is a `String?`, not a `UUID?` (**source-breaking**, see the change
+  log): a value that is not a UUID reaches the server and its `400` is surfaced. An assigned
+  `null` is "none" for it and for `expectedUpdatedAt`: the key is omitted and `null` is never sent.
 
 **Contract 1.61 — the 1.0.1 fields (§34.5).** Additive; the claim above holds at 1.61 with these:
 
@@ -121,11 +156,12 @@ rather than folded into the range because they landed after this SDK already sta
 would turn a statement that was true when written into a different claim without anyone editing it.
 
 `CONTRACT.md`, `openapi.json`, `management-registry.json` and `proto/` are vendored byte for byte
-from `axiam` at `058d8e0` (contract 1.61), and the §27 surface is generated from them. See
+from `axiam` (contract 1.62): `CONTRACT.md` and `proto/` at `d25413506`, `openapi.json` and
+`management-registry.json` at `e8722b668` (spec digest `sha256:7c3a5091…c8a1`), and the §27 surface is generated from them. See
 [MCP resource-server helpers](#mcp-resource-server-helpers-ioaxiamsdkmcp-28-opt-in) below for §28.
 
-**§27 is the Management API** — all 190 operations across 28 namespaces, with the §27.6 declarative
-layer. See [Management API](#management-api-27) below.
+**§27 is the Management API** — all 202 operations across 29 namespaces, with the §27.6 declarative
+layer (and, from contract 1.62, its `network` section). See [Management API](#management-api-27) below.
 
 **§24.6b — the linked-API ceremony helper — is deliberately absent, and this is not a capability
 gap.** See [WebAuthn / passkeys](#webauthn--passkeys-ioaxiamsdkwebauthn-24) below: Android's
@@ -177,7 +213,7 @@ default tenant.
 
 ```kotlin
 dependencies {
-    implementation("io.github.ilpanich:axiam-sdk-kotlin:1.0.0")
+    implementation("io.github.ilpanich:axiam-sdk-kotlin:1.1.0")
     // Optional — only if you use the Ktor route guard / §11 helpers:
     implementation("io.ktor:ktor-server-core:2.3.12")
 }
@@ -189,7 +225,7 @@ dependencies {
 <dependency>
   <groupId>io.github.ilpanich</groupId>
   <artifactId>axiam-sdk-kotlin</artifactId>
-  <version>1.0.0</version>
+  <version>1.1.0</version>
 </dependency>
 ```
 
@@ -798,9 +834,33 @@ polling rules are where implementations go wrong:
   approved.
 
 `deviceCode` is `Sensitive`; `userCode` deliberately is not — it exists to be read aloud, and
-wrapping it would defeat the one thing it is for. `deviceAuthorize` sends no `client_secret` and
-does not refuse a client built without one. The inter-poll wait is `delay`, so cancelling the
+wrapping it would defeat the one thing it is for. The inter-poll wait is `delay`, so cancelling the
 calling coroutine cancels the login promptly rather than after the current interval.
+
+**The grant authenticates its client (§14.1, contract 1.62).** Both endpoints authenticate the client
+by the method it is registered for, as the token endpoint does, and this SDK sends the credential it
+was **configured** with at **both** `deviceAuthorize` and every `devicePoll` — and only that one; it
+never borrows a secret from elsewhere and never invents one:
+
+| The client was built with | `deviceAuthorize` and each `devicePoll` send |
+|---|---|
+| `oidcClientSecret(...)` | `client_id` and `client_secret`, **in the form body** — never `Authorization: Basic`, even for a client registered `client_secret_basic` (§12.1 rule 3 stands; the server accepts either form) |
+| `clientCertificate(...)` (§6.1), no secret | `client_id` and the certificate on the connection (the `mtls_endpoint_aliases` host when the server publishes one) |
+| neither (a **public** client — the usual device) | `client_id` alone. The server refuses a public client that sends a credential, and this SDK refuses nothing client-side |
+
+No session credential rides on either request: no `Authorization` header and no cookie, even from a
+client that is also signed in. `devicePoll` sends `client_id` on **every** poll (a poll without one
+is `400 invalid_request`). A `401` with `{"error":"invalid_client"}` from either operation — an
+unknown client, a failed or missing credential, a credential sent by a public client, a client that
+no longer holds the grant — is an `OAuthProtocolError` with that `error`: terminal, sent once, never
+refreshed (§14.2 rule 5). At `deviceAuthorize` a client that does not hold the grant is `400
+unauthorized_client`.
+
+**Not driven by this SDK:** a client registered for `private_key_jwt` (§21.8 is optional and there
+is no client-assertion role here, so `client_assertion` is never sent) and a client registered for
+DPoP-bound tokens (§14.2 rule 8): this SDK verifies DPoP proofs and does not generate them, so such
+a client's poll is refused `401 invalid_client`, which surfaces as above. A client registered for
+mTLS-bound tokens works: the certificate accompanies each poll.
 
 Per §14.3 rule 4, `deviceLogin` **returns** the token set; this SDK does not adopt it, matching its
 `loginClientCredentials` posture. See
@@ -1880,14 +1940,15 @@ Worked end to end in [`examples/par-login`](examples/par-login) (`./gradlew runP
 
 ## Management API (§27)
 
-The administrative surface: 190 operations across 28 namespaces — users, groups, roles,
+The administrative surface: 202 operations across 29 namespaces — users, groups, roles,
 permissions, resources, scopes, service accounts, certificates, CA certificates, PGP keys, webhooks,
 OAuth2 clients, federation, notification rules, e-mail config, settings, SCIM tokens, reactors,
-WebAuthn policy, audit, privacy, organizations, tenants, platform, and (contract 1.54 – 1.57)
-directory, SAML, SCIM targets and SSF streams.
+WebAuthn policy, audit, privacy, organizations, tenants, platform, (contract 1.54 – 1.57)
+directory, SAML, SCIM targets and SSF streams, and (contract 1.62) network segments and reply
+profiles.
 
 The namespace handles sit **directly on the client** as properties — `client.serviceAccounts
-.rotateSecret(id)`, the form §27.3's Kotlin row shows — and the same 28 handles are also reachable
+.rotateSecret(id)`, the form §27.3's Kotlin row shows — and the same 29 handles are also reachable
 behind one accessor, `client.management()` (§27.2 rule 4), which reads better where a call site is
 already dense with §1 methods. The two forms are **equivalent**: the direct properties delegate to
 `management()`, so rule 4's "where an SDK offers both, the two MUST return equivalent handles" holds
@@ -2075,10 +2136,106 @@ holding neither, and the step reports `ApplyReport.Status.BINDING_UPDATE_FAILED`
 not only a message string. `inherit` reaches the wire only as `false`: an omitted or `true` value
 is never sent (§27.13 S-10 rule 1).
 
+#### The `network` section (§27.6.2, contract 1.62)
+
+`ManagementManifest.network` states the tenant's `Session-Timeout` cap, its network segments and
+their reply profiles. The namespace is **human-only**: an `apply` with a `network` section needs a
+human caller, and a service-account token meets `401` at the first network action.
+
+```kotlin
+val manifest = ManagementManifest.builder()
+    .networkPolicy(sessionTimeoutMaxSecs = 7200)                    // a singleton: the tenant's cap
+    .networkSegment(
+        NetworkSegmentSpec(
+            key = "lab", site = "default", kind = NetworkSegmentKind.ACCESS, name = "lab",
+            vlanId = 20, rank = JsonNullable.Value(1), filterIds = listOf("lab-in"),
+        ),
+    )
+    .networkProfile(NetworkProfileSpec(segment = "lab", sessionTimeoutSecs = 1800))
+    .build()
+```
+
+- **Natural keys.** A segment is keyed by **site + kind + name**, where the kind is the wire
+  spelling (`NetworkSegmentKind.ACCESS` is `access`, `QUARANTINE` is `quarantine`; there is no
+  `zones` value anywhere in a manifest); a profile by **its segment** (`segment` is the `key` of a
+  segment of the same manifest); the policy is a singleton. A duplicate natural key, two profiles for
+  one segment, a profile whose segment the manifest does not declare, and a segment that lists one
+  Filter-Id twice are each refused before any request.
+- **Order.** After everything else: the policy, then the segments, then the profiles in the
+  segments' order, so a manifest that raises the cap and states a larger profile writes the cap
+  first. A manifest with no `network` section plans exactly as before, and reads nothing of it.
+- **Judged on the read.** Every stated member is compared with the value as the read returns it;
+  for a profile that is the *effective* (clamped) one. `filterIds` compares as a **set**: a reorder
+  is `NoChange`, and a write sends them in the order stated. A stated `sessionTimeoutSecs` above the
+  tenant's cap differs from the read, so `plan` shows an `Update`, and the server refuses `apply`'s
+  replace with `403 authorization_denied`: that is the action's failure, reported as given with the
+  server's message — the SDK never lowers it, retries it or reads again.
+- **Silence is not an assertion.** An `Update` sends the full replacement body built from the read:
+  every stated member replaces the read's, every unstated one is carried from it, and a member stated
+  as "none" (`JsonNullable.Null`, for `rank`, `idleTimeoutSecs`, `filterId`, `serviceType`) is left
+  **out** of the body. The `version` is the one `plan` read, exactly. A profile's `segment_version`
+  is the version of the `create_segment` / `replace_segment` response of the same `apply` when it
+  wrote the segment. Members the server defaults (`filterIds`, `enabled`, `terminationAction`) are
+  unstated when `null`; state the default to assert it.
+- **A `409` is that action's failure.** `apply` stops, nothing is retried, and
+  `StepOutcome.reasonCode` carries the body's `reason_code` (`stale_version`, `strands_profile`,
+  `duplicate_vlan`, … or a value this SDK has not seen, verbatim); the recovery is to run `apply`
+  again, which re-reads. Branch on it, never on the message.
+- **No pruning.** This SDK implements §27.6 rule 4's opt-in for no namespace — `apply` never
+  deletes — so a segment or profile the manifest does not state is neither reported nor removed, and
+  `delete_segment` / `delete_profile` are used imperatively.
+
 **Declined: `webhooks` in the manifest (§27.6, "webhooks stays named and unspecified").** The
 namespace is SHOULD-level and 1.51 does not require an SDK to cover it. `ManagementManifest` has no
 `webhook(...)` builder call; use the imperative `client.management().webhooks` (§27's ordinary
 CRUD — `list`/`create`/`get`/`update`/`delete`) instead.
+
+## Network segments and reply profiles (§36)
+
+`client.network` (contract 1.62) administers a tenant's **segments** — nodes of a reserved
+`/network` subtree, each with a VLAN and a Filter-Id envelope — the **reply profile** each owns, and
+the tenant's `Session-Timeout` cap. It is plain management CRUD in the shape of §30 and §31, and it
+is **human-only**: a service-account token meets `401`.
+
+```kotlin
+val segment = client.network.createSegment(
+    CreateNetworkSegmentRequest(
+        kind = NetworkSegmentKind.ACCESS, siteKey = "default", name = "lab", vlanId = 20,
+        rank = 1, filterIds = listOf("lab-in"),
+    ),
+)
+// A profile is written against the segment AS YOU READ IT: it carries the segment's version too.
+client.network.createProfile(
+    CreateNetworkReplyProfileRequest(
+        segmentId = segment.id, segmentVersion = segment.version,
+        profile = NetworkReplyProfileInput(sessionTimeoutSecs = 1800, filterId = "lab-in"),
+    ),
+)
+client.network.deleteSegment(segment.id, version = segment.version)   // the version is required
+```
+
+- **Every write is conditional on the version you read** and is sent exactly as given;
+  `deleteSegment` and `deleteProfile` take a required `version: Long`, so they cannot be called
+  without one. **No write is retried** (a `429` or `5xx` is a `NetworkError` after one request), and
+  the SDK does not hide the two-version rule of a profile write behind a helper that re-reads and
+  retries a `409`: another administrator wrote, and you decide (§36.9).
+- **`ConflictError.reasonCode`** is the `409` body's `reason_code`, verbatim and open
+  (`stale_version`, `strands_profile`, `has_children`, `site_gone`, `duplicate_name`,
+  `duplicate_vlan`, `duplicate_rank`, `profile_exists`, `other`, or one this SDK has not seen); it is
+  `null` when the body carries none. Branch on it, never on the message.
+- **A `403` is the write gate's.** `AuthzError.action` and `.resourceId` name the permission that was
+  missing and the node it was checked on; a refusal for a value rule (a timeout above the cap) names
+  neither, and its message — which an SDK does not parse — is the explanation.
+- **Reads clamp.** A reply profile reads as the *effective* one: `sessionTimeoutSecs` is lowered to
+  the tenant's cap, and `sessionTimeoutClamped` says so. A read-modify-write of a clamped profile
+  therefore **cannot restore the stored value**: it can send at most the cap, and what it sends is
+  stored from then on. Raise the cap first, with the profile left alone, to restore it (§36.3 rule 6).
+- **Closed bodies, open enums.** An unset optional member is absent from the request, never `null`.
+  `kind`, `terminationAction` and `serviceType` decode a value this SDK does not know as `UNKNOWN`,
+  which is never sent.
+- **No decision method.** `POST /api/v1/network/decide` is a FreeRADIUS server's call, over mutual TLS
+  with a token bound to its own certificate; no SDK client is or can hold that, so there is no method
+  for it and no model for its request or answer (§36.11).
 
 ## RFC 7592 client configuration (§28.12)
 
@@ -2153,7 +2310,25 @@ client.scimTargets.update(targetId, target.toInput().copy(enabled = false))
 
 val stream = client.ssf.getStream(streamId)
 client.ssf.updateStream(streamId, stream.toInput().copy(statusReason = "maintenance"))
+
+// Lowering a stream's ceiling? Use the change-taking form (§32.2, contract 1.62): it sends the
+// events_requested and the expected_updated_at it read, and cuts events_requested to the new ceiling.
+client.ssf.updateStream(
+    streamId,
+    stream.toInput(SsfStreamChanges(eventsAllowed = listOf(SsfEventType.SESSION_REVOKED))),
+)
 ```
+
+On `ssf.updateStream`, `eventsRequested` has **three meanings**: absent *resets* the stream to every
+event of `eventsAllowed` (widening what the receiver narrowed), `[]` is stored as the receiver's
+"none", and a list is stored as given and refused `400` outside `eventsAllowed`. The plain
+`toInput()` sends the stream back as read and **cannot know** you are about to lower the ceiling:
+cutting `eventsRequested` to the new `eventsAllowed` is then your duty (the `copy()` above would
+otherwise be refused `400`, or reset the stream if you dropped the member). `expectedUpdatedAt` is
+the server's **own string** (`SsfStream.updatedAtRaw`), never the parsed `updatedAt` rendered again;
+a `SsfStream` you decode with your own `Json` has no raw string, and falls back to the rendered
+instant. An assigned `null` for `expectedUpdatedAt` (or for a certificate request's `userId`) is
+"none": the key is omitted and `null` is never sent.
 
 - `bind_secret`, `credential` and `authorization_header` are `Sensitive` on the inputs; no response
   type declares a secret member, and one a server (wrongly) sent is dropped on decode.

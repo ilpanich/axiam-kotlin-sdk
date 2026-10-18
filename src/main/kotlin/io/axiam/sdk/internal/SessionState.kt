@@ -99,6 +99,16 @@ class SessionState(
      */
     fun isBaseHost(host: String?): Boolean = host != null && host.equals(baseUri.host, ignoreCase = true)
 
+    /**
+     * `true` when [encodedPath] is under this session's own `/oauth2/` prefix
+     * (the base URL's path, if any, then `/oauth2/`). CONTRACT.md §12.1 rule 3
+     * (contract 1.62): no session or adopted credential is attached to such a
+     * request. Anchored to the base path, so `/api/v1/auth/federation/oauth2/...`
+     * is not one.
+     */
+    fun isOauth2Path(encodedPath: String): Boolean =
+        encodedPath.startsWith(baseUri.rawPath.orEmpty().trimEnd('/') + "/oauth2/")
+
     fun csrfToken(): String? = csrf.get()
     fun setCsrfToken(token: String) = csrf.set(token)
 

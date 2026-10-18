@@ -13,6 +13,9 @@ import kotlinx.serialization.json.JsonElement
  * Body of `POST /api/v1/certificates/sign-csr`. No `subject` and no `key_algorithm`: both are read
  * out of the CSR, which is the only place they can be stated without the row and the certificate
  * being able to disagree. No key is returned, so there is no key field anywhere on this exchange.
+ * The CSR's common name meets the rules of `subject` on `POST /api/v1/certificates` (printable, at
+ * most 64 characters) and is refused, not rewritten, when it does not. So does the value of every
+ * other attribute of the CSR's subject, and a subject with more than one common name is refused.
  *
  * @property certType the server's cert_type field
  * @property csrPem PEM-encoded PKCS#10 request — a `BEGIN CERTIFICATE REQUEST` block. The
@@ -23,7 +26,10 @@ import kotlinx.serialization.json.JsonElement
  *     Stated here and never in the CSR, which is still refused if it requests a `subjectAltName`.
  *     Under a CA whose key is held by `vault_pki` a `Server` request on this path is refused; use
  *     `POST /api/v1/certificates`.
- * @property userId See &#91;`CreateCertificateRequest::user_id`&#93;.
+ * @property userId See &#91;`CreateCertificateRequest::user_id`&#93;. Passed as a plain
+ *     string, untyped (CONTRACT.md §27.11 rule 5, contract 1.62): the text of a UUID, sent exactly
+ *     as given so that a value that is not one reaches the server and its `400` is surfaced. Never
+ *     `null` on the wire: an assigned `null` is the same as leaving it unset.
  * @property validityDays Validity duration in days.
  */
 @Serializable
@@ -33,6 +39,6 @@ data class SignCertificateCsrRequest(
     @SerialName("issuer_ca_id") val issuerCaId: @Serializable(with = UuidSerializer::class) UUID,
     @SerialName("metadata") val metadata: JsonElement? = null,
     @SerialName("subject_alt_names") val subjectAltNames: List<SubjectAltName>? = null,
-    @SerialName("user_id") val userId: @Serializable(with = UuidSerializer::class) UUID? = null,
+    @SerialName("user_id") val userId: String? = null,
     @SerialName("validity_days") val validityDays: Int,
 )

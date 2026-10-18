@@ -34,8 +34,12 @@ import kotlinx.serialization.json.JsonElement
  *     issued before the binding existed (schema v98, #533).
  * @property notAfter Validity end.
  * @property notBefore Validity start.
- * @property privateKeyPem PEM-encoded private key — returned only on generation. -- SECRET:
- *     redacted from toString and from every rendering except the one request body it is sent in
+ * @property privateKeyPem PEM-encoded private key — returned only on generation. An
+ *     unencrypted PKCS#8 `PRIVATE KEY` block. An Ed25519 key AXIAM generated is RFC 8410 version 1
+ *     (`version` INTEGER 0, the 32-byte seed and no embedded public key), which OpenSSL 3.0 reads;
+ *     the longer RFC 5958 v2 form it does not. An RSA-4096 key is the usual PKCS#8
+ *     `RSAPrivateKey`. -- SECRET: redacted from toString and from every rendering except the one
+ *     request body it is sent in
  * @property publicCertPem PEM-encoded public certificate.
  * @property status the server's status field
  * @property subject The certificate's common name, e.g. `device-001`. The normalised value: a

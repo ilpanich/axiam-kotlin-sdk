@@ -65,6 +65,15 @@ data class ManagementPlan(val actions: List<PlannedAction>) {
 
         /** A role held directly by a service account. */
         SERVICE_ACCOUNT_ROLE,
+
+        /** The tenant's `Session-Timeout` cap (CONTRACT.md §27.6.2, contract 1.62). */
+        NETWORK_POLICY,
+
+        /** A network segment (§27.6.2). */
+        NETWORK_SEGMENT,
+
+        /** A segment's reply profile (§27.6.2). */
+        NETWORK_PROFILE,
     }
 
     /**
@@ -175,12 +184,18 @@ data class ApplyReport(val steps: List<AppliedStep>) {
      * @property createdServiceAccount on [Status.CREATED_SERVICE_ACCOUNT]
      *   only: the server's one-time response, secret included. `null` for
      *   every other status.
+     * @property reasonCode on [Status.FAILED] when the refusal was a `409` that
+     *   named its `reason_code` (CONTRACT.md §36.4, §27.6.2 item 5): the value
+     *   verbatim — `stale_version`, `strands_profile`, `duplicate_vlan`, … or one
+     *   this SDK has never seen — so a caller branches on it and never on
+     *   [message]. `null` for every other outcome.
      */
     data class StepOutcome(
         val status: Status,
         val message: String? = null,
         val restoreSucceeded: Boolean? = null,
         val createdServiceAccount: io.axiam.sdk.management.models.ServiceAccountCreatedResponse? = null,
+        val reasonCode: String? = null,
     )
 
     /**

@@ -223,8 +223,13 @@ class ManagementTransport internal constructor(
         val detail = describe(body)
         return when (response.code) {
             404 -> NotFoundError("$operation: not found$detail")
-            409 -> ConflictError("$operation: conflict$detail")
+            409 -> ConflictError("$operation: conflict$detail", reasonCode(body))
             400, 422 -> ValidationError("$operation: rejected$detail", parseFieldErrors(body))
+            // A 403 carries the server's own words beside `action` and `resource_id` (§36.3
+            // rule 1, §27.6.2 item 3): the write gate's H3 refusal names no permission, so its
+            // message ("session_timeout_secs is above the tenant's cap of ...") is the whole
+            // explanation, and an `apply` reports it as given.
+            403 -> ErrorMapper.fromHttpStatus(response.code, "$operation failed$detail", response)
             else -> ErrorMapper.fromHttpStatus(response.code, "$operation failed", response)
         }
     }
@@ -236,6 +241,21 @@ class ManagementTransport internal constructor(
         } catch (_: IOException) {
             ""
         }
+
+    /**
+     * The `reason_code` of a `409` body (§36.4), verbatim, or null when the body
+     * is not an object, carries none, or carries something other than a string.
+     * Never parsed out of `message`.
+     */
+    private fun reasonCode(body: String): String? {
+        if (body.isBlank()) return null
+        return try {
+            val member = Json.parseToJsonElement(body).jsonObject["reason_code"]
+            (member as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { it.isString }?.content
+        } catch (_: Exception) {
+            null
+        }
+    }
 
     private fun describe(body: String): String {
         if (body.isBlank()) return ""

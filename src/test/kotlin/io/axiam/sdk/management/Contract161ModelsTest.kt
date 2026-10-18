@@ -57,21 +57,21 @@ class Contract161ModelsTest : ManagementTestBase() {
         val user = UUID.randomUUID()
         val generate = mount("POST", "/api/v1/certificates", 201, certJson(user.toString(), extra = ""","private_key_pem":"example""""))
         val sign = mount("POST", "/api/v1/certificates/sign-csr", 201, certJson(user.toString()))
-        fun generateRequest(userId: UUID?) = CreateCertificateRequest(
+        fun generateRequest(userId: String?) = CreateCertificateRequest(
             certType = CertificateType.USER, issuerCaId = EXAMPLE_ID, keyAlgorithm = KeyAlgorithm.RSA4096,
             subject = "example", userId = userId, validityDays = 365,
         )
-        fun signRequest(userId: UUID?) = SignCertificateCsrRequest(
+        fun signRequest(userId: String?) = SignCertificateCsrRequest(
             certType = CertificateType.USER, csrPem = "example", issuerCaId = EXAMPLE_ID,
             userId = userId, validityDays = 365,
         )
 
-        client.certificates.generate(generateRequest(user))
+        client.certificates.generate(generateRequest(user.toString()))
         assertEquals(JsonPrimitive(user.toString()), generate.last().json()["user_id"])
         client.certificates.generate(generateRequest(null))
         assertFalse("user_id" in generate.last().json(), "no account named: no key, and never null")
 
-        client.certificates.signCsr(signRequest(user))
+        client.certificates.signCsr(signRequest(user.toString()))
         assertEquals(JsonPrimitive(user.toString()), sign.last().json()["user_id"])
         client.certificates.signCsr(signRequest(null))
         assertFalse("user_id" in sign.last().json(), "no account named: no key, and never null")
