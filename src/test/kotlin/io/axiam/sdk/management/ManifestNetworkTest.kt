@@ -6,6 +6,8 @@ import io.axiam.sdk.management.ManagementManifest.NetworkProfileSpec
 import io.axiam.sdk.management.ManagementManifest.NetworkSegmentSpec
 import io.axiam.sdk.management.ManagementManifest.NetworkSpec
 import io.axiam.sdk.management.models.NetworkSegmentKind
+import io.axiam.sdk.management.models.RadiusTerminationAction
+import io.axiam.sdk.management.models.RadiusServiceType
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonArray
@@ -67,9 +69,11 @@ class ManifestNetworkTest : ManagementTestBase() {
         idle: String = "null",
         filter: String = "\"a\"",
         version: Int = 4,
+        action: String = "radius_request",
+        service: String = "null",
     ) = """{"segment_id":"$segment","tenant_id":"$TENANT_ID","dictionary":"axiam-radius-reply/1",
-        "session_timeout_secs":$timeout,"session_timeout_clamped":$clamped,"termination_action":"radius_request",
-        "idle_timeout_secs":$idle,"filter_id":$filter,"service_type":null,"version":$version,
+        "session_timeout_secs":$timeout,"session_timeout_clamped":$clamped,"termination_action":"$action",
+        "idle_timeout_secs":$idle,"filter_id":$filter,"service_type":$service,"version":$version,
         "created_by":"$EXAMPLE_ID","updated_by":"$EXAMPLE_ID",
         "created_at":"2026-10-16T00:00:00Z","updated_at":"2026-10-16T00:00:00Z"}"""
 
@@ -364,6 +368,55 @@ class ManifestNetworkTest : ManagementTestBase() {
         assertNull(failed.reasonCode)
         assertEquals(ApplyReport.Status.NOT_ATTEMPTED, report.steps.last().outcome.status)
         assertEquals(JsonPrimitive(7200), replaceLab.last().json()["profile"]!!.jsonObject["session_timeout_secs"], "never lowered to the cap")
+    }
+
+    // -- §27.6.2 item 4, contract 1.63 (ab): an unknown open-enum value on an unstated member --------
+
+    private suspend fun unknownProfileMount(action: String, service: String): Route {
+        mountEmptyTenant()
+        mount("GET", segments, 200, page(segmentJson()))
+        mount("GET", profiles, 200, page(profileJson(action = action, service = service)))
+        return mount("PUT", "$profiles/$labId", 200, profileJson())
+    }
+
+    @Test
+    fun `an unknown termination_action on an unstated member is refused at plan with no write (C162-07)`() = runTest {
+        val put = unknownProfileMount(action = "future", service = "null")
+        // The manifest changes the timeout, and does not state termination_action.
+        val m = manifest(profiles = listOf(NetworkProfileSpec("lab", 900)))
+        val e = assertThrows(NetworkError::class.java) { runBlocking { client.management().manifest().plan(m) } }
+        assertTrue(e.message!!.contains("termination_action"), e.message)
+        assertEquals(0, put.calls())
+        assertTrue(requestLog().all { it.startsWith("GET ") }, "no non-GET request was sent")
+    }
+
+    @Test
+    fun `an unknown service_type on an unstated member is refused at plan, and apply is refused the same way`() = runTest {
+        val put = unknownProfileMount(action = "radius_request", service = "\"future\"")
+        val m = manifest(profiles = listOf(NetworkProfileSpec("lab", 900)))
+        val e = assertThrows(NetworkError::class.java) { runBlocking { client.management().manifest().plan(m) } }
+        assertTrue(e.message!!.contains("service_type"), e.message)
+        assertThrows(NetworkError::class.java) { runBlocking { client.management().manifest().apply(m) } }
+        assertEquals(0, put.calls())
+        assertTrue(requestLog().all { it.startsWith("GET ") }, "no non-GET request was sent")
+    }
+
+    @Test
+    fun `stating the unknown member resolves it, and nothing that differs is NoChange`() = runTest {
+        val put = unknownProfileMount(action = "future", service = "null")
+        val stated = manifest(
+            profiles = listOf(NetworkProfileSpec("lab", 900, terminationAction = RadiusTerminationAction.DEFAULT)),
+        )
+        val plan = client.management().manifest().plan(stated)
+        assertEquals(ManagementPlan.Change.UPDATE, plan.actions.last().change)
+        client.management().manifest().apply(stated)
+        assertEquals(1, put.calls())
+        val sent = put.last().json()["profile"]!!.jsonObject
+        assertEquals(JsonPrimitive("default"), sent["termination_action"], "the stated value, never the unknown one")
+
+        // Nothing differs (the unknown is unstated and the rest agrees): NoChange, no write.
+        val same = manifest(profiles = listOf(NetworkProfileSpec("lab", 1800)))
+        assertTrue(client.management().manifest().plan(same).isConverged)
     }
 
     // -- refusals before any request -----------------------------------------------------------

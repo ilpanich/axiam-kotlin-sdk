@@ -787,6 +787,7 @@ def field_list(schema_name: str, secrets: set[str]) -> tuple[list[dict[str, Any]
             ),
         }
     fields = []
+    raw_fields = []  # trailing, so that positional construction stays source-compatible
     for wire in sorted(props):
         explicit_null = (schema_name, wire) in EXPLICIT_NULL_FIELDS
         if wire in secrets:
@@ -815,7 +816,7 @@ def field_list(schema_name: str, secrets: set[str]) -> tuple[list[dict[str, Any]
         })
         raw = RAW_TIMESTAMP_MEMBERS.get((schema_name, wire))
         if raw:
-            fields.append({
+            raw_fields.append({
                 "wire": raw,
                 "name": prop(raw),
                 "type": "String",
@@ -829,7 +830,7 @@ def field_list(schema_name: str, secrets: set[str]) -> tuple[list[dict[str, Any]
                 "secret": False,
                 "explicit_null": False,
             })
-    return fields, required, description
+    return fields + raw_fields, required, description
 
 
 # Timestamps an SDK passes through as the caller's string rather than as a
@@ -837,9 +838,13 @@ def field_list(schema_name: str, secrets: set[str]) -> tuple[list[dict[str, Any]
 # `SsfStreamInput.expected_updated_at` is "sent exactly as given (the string,
 # not re-formatted)" -- an Instant has no spelling of its own, so a string with
 # a non-UTC offset or a trailing-zero fraction would come back different.
-# (`ScimTargetInput.expected_updated_at` shipped in 1.0.0 as an Instant and is
-# left as it is: changing the type of a published member is a breaking change.)
-DATE_TIME_AS_STRING = {("SsfStreamInput", "expected_updated_at")}
+# `ScimTargetInput.expected_updated_at` joined it in 1.1.1 (contract 1.63, §31.3
+# rule 4): it shipped as an Instant, and the change of type is source-breaking
+# (recorded in the change log, a minor release).
+DATE_TIME_AS_STRING = {
+    ("SsfStreamInput", "expected_updated_at"),
+    ("ScimTargetInput", "expected_updated_at"),
+}
 
 # Request members the contract wants passed as the language's plain optional
 # string rather than as its UUID type (CONTRACT.md §27.11 rule 5, contract 1.62,
@@ -860,7 +865,10 @@ UNTYPED_STRING_MEMBERS = {
 # wire member: ManagementSupport.decode copies the response's own `updated_at`
 # string into it before the model is built (the table there names the same
 # types). Maps (schema, wire name) -> the synthetic member's wire name.
-RAW_TIMESTAMP_MEMBERS = {("SsfStream", "updated_at"): "updated_at_raw"}
+RAW_TIMESTAMP_MEMBERS = {
+    ("SsfStream", "updated_at"): "updated_at_raw",
+    ("ScimTargetResponse", "updated_at"): "updated_at_raw",
+}
 
 # String enums modelled as an open STRING type with the known values as named
 # constants, rather than as a Kotlin enum. CONTRACT §32.2: "An SDK SHOULD model

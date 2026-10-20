@@ -9,6 +9,7 @@ import java.time.Instant
 import java.util.UUID
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.put
 
 /**
  * A registered SCIM target, as the management API returns it. **The credential is never
@@ -28,6 +29,11 @@ import kotlinx.serialization.Serializable
  * @property tenantId The owning tenant.
  * @property updatedAt When it was last written: the version an update is conditional on.
  * @property userNameFrom Which attribute becomes `userName`.
+ * @property updatedAtRaw The server's OWN string for `updated_at`, exactly as the response
+ *     carried it (another spelling of the offset, and the fraction digits, are preserved), next to
+ *     the parsed value above (CONTRACT.md §32.2, contract 1.62). This is what
+ *     `expected_updated_at` must be sent as, and what `toInput()` sends. `null` only on a value
+ *     built by hand rather than decoded from a response.
  */
 @Serializable
 data class ScimTargetResponse(
@@ -44,4 +50,5 @@ data class ScimTargetResponse(
     @SerialName("tenant_id") val tenantId: @Serializable(with = UuidSerializer::class) UUID,
     @SerialName("updated_at") val updatedAt: @Serializable(with = InstantSerializer::class) Instant,
     @SerialName("user_name_from") val userNameFrom: UserNameSource,
+    @SerialName("updated_at_raw") val updatedAtRaw: String? = null,
 )

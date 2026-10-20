@@ -4,8 +4,6 @@
 package io.axiam.sdk.management.models
 
 import io.axiam.sdk.Sensitive
-import io.axiam.sdk.management.InstantSerializer
-import java.time.Instant
 import kotlinx.serialization.Contextual
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -51,7 +49,7 @@ data class ScimTargetInput(
     @SerialName("credential") val credential: @Contextual Sensitive<String>? = null,
     @SerialName("deprovision") val deprovision: DeprovisionPolicy? = null,
     @SerialName("enabled") val enabled: Boolean? = null,
-    @SerialName("expected_updated_at") val expectedUpdatedAt: @Serializable(with = InstantSerializer::class) Instant? = null,
+    @SerialName("expected_updated_at") val expectedUpdatedAt: String? = null,
     @SerialName("name") val name: String,
     @SerialName("push_groups") val pushGroups: Boolean? = null,
     @SerialName("scope") val scope: ScimTargetScope,

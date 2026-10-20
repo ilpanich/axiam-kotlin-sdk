@@ -7,6 +7,7 @@ import io.axiam.sdk.TestSupport
 import io.axiam.sdk.internal.AuthHeaderInterceptor
 import io.axiam.sdk.internal.SessionState
 import io.axiam.sdk.management.PageRequest
+import io.axiam.sdk.management.models.CreateGroupRequest
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -122,6 +123,33 @@ class Oauth2NoSessionCredentialTest {
             groups.getHeader("Authorization") != null || groups.getHeader("Cookie") != null,
             "control: the session reaches a management request",
         )
+    }
+
+    @Test
+    fun `contract 1_63 - a cookie login arms the jar and the CSRF header, and no oauth2 request carries either`() = runBlocking {
+        // The mocked server sets the session cookies (axiam_*, axiam_csrf) and the CSRF header on sign-in.
+        dispatcher.on("/api/v1/auth/login") {
+            TestSupport.loginOkResponse().addHeader("Set-Cookie", "axiam_csrf=csrf-abc; Path=/")
+        }
+        val posts = Collections.synchronizedList(mutableListOf<RecordedRequest>())
+        dispatcher.on("/api/v1/groups") {
+            posts += it
+            MockResponse().setResponseCode(200).addHeader("Content-Type", "application/json").setBody("{}")
+        }
+        val client = certificateClient()
+        client.login("alice@example.com", "pw")
+
+        runOauth2Calls(client)
+        assertNoCredentialOnOauth2()
+
+        // The control: the next state-changing management request carries the cookie and the CSRF
+        // header, so the assertions above cannot pass for want of them. (The reply body is not a
+        // group; only the request matters.)
+        runCatching { client.groups.create(CreateGroupRequest(description = "d", name = "g")) }
+        val control = posts.single { it.method == "POST" }
+        assertNotNull(control.getHeader("Cookie"), "control: the jar's cookies reach a management request")
+        assertTrue(control.getHeader("Cookie")!!.contains("axiam_"), control.getHeader("Cookie"))
+        assertEquals("csrf-abc", control.getHeader("X-CSRF-Token"), "control: the CSRF header is armed")
     }
 
     @Test
