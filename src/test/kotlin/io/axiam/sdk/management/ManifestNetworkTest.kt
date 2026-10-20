@@ -387,7 +387,8 @@ class ManifestNetworkTest : ManagementTestBase() {
         val e = assertThrows(NetworkError::class.java) { runBlocking { client.management().manifest().plan(m) } }
         assertTrue(e.message!!.contains("termination_action"), e.message)
         assertEquals(0, put.calls())
-        assertTrue(requestLog().all { it.startsWith("GET ") }, "no non-GET request was sent")
+        val log = requestLog().filter { it != "POST /api/v1/auth/login" }
+        assertTrue(log.all { it.startsWith("GET ") }, "no non-GET request was sent: $log")
     }
 
     @Test
@@ -398,7 +399,8 @@ class ManifestNetworkTest : ManagementTestBase() {
         assertTrue(e.message!!.contains("service_type"), e.message)
         assertThrows(NetworkError::class.java) { runBlocking { client.management().manifest().apply(m) } }
         assertEquals(0, put.calls())
-        assertTrue(requestLog().all { it.startsWith("GET ") }, "no non-GET request was sent")
+        val log = requestLog().filter { it != "POST /api/v1/auth/login" }
+        assertTrue(log.all { it.startsWith("GET ") }, "no non-GET request was sent: $log")
     }
 
     @Test

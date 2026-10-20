@@ -270,6 +270,6 @@ class ScimTargetsTest : ManagementTestBase() {
         assertNull(body.credential, "absent keeps the stored credential")
         assertEquals(t.baseUrl, body.baseUrl)
         assertEquals(true, body.enabled)
-        assertEquals(t.updatedAtRaw, body.expectedUpdatedAt, "the read's version guards the write (§31.3 rule 4)")
+        assertEquals(t.updatedAt.toString(), body.expectedUpdatedAt, "no raw string on a bare decode: the read's version guards the write (§31.3 rule 4)")
     }
 }
