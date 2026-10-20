@@ -7,12 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-20
+
 Contract 1.63 (accompanying the AXIAM 1.1.1 release): `CONTRACT.md`, `openapi.json` and
 `management-registry.json` re-vendored byte for byte from `ilpanich/axiam` `a6cd10eba`
 (`openapi.json` digest `sha256:6fe38c07…8bedc`; `proto/` is unchanged), the §27 surface regenerated
 (202 operations across 29 namespaces, none added), and the README states conformance at contract
-1.63. Closes ilpanich/axiam-kotlin-sdk#77. **Next release: 1.2.0 (minor)**, because the SCIM
-change below is source-breaking; no tag is cut here.
+1.63. Closes ilpanich/axiam-kotlin-sdk#77. This is a **minor** release, because the SCIM
+change below is source-breaking.
 
 ### Source-breaking changes
 
@@ -47,7 +49,7 @@ change below is source-breaking; no tag is cut here.
 - `DeviceAuthorizationRequest.client_id` is no longer required in `openapi.json`; this SDK models no
   such request type (the device operations take parameter objects), so nothing changes.
 - This SDK generates no DPoP proofs (§21.9), so the §21.7.4 key-retention rule does not apply; it
-  ships no AMQP producer, so item (c) does not apply.
+  ships no AMQP, so item (c) does not apply.
 
 ## [1.1.0] - 2026-10-16
 
