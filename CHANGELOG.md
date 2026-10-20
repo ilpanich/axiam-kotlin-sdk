@@ -10,8 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.2.0] - 2026-10-20
 
 Contract 1.63 (accompanying the AXIAM 1.1.1 release): `CONTRACT.md`, `openapi.json` and
-`management-registry.json` re-vendored byte for byte from `ilpanich/axiam` `a6cd10eba`
-(`openapi.json` digest `sha256:6fe38c07…8bedc`; `proto/` is unchanged), the §27 surface regenerated
+`management-registry.json` re-vendored byte for byte from `ilpanich/axiam` `d919ba0cc`
+(`openapi.json` digest `sha256:443c9d39…8098`; `proto/` is unchanged), the §27 surface regenerated
 (202 operations across 29 namespaces, none added), and the README states conformance at contract
 1.63. Closes ilpanich/axiam-kotlin-sdk#77. This is a **minor** release, because the SCIM
 change below is source-breaking.
