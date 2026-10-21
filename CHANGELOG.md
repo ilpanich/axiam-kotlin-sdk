@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-10-21
+
+### Changed
+
+- re-vendor contract 1.63 from AXIAM d919ba0cc (version 1.1.1, spec digest 443c9d39…)
+
+- Correct the plan-refusal and bare-decode assertions
+
+- re-vendor contract 1.63 from AXIAM a6cd10eba
+
+### Fixed
+
+- Contract 1.63 follow-ups — SCIM updatedAtRaw (C162-10), unknown open enum refused at plan (C162-07), /oauth2 cookie test
+
 ## [1.2.0] - 2026-10-20
 
 Contract 1.63 (accompanying the AXIAM 1.1.1 release): `CONTRACT.md`, `openapi.json` and
