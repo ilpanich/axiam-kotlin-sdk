@@ -24,6 +24,8 @@ import io.axiam.sdk.management.models.NetworkSegmentResponse
 import io.axiam.sdk.management.models.Permission
 import io.axiam.sdk.management.models.PermissionEffect
 import io.axiam.sdk.management.models.ReplaceNetworkPolicyRequest
+import io.axiam.sdk.management.models.RadiusServiceType
+import io.axiam.sdk.management.models.RadiusTerminationAction
 import io.axiam.sdk.management.models.ReplaceNetworkReplyProfileRequest
 import io.axiam.sdk.management.models.ReplaceNetworkSegmentRequest
 import io.axiam.sdk.management.models.Resource
@@ -549,6 +551,17 @@ class ManifestApi internal constructor(private val api: ManagementApi) {
                 !spec.idleTimeoutSecs.matches(found.idleTimeoutSecs) ||
                 !spec.filterId.matches(found.filterId) ||
                 !spec.serviceType.matches(found.serviceType)
+            // §27.6.2 item 4 (contract 1.63 (ab)): an Update would carry the read's value for a
+            // member the manifest does not state, and a value this SDK does not know is never sent.
+            // Refused here, before any write, rather than half-way through an apply.
+            if (drifted) {
+                if (spec.terminationAction == null && found.terminationAction == RadiusTerminationAction.UNKNOWN) {
+                    throw unknownCarried(summary, "termination_action")
+                }
+                if (spec.serviceType === JsonNullable.Absent && found.serviceType == RadiusServiceType.UNKNOWN) {
+                    throw unknownCarried(summary, "service_type")
+                }
+            }
             out += step(
                 if (drifted) ManagementPlan.Change.UPDATE else ManagementPlan.Change.NO_CHANGE,
                 ManagementPlan.Target.NETWORK_PROFILE, segment.key, summary,
@@ -556,6 +569,12 @@ class ManifestApi internal constructor(private val api: ManagementApi) {
             )
         }
     }
+
+    private fun unknownCarried(summary: String, member: String) = NetworkError(
+        "$summary: the server returned a $member this SDK does not know, the manifest does not state " +
+            "$member, and the profile would be updated; an unknown value is never sent (§34.2 P12.2). " +
+            "Nothing was sent: state $member in the manifest (§27.6.2 item 4).",
+    )
 
     /**
      * Whether a stated optional member agrees with the read: unstated

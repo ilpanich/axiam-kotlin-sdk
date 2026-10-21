@@ -132,7 +132,7 @@ class ScimTargetsTest : ManagementTestBase() {
         // expected_updated_at (contract 1.60): absent when unset, sent exactly as given when set.
         assertFalse("expected_updated_at" in route.requests[0].json(), "unset: no key")
         val read = "2026-10-05T07:08:09.123456Z"
-        client.scimTargets.update(id, input(null).copy(expectedUpdatedAt = Instant.parse(read)))
+        client.scimTargets.update(id, input(null).copy(expectedUpdatedAt = read))
         assertEquals(JsonPrimitive(read), route.requests[2].json()["expected_updated_at"])
     }
 
@@ -141,10 +141,28 @@ class ScimTargetsTest : ManagementTestBase() {
         val id = UUID.randomUUID()
         val route = mount("PUT", "$targets/$id", 409, """{"error":"conflict","message":"the SCIM target changed since it was read"}""")
         val read = "2026-10-05T00:00:00Z"
-        val body = input(null).copy(expectedUpdatedAt = Instant.parse(read))
+        val body = input(null).copy(expectedUpdatedAt = read)
         assertThrows<ConflictError> { runBlocking { client.scimTargets.update(id, body) } }
         assertEquals(1, route.calls(), "a 409 is not retried")
         assertEquals(JsonPrimitive(read), route.last().json()["expected_updated_at"])
+    }
+
+    @Test
+    fun `a read-modify-write sends the response's own updated_at string byte for byte (C162-10)`() = runTest {
+        val id = UUID.randomUUID()
+        // A +00:00 offset and nine fraction digits: what Instant.toString() can never give back.
+        val raw = "2026-10-05T02:00:00.123456789+00:00"
+        mount("GET", "$targets/$id", 200, targetBody().replace("\"updated_at\":\"2026-10-05T00:00:00Z\"", "\"updated_at\":\"$raw\""))
+        val put = mount("PUT", "$targets/$id", 200, targetBody())
+
+        val read = client.scimTargets.get(id)
+        assertEquals(raw, read.updatedAtRaw)
+        assertEquals(Instant.parse("2026-10-05T02:00:00.123456789Z"), read.updatedAt)
+        assertFalse(read.updatedAt.toString() == raw, "the rendered instant is not the server's spelling")
+        assertEquals(raw, read.toInput().expectedUpdatedAt)
+
+        client.scimTargets.update(id, read.toInput())
+        assertEquals(JsonPrimitive(raw), put.last().json()["expected_updated_at"])
     }
 
     // -- 4. Open decoding and pagination ----------------------------------------------------
@@ -252,6 +270,6 @@ class ScimTargetsTest : ManagementTestBase() {
         assertNull(body.credential, "absent keeps the stored credential")
         assertEquals(t.baseUrl, body.baseUrl)
         assertEquals(true, body.enabled)
-        assertEquals(t.updatedAt, body.expectedUpdatedAt, "the read's version guards the write (§31.3 rule 4)")
+        assertEquals(t.updatedAt.toString(), body.expectedUpdatedAt, "no raw string on a bare decode: the read's version guards the write (§31.3 rule 4)")
     }
 }

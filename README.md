@@ -31,13 +31,23 @@ Source: [ilpanich/axiam-kotlin-sdk](https://github.com/ilpanich/axiam-kotlin-sdk
 
 ## Contract conformance
 
-This SDK conforms to **contract 1.62**: CONTRACT.md §1–§7 (§1.1's `getUserInfo` and §1.1.1's
+This SDK conforms to **contract 1.63**: CONTRACT.md §1–§7 (§1.1's `getUserInfo` and §1.1.1's
 `validateToken`/`introspectToken` declined — gRPC-only, and this SDK ships no gRPC transport; see
 [Scope of this SDK (v1)](#scope-of-this-sdk-v1) below), §9–§13 and §12.7, §14, §15, §17, §19,
 §20, §21, §22, §23, §24, §25, §26, §27, §28 (including §6.1 mTLS), and §28.12, §29, §30, §31, §32,
 §33 and §36, with §32.7 and §33.2 signed. Manifest pruning: not offered in any namespace (§27.10). §12 is implemented in full at its
 1.38 shape: all **thirteen** operations, including the four public "Sign in with X" entry points,
 as `suspend` functions on the same `AxiamClient`.
+
+**Contract 1.63 — the 1.1.1 release.** The claim above holds at 1.63 with these:
+
+- **§31.3 rule 4 — SCIM `expected_updated_at` is the server's own string.**
+  `ScimTargetResponse.updatedAtRaw` keeps the spelling the response carried and `toInput()` sends it;
+  `ScimTargetInput.expectedUpdatedAt` is now a `String?` (**source-breaking**, see the change log).
+- **§27.6.2 item 4 — an unknown `termination_action` / `service_type` read from the server, on a
+  member the manifest does not state, is refused at `plan`** with no write.
+- **§6.1 rule 11, §12.1 rule 3 — no session cookie and no `X-CSRF-Token` on `/oauth2/*`:** already
+  so; a test now guards it.
 
 **Contract 1.62 — the 1.1.0 release (§34.6).** The claim above holds at 1.62 with these:
 
@@ -156,8 +166,8 @@ rather than folded into the range because they landed after this SDK already sta
 would turn a statement that was true when written into a different claim without anyone editing it.
 
 `CONTRACT.md`, `openapi.json`, `management-registry.json` and `proto/` are vendored byte for byte
-from `axiam` (contract 1.62): `CONTRACT.md` and `proto/` at `d25413506`, `openapi.json` and
-`management-registry.json` at `e8722b668` (spec digest `sha256:7c3a5091…c8a1`), and the §27 surface is generated from them. See
+from `axiam` (contract 1.63) at `d919ba0cc` (`proto/` unchanged since 1.62; spec digest
+`sha256:443c9d39…8098`), and the §27 surface is generated from them. See
 [MCP resource-server helpers](#mcp-resource-server-helpers-ioaxiamsdkmcp-28-opt-in) below for §28.
 
 **§27 is the Management API** — all 202 operations across 29 namespaces, with the §27.6 declarative
@@ -213,7 +223,7 @@ default tenant.
 
 ```kotlin
 dependencies {
-    implementation("io.github.ilpanich:axiam-sdk-kotlin:1.1.0")
+    implementation("io.github.ilpanich:axiam-sdk-kotlin:1.2.0")
     // Optional — only if you use the Ktor route guard / §11 helpers:
     implementation("io.ktor:ktor-server-core:2.3.12")
 }
@@ -225,7 +235,7 @@ dependencies {
 <dependency>
   <groupId>io.github.ilpanich</groupId>
   <artifactId>axiam-sdk-kotlin</artifactId>
-  <version>1.1.0</version>
+  <version>1.2.0</version>
 </dependency>
 ```
 

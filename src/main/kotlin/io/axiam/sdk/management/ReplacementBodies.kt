@@ -247,9 +247,10 @@ private fun <T> JsonNullable<T>.orElse(read: T?): T? = when (this) {
  * which needs it again (§31.3 rule 2). An unknown `auth` / `scope` arm is
  * carried over and refused locally on encode: replace it before writing back.
  *
- * `expected_updated_at` is this read's `updated_at` (§31.3 rule 4, contract
- * 1.60): the write lands only if no other administrator has written the target
- * since, and is otherwise `409` — reload and retry. Set it to `null` with
+ * `expected_updated_at` is this read's `updated_at`, the response's **own
+ * string** ([ScimTargetResponse.updatedAtRaw], §31.3 rule 4, contract 1.63),
+ * never the parsed instant rendered again: the write lands only if no other
+ * administrator has written the target since, and is otherwise `409` — reload and retry. Set it to `null` with
  * `copy()` for the earlier last-writer-wins replacement.
  *
  * @return the replacement body
@@ -260,7 +261,9 @@ fun ScimTargetResponse.toInput(): ScimTargetInput = ScimTargetInput(
     credential = null,
     deprovision = deprovision,
     enabled = enabled,
-    expectedUpdatedAt = updatedAt,
+    // The server's own spelling (§31.3 rule 4, contract 1.63); a value built by
+    // hand has no raw string to send.
+    expectedUpdatedAt = updatedAtRaw ?: updatedAt.toString(),
     name = name,
     pushGroups = pushGroups,
     scope = scope,

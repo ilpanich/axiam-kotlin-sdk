@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-20
+
+Contract 1.63 (accompanying the AXIAM 1.1.1 release): `CONTRACT.md`, `openapi.json` and
+`management-registry.json` re-vendored byte for byte from `ilpanich/axiam` `d919ba0cc`
+(`openapi.json` digest `sha256:443c9d39…8098`; `proto/` is unchanged), the §27 surface regenerated
+(202 operations across 29 namespaces, none added), and the README states conformance at contract
+1.63. Closes ilpanich/axiam-kotlin-sdk#77. This is a **minor** release, because the SCIM
+change below is source-breaking.
+
+### Source-breaking changes
+
+- **`ScimTargetInput.expectedUpdatedAt` is a `String?`, no longer an `Instant?`** (§31.3 rule 4,
+  contract 1.63 item (b), C162-10). `ScimTargetResponse` keeps the response's own `updated_at`
+  string in a new trailing `updatedAtRaw: String? = null` (the same mechanism as
+  `SsfStream.updatedAtRaw`), and `ScimTargetResponse.toInput()` sends it byte for byte, so a
+  `+00:00` offset or a trailing-zero fraction is not re-rendered by `Instant.toString()`. A value
+  built by hand has no raw string, and `toInput()` then renders `updatedAt`. *Migration:* pass the
+  string (`target.updatedAtRaw`), not an `Instant`; an assigned `null` is still "none" and the key
+  is omitted.
+
+### Fixed
+
+- **An unknown open-enum value on an unstated member is refused at `plan`** (§27.6.2 item 4,
+  contract 1.63 item (ab), C162-07). A profile read with a `termination_action` or `service_type`
+  this SDK does not know, in a manifest that changes another member and does not state the unknown
+  one, now fails `plan` (and `apply`, which plans first) with a `NetworkError` naming the member,
+  with no non-`GET` request; before, `apply` reached the `PUT` step and the serializer refused it
+  there. A manifest that states the member resolves it, and an unchanged profile is `NoChange`.
+
+### Tests
+
+- **No session cookie and no `X-CSRF-Token` on `/oauth2/*`** (§6.1 rule 11, §12.1 rule 3, §14.6
+  contract 1.63): this SDK already withholds them; the new test signs in with a cookie login that
+  sets `axiam_*` and `axiam_csrf`, runs `deviceAuthorize`, `devicePoll`, a token request and
+  introspect/revoke, and asserts neither header, with the control that the next `POST` management
+  request carries both.
+
+### Notes
+
+- `DeviceAuthorizationRequest.client_id` is no longer required in `openapi.json`; this SDK models no
+  such request type (the device operations take parameter objects), so nothing changes.
+- This SDK generates no DPoP proofs (§21.9), so the §21.7.4 key-retention rule does not apply; it
+  ships no AMQP, so item (c) does not apply.
+
 ## [1.1.0] - 2026-10-16
 
 Contract 1.62 (accompanying the AXIAM 1.1.0 release): `CONTRACT.md`

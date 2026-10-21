@@ -150,6 +150,7 @@ internal object ManagementSupport {
      */
     internal val RAW_TIMESTAMPS: Map<String, Pair<String, String>> = mapOf(
         "io.axiam.sdk.management.models.SsfStream" to ("updated_at" to "updated_at_raw"),
+        "io.axiam.sdk.management.models.ScimTargetResponse" to ("updated_at" to "updated_at_raw"),
     )
 
     /** Converts a response node into a model, or throws a [NetworkError]. */
