@@ -118,7 +118,7 @@ class SessionState(
     private val discoveredOauth2Endpoints = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     /**
-     * Records the endpoints of a discovery document as `/oauth2/*` requests
+     * Records the endpoints of a discovery document as `/oauth2/…` requests
      * (C163-19): the document, not the conventional `/oauth2/` layout, says
      * where the token, device-authorization, PAR, revocation, introspection
      * and JWKS endpoints are, and a deployment may serve them elsewhere on the
@@ -132,7 +132,7 @@ class SessionState(
     }
 
     /**
-     * `true` when [url] is an `/oauth2/*` request (CONTRACT.md §12.1 rule 3):
+     * `true` when [url] is an `/oauth2/…` request (CONTRACT.md §12.1 rule 3):
      * under this session's `/oauth2/` prefix on its own host, or exactly an
      * endpoint its discovery document advertised ([registerOauth2Endpoints]).
      */

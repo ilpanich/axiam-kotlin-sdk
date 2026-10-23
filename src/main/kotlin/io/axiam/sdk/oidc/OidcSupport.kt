@@ -161,7 +161,7 @@ internal class OidcSupport(
     }
 
     /**
-     * C163-19: the endpoints the document advertises are `/oauth2/*` requests
+     * C163-19: the endpoints the document advertises are `/oauth2/…` requests
      * for §12.1 rule 3 wherever they sit, so the session and CSRF exclusion
      * follows them rather than the conventional `{base}/oauth2/` layout.
      */
