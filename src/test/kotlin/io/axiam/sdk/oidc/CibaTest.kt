@@ -381,10 +381,14 @@ class CibaTest {
 
     @Test
     fun `t08c a dropped connection makes exactly three requests, OkHttp's own resend included (C164-39)`() = runBlocking {
-        val client = client() // retry ENABLED
+        // The IPv4 literal: a no-resend client does not fall back to a second address, and on a runner
+        // "localhost" can resolve to [::1] first while the mock listens on 127.0.0.1.
+        val client = AxiamClient.builder("http://127.0.0.1:${server.port}", tenant)
+            .oidcClientId(OidcTestKit.CLIENT_ID).oidcClientSecret(secret).build() // retry ENABLED
+        val configuration = client.oidcDiscover().copy(token_endpoint = "http://127.0.0.1:${server.port}/oauth2/token")
         tokenScript = listOf { MockResponse().setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.DISCONNECT_AFTER_REQUEST) }
         assertThrows<NetworkError> {
-            runBlocking { client.cibaPoll(CibaPollParams(Sensitive.of(random()), configuration = client.oidcDiscover())) }
+            runBlocking { client.cibaPoll(CibaPollParams(Sensitive.of(random()), configuration = configuration)) }
         }
         assertEquals(3, polls.size, "§16.1: three attempts in total; OkHttp's silent resend would make it four")
     }

@@ -410,6 +410,18 @@ class OidcDeviceFlowTest {
         assertEquals(listOf(5L, 5L), clock.sleeps, "rule 6: the exhausted poll costs one interval, not the flow")
     }
 
+    /**
+     * A client and a configuration addressed by the IPv4 literal: the poll's client does not fall back to a
+     * second address (§16 alone counts attempts), and on a runner "localhost" can resolve to [::1] first
+     * while the mock listens on 127.0.0.1.
+     */
+    private suspend fun literalClient(retry: Boolean = true): Pair<io.axiam.sdk.AxiamClient, OidcConfiguration> {
+        val client = io.axiam.sdk.AxiamClient.builder("http://127.0.0.1:${server.port}", tenantId)
+            .oidcClientId(OidcTestKit.CLIENT_ID).apply { if (!retry) retryDisabled() }.build()
+        val configuration = client.oidcDiscover().copy(token_endpoint = "http://127.0.0.1:${server.port}/oauth2/token")
+        return client to configuration
+    }
+
     private fun transportFailure() = MockResponse().setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.DISCONNECT_AFTER_REQUEST)
 
     @Test
@@ -421,7 +433,8 @@ class OidcDeviceFlowTest {
             { requests.incrementAndGet(); tokenSuccess() },
         )
 
-        val tokens = deviceClient().devicePoll(DevicePollParams(Sensitive.of("dc"), tenantId = tenantId))
+        val (client, configuration) = literalClient()
+        val tokens = client.devicePoll(DevicePollParams(Sensitive.of("dc"), tenantId = tenantId, configuration = configuration))
 
         assertEquals("device-access-token", tokens.accessToken.expose())
         assertEquals(3, requests.get())
@@ -432,8 +445,9 @@ class OidcDeviceFlowTest {
         val requests = AtomicInteger(0)
         scriptToken({ requests.incrementAndGet(); transportFailure() })
 
+        val (client, configuration) = literalClient()
         assertThrows(io.axiam.sdk.errors.NetworkError::class.java) {
-            runBlocking { deviceClient().devicePoll(DevicePollParams(Sensitive.of("dc"), tenantId = tenantId)) }
+            runBlocking { client.devicePoll(DevicePollParams(Sensitive.of("dc"), tenantId = tenantId, configuration = configuration)) }
         }
 
         assertEquals(3, requests.get(), "§16.1: three attempts in total; OkHttp's silent resend would make it four")
@@ -443,11 +457,10 @@ class OidcDeviceFlowTest {
     fun `with retry disabled a transport failure makes one request`(): Unit = runBlocking {
         val requests = AtomicInteger(0)
         scriptToken({ requests.incrementAndGet(); transportFailure() })
-        val client = io.axiam.sdk.AxiamClient.builder(server.url("/").toString(), tenantId)
-            .oidcClientId(OidcTestKit.CLIENT_ID).retryDisabled().build()
+        val (client, configuration) = literalClient(retry = false)
 
         assertThrows(io.axiam.sdk.errors.NetworkError::class.java) {
-            runBlocking { client.devicePoll(DevicePollParams(Sensitive.of("dc"), tenantId = tenantId)) }
+            runBlocking { client.devicePoll(DevicePollParams(Sensitive.of("dc"), tenantId = tenantId, configuration = configuration)) }
         }
 
         assertEquals(1, requests.get())
