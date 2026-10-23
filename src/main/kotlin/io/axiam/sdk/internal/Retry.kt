@@ -95,6 +95,7 @@ internal object Retry {
         telemetry: TelemetryDispatcher,
         random: () -> Double = { Random.Default.nextDouble() },
         retryable: (NetworkError) -> Boolean = { true },
+        mayWait: (Duration) -> Boolean = { true },
         op: suspend (attempt: Int) -> T,
     ): T {
         val attempts = if (enabled) MAX_ATTEMPTS else 1
@@ -116,6 +117,9 @@ internal object Retry {
                 if (!retryable(e)) throw e
                 if (attempt == attempts) throw e
                 val wait = delayFor(attempt, e.retryAfter ?: Duration.ZERO, random())
+                // A caller with a deadline (the device poll's expires_in, §14.2 rule 4) refuses a
+                // wait that would end past it: the failure is surfaced and nothing more is sent.
+                if (!mayWait(wait)) throw e
                 // §16.5 — without this a retried-then-succeeded call is
                 // invisible: a slow success with no signal the server is failing.
                 telemetry.emit(

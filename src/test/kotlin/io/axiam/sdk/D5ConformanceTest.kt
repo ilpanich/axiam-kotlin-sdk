@@ -82,6 +82,32 @@ class D5ConformanceTest {
     // -----------------------------------------------------------------------
 
     @Test
+    fun `a 503 Retry-After is the floor of the retry's wait, through the wire (C164-37)`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(503).setHeader("Retry-After", "2"))
+        enqueueAllow()
+        val client = client()
+
+        val started = System.nanoTime()
+        assertTrue(client.checkAccess("read", "r-1").allowed)
+        val elapsedMs = (System.nanoTime() - started) / 1_000_000
+
+        assertEquals(2, server.requestCount)
+        assertTrue(elapsedMs >= 1_900, "waited the Retry-After as a floor: ${elapsedMs}ms")
+    }
+
+    @Test
+    fun `a Retry-After beyond the clamp is waited at the clamp, not parked on (C164-37)`() {
+        val response = okhttp3.Response.Builder()
+            .request(okhttp3.Request.Builder().url("http://localhost/").build())
+            .protocol(okhttp3.Protocol.HTTP_1_1).code(503).message("x")
+            .header("Retry-After", "86400").build()
+
+        val error = io.axiam.sdk.errors.ErrorMapper.fromHttpStatus(503, "m", response) as NetworkError
+
+        assertEquals(60.seconds, error.retryAfter)
+    }
+
+    @Test
     fun `backoff doubles from the base and stops at the cap`() {
         assertEquals(Retry.BASE_DELAY, Retry.backoffFor(1))
         assertEquals(400.milliseconds, Retry.backoffFor(2))

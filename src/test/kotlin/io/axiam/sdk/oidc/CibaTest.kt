@@ -380,6 +380,16 @@ class CibaTest {
     }
 
     @Test
+    fun `t08c a dropped connection makes exactly three requests, OkHttp's own resend included (C164-39)`() = runBlocking {
+        val client = client() // retry ENABLED
+        tokenScript = listOf { MockResponse().setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.DISCONNECT_AFTER_REQUEST) }
+        assertThrows<NetworkError> {
+            runBlocking { client.cibaPoll(CibaPollParams(Sensitive.of(random()), configuration = client.oidcDiscover())) }
+        }
+        assertEquals(3, polls.size, "§16.1: three attempts in total; OkHttp's silent resend would make it four")
+    }
+
+    @Test
     fun `t08b a 5xx with an error body is retried inside cibaPoll`() = runBlocking {
         val client = client() // retry ENABLED
         tokenScript = listOf(

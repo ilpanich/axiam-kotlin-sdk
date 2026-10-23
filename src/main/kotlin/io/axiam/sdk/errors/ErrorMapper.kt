@@ -34,6 +34,8 @@ object ErrorMapper {
         "content-type", "content-length", "date", "server", "retry-after",
         "x-request-id", "x-tenant-id",
     )
+    /** The longest `Retry-After` a retry will wait out as its floor; §16.1 sets no clamp, a hostile value must not park the caller. */
+    private val MAX_RETRY_AFTER = 60.seconds
     private const val REDACTED_HEADER = "[REDACTED]"
     private const val MAX_AUTHZ_BODY_PEEK_BYTES = 8192L
 
@@ -45,7 +47,12 @@ object ErrorMapper {
         when (status) {
             401 -> AuthError(message)
             403, 409 -> authzErrorFromBody(message, response)
-            else -> NetworkError.withSummary(message, sanitize(response))
+            else -> NetworkError.withSummary(
+                message,
+                sanitize(response),
+                // §16.1 (C164-37): a 429's or 5xx's Retry-After is the floor of the retry's wait.
+                response?.let(::retryAfterOf)?.coerceAtMost(MAX_RETRY_AFTER),
+            )
         }
 
     /**

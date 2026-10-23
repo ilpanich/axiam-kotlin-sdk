@@ -1067,7 +1067,19 @@ internal class OidcSupport(
      * above. A client registered for mTLS-bound tokens works: the certificate
      * accompanies each poll.
      */
-    suspend fun devicePoll(params: DevicePollParams): OidcTokenSet {
+    suspend fun devicePoll(params: DevicePollParams): OidcTokenSet = devicePoll(params, null, null)
+
+    /**
+     * [devicePoll] inside `deviceLogin`'s loop (C164-36): a §16 retry whose wait would end at or
+     * past [deadline] on [clock] is not made, so nothing is sent after the `expires_in` deadline
+     * (§14.2 rule 4); the failure is surfaced and the loop's next check raises `expired_token`.
+     * A bare `devicePoll` has no deadline and keeps the plain §16 behaviour.
+     */
+    private suspend fun devicePoll(
+        params: DevicePollParams,
+        deadline: java.time.Instant?,
+        clock: CibaClock?,
+    ): OidcTokenSet {
         val configuration = params.configuration ?: oidcDiscover()
         val clientId = requireClientId()
         val form = buildForm(
@@ -1087,6 +1099,9 @@ internal class OidcSupport(
             telemetry = telemetry,
             random = jitter,
             retryable = { trace.lastStatus.let { it == null || it >= 500 } },
+            mayWait = { wait ->
+                deadline == null || clock!!.now().plusMillis(wait.inWholeMilliseconds).isBefore(deadline)
+            },
         ) { _ ->
             trace.lastStatus = null
             postToken(configuration, form, params.tenantId, withoutSession = true, devicePoll = true, trace = trace)
@@ -1179,6 +1194,8 @@ internal class OidcSupport(
                         tenantId = params.tenantId,
                         configuration = configuration,
                     ),
+                    deadline,
+                    clock,
                 )
             } catch (e: OAuthProtocolError) {
                 when (e.error) {
@@ -1356,7 +1373,9 @@ internal class OidcSupport(
         ) { _ ->
             trace.lastStatus = null
             val request = Request.Builder().url(url).post(form).build()
-            val response = executeRequest(request)
+            // OkHttp's own silent resend after a dropped connection is switched off: §16 alone
+            // counts the attempts (cap 3 in total, C164-39).
+            val response = executeRequest(request, noRetryHttpClient)
             response.use {
                 trace.lastStatus = it.code
                 if (it.code >= 500) {
@@ -1931,7 +1950,8 @@ internal class OidcSupport(
         val builder = Request.Builder().url(url).post(form)
         if (withoutSession) builder.header(AuthHeaderInterceptor.NO_SESSION_CREDENTIALS_HEADER, "1")
         val request = builder.build()
-        val response = executeRequest(request)
+        // A device poll counts its attempts under §16 alone: no OkHttp resend (C164-39).
+        val response = executeRequest(request, if (devicePoll) noRetryHttpClient else httpClient)
         response.use {
             trace?.lastStatus = it.code
             if (!it.isSuccessful) throw mapOAuth2ErrorResponse(it, fallbackMessage, devicePoll)
@@ -1969,9 +1989,12 @@ internal class OidcSupport(
      * break this rule — see `OidcIntrospectRevokeTest` for the regression
      * test that would catch it.
      */
-    private suspend fun executeRequest(request: Request): Response = withContext(Dispatchers.IO) {
+    private suspend fun executeRequest(
+        request: Request,
+        client: OkHttpClient = httpClient,
+    ): Response = withContext(Dispatchers.IO) {
         try {
-            httpClient.newCall(request).execute()
+            client.newCall(request).execute()
         } catch (e: IOException) {
             throw NetworkError("request failed: ${e.message}", e)
         }
