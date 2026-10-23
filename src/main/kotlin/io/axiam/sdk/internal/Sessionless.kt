@@ -23,9 +23,11 @@ import okhttp3.OkHttpClient
  *  - the cookie jar ([CookieJar.NO_COOKIES]);
  *  - any `401` [Authenticator];
  *  - redirect following, for both schemes;
- *  - OkHttp's own silent retry on a connection failure: the writes this
- *    serves must be sent at most once, and the reads that may be retried are
- *    retried by §16's policy, where a retry is counted and reported.
+ *
+ * OkHttp's own retry on a connection failure stays ON (C164-50): switching it off would also
+ * switch off the fallback to the next resolved address on OkHttp 4. The writes this serves must be
+ * sent at most once, so their bodies are [OneShotBody]s (never replayed once sent), and the reads
+ * that may be retried are retried by §16's policy, where a retry is counted and reported.
  *
  * Internal plumbing: module-visible only.
  */
@@ -46,7 +48,6 @@ internal object Sessionless {
             .authenticator(Authenticator.NONE)
             .followRedirects(false)
             .followSslRedirects(false)
-            .retryOnConnectionFailure(false)
             .build()
     }
 }

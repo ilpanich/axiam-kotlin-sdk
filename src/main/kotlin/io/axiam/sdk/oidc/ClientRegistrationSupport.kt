@@ -5,6 +5,7 @@ import io.axiam.sdk.errors.ErrorMapper
 import io.axiam.sdk.errors.NetworkError
 import io.axiam.sdk.errors.ValidationError
 import io.axiam.sdk.internal.Retry
+import io.axiam.sdk.internal.OneShotBody
 import io.axiam.sdk.internal.Sessionless
 import io.axiam.sdk.internal.TelemetryDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -87,7 +88,7 @@ internal class ClientRegistrationSupport(
     suspend fun update(uri: String, token: Sensitive<String>, metadata: ClientRegistration): ClientRegistration {
         val url = checkUri(uri, "updateClientRegistration")
         val body = Json.encodeToString(JsonObject.serializer(), metadata.updateBody()).toRequestBody(JSON_MEDIA)
-        val request = Request.Builder().url(url).put(body)
+        val request = Request.Builder().url(url).put(OneShotBody(body))
             .header("Authorization", "Bearer ${token.expose()}")
             .header("Accept", "application/json")
             .build()
@@ -96,7 +97,8 @@ internal class ClientRegistrationSupport(
 
     suspend fun delete(uri: String, token: Sensitive<String>) {
         val url = checkUri(uri, "deleteClientRegistration")
-        val request = Request.Builder().url(url).delete()
+        val request = Request.Builder().url(url)
+            .method("DELETE", OneShotBody("".toRequestBody(JSON_MEDIA)))
             .header("Authorization", "Bearer ${token.expose()}")
             .build()
         execute(request, "deleteClientRegistration").use { response ->

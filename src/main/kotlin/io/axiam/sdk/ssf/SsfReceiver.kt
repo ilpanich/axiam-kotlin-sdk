@@ -13,6 +13,7 @@ import io.axiam.sdk.errors.NetworkError
 import io.axiam.sdk.errors.NotFoundError
 import io.axiam.sdk.errors.ValidationError
 import io.axiam.sdk.internal.Retry
+import io.axiam.sdk.internal.OneShotBody
 import io.axiam.sdk.internal.Sessionless
 import io.axiam.sdk.telemetry.TelemetryEvent
 import kotlinx.coroutines.CancellationException
@@ -217,7 +218,7 @@ class SsfReceiver internal constructor(
             retryable = { lastStatus == null || Retry.isRetryableStatus(lastStatus!!) },
         ) { _ ->
             lastStatus = null
-            val request = Request.Builder().url(url).post(body)
+            val request = Request.Builder().url(url).post(OneShotBody(body))
                 .header("Authorization", "Bearer ${token.expose()}")
                 .header("Accept", "application/json")
                 .build()

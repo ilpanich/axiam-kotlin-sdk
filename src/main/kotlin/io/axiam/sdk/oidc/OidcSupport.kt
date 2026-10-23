@@ -6,6 +6,7 @@ import io.axiam.sdk.errors.AxiamException
 import io.axiam.sdk.errors.ErrorMapper
 import io.axiam.sdk.errors.NetworkError
 import io.axiam.sdk.errors.OAuthProtocolError
+import io.axiam.sdk.internal.OneShotBody
 import io.axiam.sdk.internal.AuthHeaderInterceptor
 import io.axiam.sdk.internal.JwksVerifier
 import io.axiam.sdk.internal.SessionState
@@ -1232,21 +1233,6 @@ internal class OidcSupport(
 
     // -- §33 CIBA -------------------------------------------------------------
 
-    /**
-     * A request body OkHttp will not replay once it has been sent (C164-39, C164-44).
-     *
-     * `retryOnConnectionFailure(false)` would also switch off OkHttp 4's fallback to the next
-     * resolved address, so a host whose first address refuses would fail every attempt. A one-shot
-     * body keeps that fallback (a connect failure is not a send) and refuses only the silent
-     * resend after the request was written: §33.7 rule 1 forbids it for `cibaInitiate`, and
-     * §16.1 counts the polls' attempts (three in total) in the §16 runner alone.
-     */
-    private class OneShotBody(private val delegate: RequestBody) : RequestBody() {
-        override fun contentType() = delegate.contentType()
-        override fun contentLength() = delegate.contentLength()
-        override fun writeTo(sink: okio.BufferedSink) = delegate.writeTo(sink)
-        override fun isOneShot(): Boolean = true
-    }
 
     /**
      * The client's credential for a CIBA call (§33.1): `client_secret_post`,
