@@ -204,10 +204,12 @@ class OidcDeviceFlowTest {
     // -----------------------------------------------------------------------
 
     /** Records every wait instead of sleeping, so the schedule is asserted exactly (§14.6). */
-    private class RecordingClock : CibaClock {
+    private class RecordingClock(private val requestSeconds: Long = 0) : CibaClock {
         val start: java.time.Instant = java.time.Instant.now()
         val sleeps = mutableListOf<Long>()
-        override fun now(): java.time.Instant = start.plusSeconds(sleeps.sum())
+
+        /** Time spent in requests also passes (C164-05): every wait is followed by one poll of [requestSeconds]. */
+        override fun now(): java.time.Instant = start.plusSeconds(sleeps.sum() + sleeps.size * requestSeconds)
         override suspend fun sleep(duration: java.time.Duration) {
             sleeps += duration.seconds
         }
@@ -285,6 +287,47 @@ class OidcDeviceFlowTest {
     }
 
     @Test
+    fun `a 429 whose body says slow_down is the rate-limit wait, and does not raise the interval (C164-04)`() {
+        mountAuthorization(expiresIn = 600, interval = 5)
+        scriptToken(
+            { MockResponse().setResponseCode(429).addHeader("Retry-After", "1").setBody(OidcTestKit.oauth2ErrorJson("slow_down", "x")) },
+            { MockResponse().setResponseCode(429).addHeader("Retry-After", "1").setBody(OidcTestKit.oauth2ErrorJson("slow_down", "x")) },
+            { tokenSuccess() },
+        )
+        val clock = RecordingClock()
+
+        login(clock)
+
+        assertEquals(listOf(5L, 5L, 5L), clock.sleeps, "the status decides: only the 400 raises the interval")
+    }
+
+    @Test
+    fun `a bodiless 429 honours Retry-After as a floor (C164-17)`() {
+        mountAuthorization(expiresIn = 600, interval = 5)
+        scriptToken({ MockResponse().setResponseCode(429).addHeader("Retry-After", "30") }, { tokenSuccess() })
+        val clock = RecordingClock()
+
+        login(clock)
+
+        assertEquals(listOf(5L, 30L), clock.sleeps)
+    }
+
+    @Test
+    fun `the deadline is an instant on the clock, so request time counts against it (C164-05)`() {
+        // expires_in 20, interval 5, each poll's round trip takes 4 s: the polls leave at 5 and 14;
+        // a third would leave at 23, past the deadline, and is not sent.
+        mountAuthorization(expiresIn = 20, interval = 5)
+        val polls = AtomicInteger(0)
+        dispatcher.on("/oauth2/token") { polls.incrementAndGet(); oauthError("authorization_pending") }
+        val clock = RecordingClock(requestSeconds = 4)
+
+        val error = assertThrows(OAuthProtocolError::class.java) { login(clock) }
+
+        assertTrue(error.isExpiredToken)
+        assertEquals(2, polls.get(), "no poll once now + interval reaches the deadline")
+    }
+
+    @Test
     fun `a single devicePoll raises the 429 as an OAuthProtocolError carrying its Retry-After`(): Unit = runBlocking {
         scriptToken({ rateLimited("7") })
 
@@ -344,6 +387,25 @@ class OidcDeviceFlowTest {
                 "caller's branch does not care which side noticed first",
         )
         assertEquals(1, polls.get(), "no poll may be sent past the deadline")
+    }
+
+    @Test
+    fun `a 500 server_error with its body mid-poll is a transport failure, not terminal (rule 6)`(): Unit = runBlocking {
+        // The body AXIAM's token endpoint sends on an internal failure: rule 5 would dispatch its
+        // `error` at any other status; the status is read first.
+        mountAuthorization(expiresIn = 60)
+        scriptToken(
+            { oauthError("authorization_pending") },
+            {
+                MockResponse().setResponseCode(500).addHeader("Content-Type", "application/json")
+                    .setBody(OidcTestKit.oauth2ErrorJson("server_error", "internal error"))
+            },
+            { tokenSuccess() },
+        )
+
+        val tokens = deviceClient().deviceLogin(DeviceLoginParams(tenantId = tenantId, onUserCode = { }))
+
+        assertEquals("device-access-token", tokens.accessToken.expose())
     }
 
     @Test

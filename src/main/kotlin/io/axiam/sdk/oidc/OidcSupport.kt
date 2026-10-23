@@ -1076,7 +1076,7 @@ internal class OidcSupport(
             "client_id" to clientId,
             "client_secret" to oidcClientSecret?.expose(),
         )
-        val json = postToken(configuration, form, params.tenantId, withoutSession = true)
+        val json = postToken(configuration, form, params.tenantId, withoutSession = true, devicePoll = true)
         // No nonce: the device grant has no authorization request to carry one.
         val expectations = OidcIdToken.Expectations(
             issuer = configuration.issuer,
@@ -1130,7 +1130,9 @@ internal class OidcSupport(
 
         val clock = params.clock
         var intervalSeconds = authorization.interval
-        var remainingSeconds = authorization.expiresIn
+        // §14.2 rule 4 (C164-05): the deadline is an instant on the clock, taken when the
+        // authorization arrives, so request time and slow answers count against it.
+        val deadline = clock.now().plusSeconds(authorization.expiresIn.toLong())
         // §14.2 rule 9 (contract 1.64): after a `429`, the wait that stands in for the next
         // interval — at least the Retry-After, never less than the interval itself.
         var rateLimitedWaitSeconds: Long? = null
@@ -1144,7 +1146,7 @@ internal class OidcSupport(
             // server would have used — so a caller's branch does not care which
             // side noticed first. A Retry-After past the deadline is capped by
             // the same rule, at once (§14.6, contract 1.64).
-            if (waitSeconds >= remainingSeconds) {
+            if (!clock.now().plusSeconds(waitSeconds).isBefore(deadline)) {
                 throw OAuthProtocolError(
                     error = "expired_token",
                     errorDescription = "the device authorization expired before the user " +
@@ -1152,8 +1154,6 @@ internal class OidcSupport(
                         "CONTRACT.md §14.2 rule 4)",
                 )
             }
-            remainingSeconds -= waitSeconds.toInt()
-
             clock.sleep(java.time.Duration.ofSeconds(waitSeconds))
 
             try {
@@ -1886,12 +1886,13 @@ internal class OidcSupport(
         form: RequestBody,
         tenantIdOverride: String?,
         withoutSession: Boolean = false,
+        devicePoll: Boolean = false,
     ): JsonObject {
         val url = endpointUrl(
             preferredEndpoint(configuration, { it.token_endpoint }, configuration.token_endpoint)!!,
             tenantIdOverride,
         )
-        return postOAuth2Form(url, form, "token request failed", withoutSession)
+        return postOAuth2Form(url, form, "token request failed", withoutSession, devicePoll)
     }
 
     /**
@@ -1905,6 +1906,7 @@ internal class OidcSupport(
         form: RequestBody,
         fallbackMessage: String,
         withoutSession: Boolean = false,
+        devicePoll: Boolean = false,
     ): JsonObject {
         // [withoutSession]: the §14 device operations carry the CLIENT's credential
         // and nothing else — no session bearer, no cookie (contract 1.62, §14.6).
@@ -1913,7 +1915,7 @@ internal class OidcSupport(
         val request = builder.build()
         val response = executeRequest(request)
         response.use {
-            if (!it.isSuccessful) throw mapOAuth2ErrorResponse(it, fallbackMessage)
+            if (!it.isSuccessful) throw mapOAuth2ErrorResponse(it, fallbackMessage, devicePoll)
             return parseJsonObject(it)
         }
     }
@@ -1966,7 +1968,11 @@ internal class OidcSupport(
      * [OAuthProtocolError] (the endpoint-qualified row only wins when the
      * body actually matches).
      */
-    private fun mapOAuth2ErrorResponse(response: Response, fallbackMessage: String): AxiamException {
+    private fun mapOAuth2ErrorResponse(
+        response: Response,
+        fallbackMessage: String,
+        devicePoll: Boolean = false,
+    ): AxiamException {
         if (response.code == 400 || response.code == 401) {
             val bodyText = try {
                 response.peekBody(MAX_OAUTH2_ERROR_BODY_BYTES).string()
@@ -1975,6 +1981,17 @@ internal class OidcSupport(
             }
             val parsed = bodyText?.let(::parseOAuth2ErrorBody)
             if (parsed != null) return OAuthProtocolError(parsed.first, parsed.second)
+        }
+        if (devicePoll && response.code == 429) {
+            // §14.2 rule 9 (contract 1.64, amended; C164-04, C164-17): the STATUS decides on a
+            // poll. Any 429 is the rate-limit wait whatever its body names (a `slow_down` from a
+            // server before 1.1.2 or an intermediary does not raise the interval), and a
+            // bodiless one still carries its Retry-After as the floor of the wait.
+            val description = ErrorMapper.fromOAuth2ResponseAtAnyStatus(fallbackMessage, response)
+                .let { (it as? OAuthProtocolError)?.errorDescription ?: "" }
+            return OAuthProtocolError("rate_limit_exceeded", description).also {
+                it.retryAfter = ErrorMapper.retryAfterOf(response)
+            }
         }
         if (response.code == 429) {
             // §14.2 rule 9 (contract 1.63): a `429 {"error":"rate_limit_exceeded"}` is the §2
