@@ -122,6 +122,16 @@ one model addition is a pair of trailing members with a default.
   revocation endpoints gets no session bearer, cookie or CSRF header on them (revoke is called
   through the client after a cookie login, so only the discovery wiring protects it), the next
   management `POST` carries both as the control, and an unadvertised path still does.
+- **`readClientRegistration` may reach the server once more per §16 attempt** (C164-55, documented): with
+  OkHttp's connection retry back on in `Sessionless`, OkHttp 4.12 recovers the idempotent RFC 7592 `GET` once on
+  a stale pooled connection, so over a connection that drops it makes at most 4 sends with retry on (the §16 cap
+  is 3 attempts) and at most 2 with `retryDisabled()`; round 4 gave 3 and 1. The read changes no state; every
+  write stays exactly-once through its one-shot body. Moving to OkHttp 5.x (route fallback independent of the
+  flag) is a follow-up, not part of 1.1.2. Stated in the README §16 section and pinned by a test.
+- **Round 6 — C164-55, -56:** `DualStackWritesTest` adds the read-and-drop case on each sessionless write over a
+  pooled connection (`deleteClientRegistration` 1 request, `updateClientRegistration` 1, `ssf.poll` exactly 3), and
+  pins the read at 3..4 sends with retry on and 1..2 without. Mutants killed: a plain body on the registration `PUT`,
+  on the `DELETE` and on the `ssf.poll` body.
 - **Round 5 — C164-50, -53, -54:** a management `DELETE`, a management `POST` and a sessionless
   `deleteClientRegistration` on a host whose first address refuses (custom `Dns` `[127.0.0.2, 127.0.0.1]`, pool
   evicted) reach the server once; a management write after a drop on a pooled connection is still sent once

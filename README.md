@@ -2516,6 +2516,13 @@ transient failures under the contract's normative table: **3 attempts** (1 initi
 retries), 200 ms base, 5 s cap, **full jitter** (uniform over `[0, backoff]`), and
 `Retry-After` honored as a **floor** (a `429` or `5xx` answer's header, clamped at 60 s).
 
+One transport detail the attempt cap does not cover: OkHttp 4.12 recovers an **idempotent read** on a
+stale pooled connection by itself. The RFC 7592 `readClientRegistration` is such a `GET`, so over a
+connection that drops it can reach the server **once more per §16 attempt** (at most 4 sends with retry
+on, 2 with `retryDisabled()`). Every write is a one-shot body and is sent exactly once per attempt: a
+management write, the registration `PUT` and `DELETE`, `cibaInitiate`, and the `ssf.poll` / device / CIBA
+polls (three §16 attempts in total, no OkHttp replay on top).
+
 This SDK had no §16 policy before — only §9.3's refresh-then-retry-once, which is a different
 mechanism. §11.2 rule 5 had been requiring one since it was written.
 
