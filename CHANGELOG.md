@@ -48,7 +48,7 @@ one model addition is a pair of trailing members with a default.
   slept were subtracted and a slow server could be polled past the deadline.
 - **The device poll is §16-retried inside the attempt** (§14.2 rule 6, §16.2, contract 1.64 amended;
   C164-25): a `5xx` or a transport failure on `devicePoll` is retried under §16 (three attempts in
-  total, `Retry-After` as the floor) before the loop takes its next interval; a `429` and any other
+  total, `Retry-After` as the floor, see below) before the loop takes its next interval; a `429` and any other
   `4xx` are not. With retry disabled it is one request per poll.
 - **A single `devicePoll` raises every `429` as `OAuthProtocolError("rate_limit_exceeded")`** (C164-32),
   a bodiless or proxy one included and a `429` whose body says `slow_down` too; 1.1.1 raised those as
@@ -56,6 +56,20 @@ one model addition is a pair of trailing members with a default.
   also handle `OAuthProtocolError` (an `AuthError`).
 - **The deadline is taken before the user-code callback** (C164-28), so the callback's time counts
   against `expires_in`.
+- **`Retry-After` is now the floor of every §16 retry's wait** (§16.1, C164-37). Until now no
+  `NetworkError` built from a response carried it, so the entry above and the README claimed a floor
+  that was only in `delayFor`'s unit test: a `503` with `Retry-After: 120` was retried within
+  milliseconds. A `429` or `5xx` answer's `Retry-After` (delta-seconds or an HTTP date) is parsed onto
+  the `NetworkError` and the runner waits `max(jittered backoff, Retry-After)`, with the value clamped at
+  60 s (§16.1 sets no upper clamp; a hostile header must not park the caller). It reaches `checkAccess`,
+  the management transport, SSF and client registration as well as the device and CIBA polls.
+- **The in-poll retry honours the device-login deadline** (§14.2 rule 4, C164-36): a §16 retry whose wait
+  would end at or past the `expires_in` deadline is not sent; the failure is surfaced and the loop raises
+  `expired_token`. A bare `devicePoll` keeps the plain §16 behaviour. Landed with C164-37, as a floor
+  without the bound would sleep past the deadline.
+- **OkHttp's own resend after a dropped connection is switched off for the device poll and the CIBA poll**
+  (§16.1 cap of three attempts in total, C164-39): three disconnects then `200` made four requests; now
+  three attempts are counted by §16 alone, as for `cibaInitiate`.
 - **The value quoted by the refusal at `plan` is JSON-escaped and capped at 64 characters**
   (C164-21): a quote or a newline in server text no longer reaches the message verbatim.
 
@@ -87,6 +101,10 @@ one model addition is a pair of trailing members with a default.
   revocation endpoints gets no session bearer, cookie or CSRF header on them (revoke is called
   through the client after a cookie login, so only the discovery wiring protects it), the next
   management `POST` carries both as the control, and an unadvertised path still does.
+- **Round 3 — C164-36, -37, -38, -39, -41:** 503 + `Retry-After: 120` sends nothing at or after the deadline
+  and does not sleep the floor; a 500 answered at 5.95 s of a 6 s grant is not retried; `checkAccess` waits a
+  `503`'s `Retry-After: 2`; the clamp; transport failures retried inside the poll (twice then tokens, three
+  exhaust the cap at exactly three requests, retry off makes one) and the same for `cibaPoll`.
 - **C164-25, C164-28, C164-29, C164-33** — the in-poll §16 retry (two `500`s then `200`: three requests, one
   interval; a third `500` exhausts the cap; a `429` and retry-disabled make one request), a 25 s callback
   against a 30 s grant, the 429 mock with the server's exact body, and a distinct refresh token in

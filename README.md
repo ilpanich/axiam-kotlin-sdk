@@ -46,7 +46,8 @@ as `suspend` functions on the same `AxiamClient`.
   not raise the interval for it, and polls again; a single `devicePoll` still raises it as an
   `OAuthProtocolError` (`error == "rate_limit_exceeded"`). The **status decides**: any `429` on a poll
   is that wait, a `429` whose body says `slow_down` included; only the `400 slow_down` raises the
-  interval. A `5xx` is a transport failure whatever its body. See [Device authorization grant](#device-authorization-grant-14).
+  interval. A `5xx` is a transport failure whatever its body, and (like a transport failure) is
+  §16-retried inside the poll (three attempts in total, never a `429`), bounded by the grant's deadline. See [Device authorization grant](#device-authorization-grant-14).
 - **§27.6.2 item 4 — the refusal names the member and the value.** An unknown `termination_action`
   or `service_type` read from the server, on a member the manifest does not state, is refused at
   `plan` as a `ValidationError` whose `fields` name the member and whose message quotes the value
@@ -2513,7 +2514,7 @@ Targets JVM 17. CI runs on JDK 17 via `gradle/actions/setup-gradle`.
 Read-only authorization checks — `checkAccess` (both overloads), `can`, `batchCheck` — retry
 transient failures under the contract's normative table: **3 attempts** (1 initial + 2
 retries), 200 ms base, 5 s cap, **full jitter** (uniform over `[0, backoff]`), and
-`Retry-After` honored as a **floor**.
+`Retry-After` honored as a **floor** (a `429` or `5xx` answer's header, clamped at 60 s).
 
 This SDK had no §16 policy before — only §9.3's refresh-then-retry-once, which is a different
 mechanism. §11.2 rule 5 had been requiring one since it was written.
