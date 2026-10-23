@@ -155,7 +155,8 @@ class CibaTest {
         override fun now(): Instant = start.plus(elapsed)
         override suspend fun sleep(duration: Duration) {
             elapsed = elapsed.plus(duration)
-            sleeps += duration.seconds
+            // The loop's waits; the sub-second §16 backoff inside a poll also sleeps on this clock (C164-48).
+            if (duration.toMillis() >= 1000) sleeps += duration.seconds
         }
     }
 
@@ -381,16 +382,66 @@ class CibaTest {
 
     @Test
     fun `t08c a dropped connection makes exactly three requests, OkHttp's own resend included (C164-39)`() = runBlocking {
-        // The IPv4 literal: a no-resend client does not fall back to a second address, and on a runner
-        // "localhost" can resolve to [::1] first while the mock listens on 127.0.0.1.
-        val client = AxiamClient.builder("http://127.0.0.1:${server.port}", tenant)
-            .oidcClientId(OidcTestKit.CLIENT_ID).oidcClientSecret(secret).build() // retry ENABLED
-        val configuration = client.oidcDiscover().copy(token_endpoint = "http://127.0.0.1:${server.port}/oauth2/token")
+        val client = client() // retry ENABLED
         tokenScript = listOf { MockResponse().setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.DISCONNECT_AFTER_REQUEST) }
         assertThrows<NetworkError> {
-            runBlocking { client.cibaPoll(CibaPollParams(Sensitive.of(random()), configuration = configuration)) }
+            runBlocking { client.cibaPoll(CibaPollParams(Sensitive.of(random()), configuration = client.oidcDiscover())) }
         }
         assertEquals(3, polls.size, "§16.1: three attempts in total; OkHttp's silent resend would make it four")
+    }
+
+    @Test
+    fun `t08d a host whose first address refuses still reaches the server, with the pool empty (C164-44)`() = runBlocking {
+        val dns = object : okhttp3.Dns {
+            override fun lookup(hostname: String): List<java.net.InetAddress> =
+                if (hostname == "localhost") {
+                    listOf(java.net.InetAddress.getByName("127.0.0.2"), java.net.InetAddress.getByName("127.0.0.1"))
+                } else {
+                    okhttp3.Dns.SYSTEM.lookup(hostname)
+                }
+        }
+        val client = AxiamClient.builder("http://localhost:${server.port}", tenant)
+            .oidcClientId(OidcTestKit.CLIENT_ID).oidcClientSecret(secret)
+            .httpClient(okhttp3.OkHttpClient.Builder().dns(dns).build()).build()
+        val configuration = client.oidcDiscover()
+        client.okHttpClient().connectionPool.evictAll()
+        tokenScript = listOf { tokens() }
+
+        val set = client.cibaPoll(CibaPollParams(Sensitive.of(random()), configuration = configuration))
+
+        assertTrue(set.accessToken.expose().isNotEmpty())
+        assertEquals(1, polls.size)
+    }
+
+    @Test
+    fun `t08e every poll 503 with a long Retry-After sends nothing at or after the deadline (P10, C164-43)`() {
+        val client = client()
+        val c = TestClock().also { clock = it }
+        tokenScript = listOf { MockResponse().setResponseCode(503).addHeader("Retry-After", "120") }
+        val started = System.nanoTime()
+
+        val e = assertThrows<OAuthProtocolError> { await(client, initiated(30, 5, c.start), c) }
+
+        assertTrue(e.isExpiredToken)
+        assertTrue(polls.all { it.at < Duration.ofSeconds(30) }, "nothing at or after the deadline: ${polls.map { it.at }}")
+        assertEquals(5, polls.size, "one request per interval; the 120 s floor never waited")
+        assertTrue((System.nanoTime() - started) < 20_000_000_000L)
+    }
+
+    @Test
+    fun `t08f a poll answered 500 just before the deadline is not retried (P10, C164-43)`() {
+        val c = TestClock().also { clock = it }
+        val client = AxiamClient.builder(server.url("/").toString(), tenant)
+            .oidcClientId(OidcTestKit.CLIENT_ID).oidcClientSecret(secret).jitterSource { 1.0 }.build()
+        tokenScript = listOf {
+            c.elapsed = c.elapsed.plusMillis(950) // the answer arrives at 5.95 s of a 6 s grant
+            json(500, """{"error":"server_error"}""")
+        }
+
+        val e = assertThrows<OAuthProtocolError> { await(client, initiated(6, 5, c.start), c) }
+
+        assertTrue(e.isExpiredToken)
+        assertEquals(1, polls.size, "the 200 ms backoff would end at 6.15 s: no retry is sent")
     }
 
     @Test

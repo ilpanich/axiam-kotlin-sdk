@@ -206,7 +206,11 @@ class OidcDeviceFlowTest {
     /** Records every wait instead of sleeping, so the schedule is asserted exactly (§14.6). */
     private class RecordingClock(private val requestSeconds: Long = 0) : CibaClock {
         val start: java.time.Instant = java.time.Instant.now()
+        /** The loop's waits, in whole seconds: a wait of a second or more (the interval, a Retry-After). */
         val sleeps = mutableListOf<Long>()
+
+        /** The sub-second waits: the §16 backoff inside a poll, slept on this clock too (C164-48). */
+        val shortWaitsMillis = mutableListOf<Long>()
 
         /** Time that passed outside any wait, e.g. inside the user-code callback (C164-28). */
         var extraSeconds = 0L
@@ -215,9 +219,10 @@ class OidcDeviceFlowTest {
         var extraMillis = 0L
 
         /** Time spent in requests also passes (C164-05): every wait is followed by one poll of [requestSeconds]. */
-        override fun now(): java.time.Instant = start.plusSeconds(sleeps.sum() + sleeps.size * requestSeconds + extraSeconds).plusMillis(extraMillis)
+        override fun now(): java.time.Instant =
+            start.plusSeconds(sleeps.sum() + sleeps.size * requestSeconds + extraSeconds).plusMillis(extraMillis + shortWaitsMillis.sum())
         override suspend fun sleep(duration: java.time.Duration) {
-            sleeps += duration.seconds
+            if (duration.toMillis() >= 1000) sleeps += duration.seconds else shortWaitsMillis += duration.toMillis()
         }
     }
 
@@ -411,15 +416,23 @@ class OidcDeviceFlowTest {
     }
 
     /**
-     * A client and a configuration addressed by the IPv4 literal: the poll's client does not fall back to a
-     * second address (§16 alone counts attempts), and on a runner "localhost" can resolve to [::1] first
-     * while the mock listens on 127.0.0.1.
+     * A client whose resolver puts a refusing address first: `localhost` -> [127.0.0.2, 127.0.0.1] with the mock
+     * on 127.0.0.1 only. A poll must still reach the server (OkHttp falls back to the next address within the
+     * call), which a client built with `retryOnConnectionFailure(false)` does not (C164-44).
      */
-    private suspend fun literalClient(retry: Boolean = true): Pair<io.axiam.sdk.AxiamClient, OidcConfiguration> {
-        val client = io.axiam.sdk.AxiamClient.builder("http://127.0.0.1:${server.port}", tenantId)
-            .oidcClientId(OidcTestKit.CLIENT_ID).apply { if (!retry) retryDisabled() }.build()
-        val configuration = client.oidcDiscover().copy(token_endpoint = "http://127.0.0.1:${server.port}/oauth2/token")
-        return client to configuration
+    private fun dualStackClient(): io.axiam.sdk.AxiamClient {
+        val dns = object : okhttp3.Dns {
+            override fun lookup(hostname: String): List<java.net.InetAddress> =
+                if (hostname == "localhost") {
+                    listOf(java.net.InetAddress.getByName("127.0.0.2"), java.net.InetAddress.getByName("127.0.0.1"))
+                } else {
+                    okhttp3.Dns.SYSTEM.lookup(hostname)
+                }
+        }
+        return io.axiam.sdk.AxiamClient.builder("http://localhost:${server.port}", tenantId)
+            .oidcClientId(OidcTestKit.CLIENT_ID)
+            .httpClient(okhttp3.OkHttpClient.Builder().dns(dns).build())
+            .build()
     }
 
     private fun transportFailure() = MockResponse().setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.DISCONNECT_AFTER_REQUEST)
@@ -433,8 +446,7 @@ class OidcDeviceFlowTest {
             { requests.incrementAndGet(); tokenSuccess() },
         )
 
-        val (client, configuration) = literalClient()
-        val tokens = client.devicePoll(DevicePollParams(Sensitive.of("dc"), tenantId = tenantId, configuration = configuration))
+        val tokens = deviceClient().devicePoll(DevicePollParams(Sensitive.of("dc"), tenantId = tenantId))
 
         assertEquals("device-access-token", tokens.accessToken.expose())
         assertEquals(3, requests.get())
@@ -445,9 +457,8 @@ class OidcDeviceFlowTest {
         val requests = AtomicInteger(0)
         scriptToken({ requests.incrementAndGet(); transportFailure() })
 
-        val (client, configuration) = literalClient()
         assertThrows(io.axiam.sdk.errors.NetworkError::class.java) {
-            runBlocking { client.devicePoll(DevicePollParams(Sensitive.of("dc"), tenantId = tenantId, configuration = configuration)) }
+            runBlocking { deviceClient().devicePoll(DevicePollParams(Sensitive.of("dc"), tenantId = tenantId)) }
         }
 
         assertEquals(3, requests.get(), "§16.1: three attempts in total; OkHttp's silent resend would make it four")
@@ -457,10 +468,11 @@ class OidcDeviceFlowTest {
     fun `with retry disabled a transport failure makes one request`(): Unit = runBlocking {
         val requests = AtomicInteger(0)
         scriptToken({ requests.incrementAndGet(); transportFailure() })
-        val (client, configuration) = literalClient(retry = false)
+        val client = io.axiam.sdk.AxiamClient.builder(server.url("/").toString(), tenantId)
+            .oidcClientId(OidcTestKit.CLIENT_ID).retryDisabled().build()
 
         assertThrows(io.axiam.sdk.errors.NetworkError::class.java) {
-            runBlocking { client.devicePoll(DevicePollParams(Sensitive.of("dc"), tenantId = tenantId, configuration = configuration)) }
+            runBlocking { client.devicePoll(DevicePollParams(Sensitive.of("dc"), tenantId = tenantId)) }
         }
 
         assertEquals(1, requests.get())
@@ -482,7 +494,8 @@ class OidcDeviceFlowTest {
 
         assertTrue(error.isExpiredToken)
         assertTrue(sentAt.all { it < 30 }, "nothing at or after the deadline: $sentAt")
-        assertEquals(5, sentAt.size, "one request per interval, the 120 s floor never waited")
+        // The exhausted poll's 120 s Retry-After is the floor of the next wait, past the deadline: expired at once.
+        assertEquals(1, sentAt.size, "one request, the 120 s floor never waited")
         assertTrue((System.nanoTime() - started) < 20_000_000_000L, "the Retry-After was not slept")
     }
 
@@ -503,6 +516,55 @@ class OidcDeviceFlowTest {
 
         assertTrue(error.isExpiredToken)
         assertEquals(1, requests.get(), "the 200 ms backoff would end at 6.15 s, past the deadline: no retry is sent")
+    }
+
+    @Test
+    fun `a host whose first address refuses still reaches the server, with the pool empty (C164-44)`(): Unit = runBlocking {
+        val requests = AtomicInteger(0)
+        scriptToken({ requests.incrementAndGet(); tokenSuccess() })
+        val client = dualStackClient()
+        val configuration = client.oidcDiscover()
+        client.okHttpClient().connectionPool.evictAll() // a pooled connection would hide the failure
+
+        val tokens = client.devicePoll(DevicePollParams(Sensitive.of("dc"), tenantId = tenantId, configuration = configuration))
+
+        assertEquals("device-access-token", tokens.accessToken.expose())
+        assertEquals(1, requests.get(), "one token request at the server, in one attempt")
+    }
+
+    @Test
+    fun `a drop after the request was sent is not replayed even with route fallback (C164-39, C164-44)`(): Unit = runBlocking {
+        val requests = AtomicInteger(0)
+        scriptToken({ requests.incrementAndGet(); transportFailure() })
+        val client = dualStackClient()
+        val configuration = client.oidcDiscover()
+        client.okHttpClient().connectionPool.evictAll()
+
+        assertThrows(io.axiam.sdk.errors.NetworkError::class.java) {
+            runBlocking { client.devicePoll(DevicePollParams(Sensitive.of("dc"), tenantId = tenantId, configuration = configuration)) }
+        }
+
+        assertEquals(3, requests.get(), "three attempts in total, no OkHttp replay on top")
+    }
+
+    @Test
+    fun `the in-poll waits sleep on the injected clock, and a 5xx Retry-After outliving the retry stays the floor (C164-48)`() {
+        mountAuthorization(expiresIn = 600, interval = 5)
+        val requests = AtomicInteger(0)
+        scriptToken(
+            { requests.incrementAndGet(); MockResponse().setResponseCode(503).addHeader("Retry-After", "20") },
+            { requests.incrementAndGet(); MockResponse().setResponseCode(503).addHeader("Retry-After", "20") },
+            { requests.incrementAndGet(); MockResponse().setResponseCode(503).addHeader("Retry-After", "20") },
+            { requests.incrementAndGet(); tokenSuccess() },
+        )
+        val clock = RecordingClock()
+
+        login(clock)
+
+        assertEquals(4, requests.get())
+        // 5 s interval, two in-poll waits floored at the 20 s Retry-After, then the exhausted poll's
+        // Retry-After as the floor of the next wait (20 s), not the plain interval.
+        assertEquals(listOf(5L, 20L, 20L, 20L), clock.sleeps)
     }
 
     @Test

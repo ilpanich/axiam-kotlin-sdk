@@ -96,6 +96,7 @@ internal object Retry {
         random: () -> Double = { Random.Default.nextDouble() },
         retryable: (NetworkError) -> Boolean = { true },
         mayWait: (Duration) -> Boolean = { true },
+        sleep: suspend (Duration) -> Unit = { delay(it) },
         op: suspend (attempt: Int) -> T,
     ): T {
         val attempts = if (enabled) MAX_ATTEMPTS else 1
@@ -130,7 +131,7 @@ internal object Retry {
                         reason = e.message ?: e::class.simpleName.orEmpty(),
                     ),
                 )
-                delay(wait)
+                sleep(wait)
             }
         }
         throw last ?: NetworkError("retry loop exhausted without a result")

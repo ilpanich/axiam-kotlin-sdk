@@ -1102,6 +1102,8 @@ internal class OidcSupport(
             mayWait = { wait ->
                 deadline == null || clock!!.now().plusMillis(wait.inWholeMilliseconds).isBefore(deadline)
             },
+            // The in-poll waits sleep on the injected clock inside the loop (C164-48).
+            sleep = { wait -> if (clock != null) clock.sleep(java.time.Duration.ofMillis(wait.inWholeMilliseconds)) else delay(wait) },
         ) { _ ->
             trace.lastStatus = null
             postToken(configuration, form, params.tenantId, withoutSession = true, devicePoll = true, trace = trace)
@@ -1217,7 +1219,9 @@ internal class OidcSupport(
                 }
             } catch (e: NetworkError) {
                 // §14.2 rule 6: transport and 5xx failures are not among the
-                // five protocol answers and are not terminal.
+                // five protocol answers and are not terminal. A 5xx's Retry-After that outlived the
+                // in-poll retry stays the floor of the next wait, as for a 429 (C164-48).
+                e.retryAfter?.let { rateLimitedWaitSeconds = maxOf(intervalSeconds.toLong(), ceilSeconds(it)) }
                 continue
             }
         }
@@ -1229,15 +1233,19 @@ internal class OidcSupport(
     // -- §33 CIBA -------------------------------------------------------------
 
     /**
-     * The transport `cibaInitiate` uses: the shared client with OkHttp's own
-     * silent retry on a connection failure switched off. §33.7 rule 1 forbids
-     * retrying an initiation on ANY transport error, and OkHttp would
-     * otherwise resend a non-one-shot form body on another route after a
-     * dropped connection — a second stored request, and possibly a second
-     * notification to a person, that nobody counted.
+     * A request body OkHttp will not replay once it has been sent (C164-39, C164-44).
+     *
+     * `retryOnConnectionFailure(false)` would also switch off OkHttp 4's fallback to the next
+     * resolved address, so a host whose first address refuses would fail every attempt. A one-shot
+     * body keeps that fallback (a connect failure is not a send) and refuses only the silent
+     * resend after the request was written: §33.7 rule 1 forbids it for `cibaInitiate`, and
+     * §16.1 counts the polls' attempts (three in total) in the §16 runner alone.
      */
-    private val noRetryHttpClient: OkHttpClient by lazy {
-        httpClient.newBuilder().retryOnConnectionFailure(false).build()
+    private class OneShotBody(private val delegate: RequestBody) : RequestBody() {
+        override fun contentType() = delegate.contentType()
+        override fun contentLength() = delegate.contentLength()
+        override fun writeTo(sink: okio.BufferedSink) = delegate.writeTo(sink)
+        override fun isOneShot(): Boolean = true
     }
 
     /**
@@ -1295,10 +1303,10 @@ internal class OidcSupport(
             for ((name, value) in cibaMembers(params)) form.add(name, value)
         }
 
-        val request = Request.Builder().url(url).post(form.build()).build()
-        // §33.7 rule 1: never retried — not by §16, not by OkHttp.
+        val request = Request.Builder().url(url).post(OneShotBody(form.build())).build()
+        // §33.7 rule 1: never retried — not by §16, not by OkHttp (a one-shot body is not replayed).
         val response = try {
-            withContext(Dispatchers.IO) { noRetryHttpClient.newCall(request).execute() }
+            withContext(Dispatchers.IO) { httpClient.newCall(request).execute() }
         } catch (e: IOException) {
             throw NetworkError("cibaInitiate request failed: ${e.javaClass.simpleName}", e)
         }
@@ -1347,24 +1355,35 @@ internal class OidcSupport(
         var lastStatus: Int? = null
     }
 
-    private suspend fun cibaPollTracked(params: CibaPollParams, trace: PollTrace): OidcTokenSet {
+    private suspend fun cibaPollTracked(
+        params: CibaPollParams,
+        trace: PollTrace,
+        deadline: java.time.Instant? = null,
+        clock: CibaClock? = null,
+    ): OidcTokenSet {
         val (clientId, secret) = cibaClientAuth("cibaPoll")
         val configuration = params.configuration ?: oidcDiscover()
         val url = endpointUrl(
             preferredEndpoint(configuration, { it.token_endpoint }, configuration.token_endpoint)!!,
             params.tenantId,
         )
-        val form = buildForm(
-            "grant_type" to CIBA_GRANT_TYPE,
-            "auth_req_id" to params.authReqId.expose(),
-            "client_id" to clientId,
-            "client_secret" to secret,
+        val form = OneShotBody(
+            buildForm(
+                "grant_type" to CIBA_GRANT_TYPE,
+                "auth_req_id" to params.authReqId.expose(),
+                "client_id" to clientId,
+                "client_secret" to secret,
+            ),
         )
         val json = io.axiam.sdk.internal.Retry.withRetry(
             operation = "cibaPoll",
             enabled = retryEnabled,
             telemetry = telemetry,
             random = jitter,
+            // §34.2 P10 (C164-43): a §16 retry inside the poll as `cibaAwait` calls it never waits
+            // past the deadline; nothing is sent after it. The wait sleeps on the injected clock.
+            mayWait = { wait -> deadline == null || clock!!.now().plusMillis(wait.inWholeMilliseconds).isBefore(deadline) },
+            sleep = { wait -> if (clock != null) clock.sleep(java.time.Duration.ofMillis(wait.inWholeMilliseconds)) else delay(wait) },
             // §33.7 rule 5: transport failures, 5xx, 408 and a bodiless 429 are
             // retried; a protocol answer (an OAuthProtocolError, which is not a
             // NetworkError) and any other 4xx are decisive. A 5xx is a
@@ -1373,9 +1392,7 @@ internal class OidcSupport(
         ) { _ ->
             trace.lastStatus = null
             val request = Request.Builder().url(url).post(form).build()
-            // OkHttp's own silent resend after a dropped connection is switched off: §16 alone
-            // counts the attempts (cap 3 in total, C164-39).
-            val response = executeRequest(request, noRetryHttpClient)
+            val response = executeRequest(request)
             response.use {
                 trace.lastStatus = it.code
                 if (it.code >= 500) {
@@ -1430,6 +1447,8 @@ internal class OidcSupport(
                 return cibaPollTracked(
                     CibaPollParams(initiated.authReqId, params.tenantId, configuration),
                     trace,
+                    deadline,
+                    clock,
                 )
             } catch (e: OAuthProtocolError) {
                 when (e.error) {
@@ -1947,11 +1966,12 @@ internal class OidcSupport(
     ): JsonObject {
         // [withoutSession]: the §14 device operations carry the CLIENT's credential
         // and nothing else — no session bearer, no cookie (contract 1.62, §14.6).
-        val builder = Request.Builder().url(url).post(form)
+        // A device poll's body is one-shot: OkHttp falls back to the next address but never replays a
+        // sent request, so §16 alone counts the attempts (cap 3 in total, C164-39, C164-44).
+        val builder = Request.Builder().url(url).post(if (devicePoll) OneShotBody(form) else form)
         if (withoutSession) builder.header(AuthHeaderInterceptor.NO_SESSION_CREDENTIALS_HEADER, "1")
         val request = builder.build()
-        // A device poll counts its attempts under §16 alone: no OkHttp resend (C164-39).
-        val response = executeRequest(request, if (devicePoll) noRetryHttpClient else httpClient)
+        val response = executeRequest(request)
         response.use {
             trace?.lastStatus = it.code
             if (!it.isSuccessful) throw mapOAuth2ErrorResponse(it, fallbackMessage, devicePoll)
