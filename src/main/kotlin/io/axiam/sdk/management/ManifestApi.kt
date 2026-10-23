@@ -579,7 +579,11 @@ class ManifestApi internal constructor(private val api: ManagementApi) {
      * 1.64); an SDK that did not keep it says the value is unknown.
      */
     private fun unknownCarried(summary: String, member: String, raw: String?): ValidationError {
-        val value = if (raw != null) "$member \"${raw.take(MAX_QUOTED_VALUE)}\"" else "a $member (the value is unknown)"
+        val value = if (raw != null) {
+            // JSON-escaped and quoted: the text is the server's, and a quote or a newline in it
+            // must not reach the message or the log verbatim (C164-21).
+            "$member " + kotlinx.serialization.json.JsonPrimitive(raw.take(MAX_QUOTED_VALUE))
+        } else "a $member (the value is unknown)"
         val msg = "$summary: the server returned $value this SDK does not know, the manifest does not " +
             "state $member, and the profile would be updated; an unknown value is never sent " +
             "(§34.2 P12.2). Nothing was sent: state $member in the manifest (§27.6.2 item 4)."

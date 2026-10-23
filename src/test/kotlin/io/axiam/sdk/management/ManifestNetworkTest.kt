@@ -395,6 +395,15 @@ class ManifestNetworkTest : ManagementTestBase() {
     }
 
     @Test
+    fun `the quoted raw value is JSON-escaped and capped (C164-21)`() = runTest {
+        unknownProfileMount(action = "a\\\"b\\nc", service = "null")
+        val m = manifest(profiles = listOf(NetworkProfileSpec("lab", 900)))
+        val e = assertThrows(ValidationError::class.java) { runBlocking { client.management().manifest().plan(m) } }
+        assertTrue(e.message!!.contains("\"a\\\"b\\nc\""), "escaped and quoted: ${e.message}")
+        assertFalse(e.message!!.contains('\n'), "no raw newline reaches the message")
+    }
+
+    @Test
     fun `an unknown service_type on an unstated member is refused at plan, and apply is refused the same way`() = runTest {
         val put = unknownProfileMount(action = "radius_request", service = "\"future\"")
         val m = manifest(profiles = listOf(NetworkProfileSpec("lab", 900)))
