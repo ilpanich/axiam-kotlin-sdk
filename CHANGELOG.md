@@ -69,7 +69,19 @@ one model addition is a pair of trailing members with a default.
   without the bound would sleep past the deadline.
 - **OkHttp's own resend after a dropped connection is switched off for the device poll and the CIBA poll**
   (§16.1 cap of three attempts in total, C164-39): three disconnects then `200` made four requests; now
-  three attempts are counted by §16 alone, as for `cibaInitiate`.
+  three attempts are counted by §16 alone, as for `cibaInitiate`. **Done with a one-shot request body, not with
+  `retryOnConnectionFailure(false)`** (C164-44): on OkHttp 4.12 that setting also switches off the fallback to the
+  next resolved address, so a host whose first address refuses (an AAAA record on an IPv4-only path, a
+  dual-stack `localhost`) failed every poll once the connection pool was empty and `deviceLogin`/`cibaAwait`
+  could only end in `expired_token`. A one-shot body keeps the fallback (a connect failure is not a send) and
+  refuses only the replay of a request that was written. `cibaInitiate` uses the same body.
+- **The CIBA in-poll retry honours the deadline** (§33.7 rule 5, §34.2 P10, C164-43): `cibaAwait` hands its
+  deadline and clock to the poll, and a §16 retry whose wait would end at or past `received_at + expires_in` is
+  not sent; before round 3's `Retry-After` floor this was jitter only, with it a `503` + `Retry-After: 120`
+  would have been served up to 60 s twice past the deadline.
+- **The in-poll waits sleep on the injected clock, and a 5xx's `Retry-After` that outlived the retry stays the
+  floor of the next interval** (C164-48), as a 429's does. The 60 s clamp on `Retry-After` is kept (README states
+  it); a longer value is waited at 60 s rather than refusing the retry.
 - **The value quoted by the refusal at `plan` is JSON-escaped and capped at 64 characters**
   (C164-21): a quote or a newline in server text no longer reaches the message verbatim.
 
@@ -101,6 +113,12 @@ one model addition is a pair of trailing members with a default.
   revocation endpoints gets no session bearer, cookie or CSRF header on them (revoke is called
   through the client after a cookie login, so only the discovery wiring protects it), the next
   management `POST` carries both as the control, and an unadvertised path still does.
+- **Round 4 — C164-43, -44, -48:** a host whose first address refuses (custom `Dns` `[127.0.0.2, 127.0.0.1]`,
+  pool evicted) still reaches the server for `devicePoll` and `cibaPoll` in one request; a drop after the body was
+  sent is not replayed (three attempts, not four, route fallback on); the CIBA P10 case (`expires_in` 30, every poll
+  `503` + `Retry-After: 120`: five polls, all before the deadline) and a poll answered at 5.95 s of 6 s is not
+  retried; the in-poll waits are recorded on the clock; the exhausted poll's `Retry-After` is the next wait. The
+  exact-count tests are back on `localhost`.
 - **Round 3 — C164-36, -37, -38, -39, -41:** 503 + `Retry-After: 120` sends nothing at or after the deadline
   and does not sleep the floor; a 500 answered at 5.95 s of a 6 s grant is not retried; `checkAccess` waits a
   `503`'s `Retry-After: 2`; the clamp; transport failures retried inside the poll (twice then tokens, three
