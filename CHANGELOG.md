@@ -46,6 +46,16 @@ one model addition is a pair of trailing members with a default.
 - **The `expires_in` deadline is an instant on the clock** (§14.2 rule 4, C164-05): taken when the
   authorization arrives, so request time and slow answers count against it; before, only the waits
   slept were subtracted and a slow server could be polled past the deadline.
+- **The device poll is §16-retried inside the attempt** (§14.2 rule 6, §16.2, contract 1.64 amended;
+  C164-25): a `5xx` or a transport failure on `devicePoll` is retried under §16 (three attempts in
+  total, `Retry-After` as the floor) before the loop takes its next interval; a `429` and any other
+  `4xx` are not. With retry disabled it is one request per poll.
+- **A single `devicePoll` raises every `429` as `OAuthProtocolError("rate_limit_exceeded")`** (C164-32),
+  a bodiless or proxy one included and a `429` whose body says `slow_down` too; 1.1.1 raised those as
+  `NetworkError`, so a hand-rolled loop whose `catch (e: NetworkError)` handled a proxy's `429` must
+  also handle `OAuthProtocolError` (an `AuthError`).
+- **The deadline is taken before the user-code callback** (C164-28), so the callback's time counts
+  against `expires_in`.
 - **The value quoted by the refusal at `plan` is JSON-escaped and capped at 64 characters**
   (C164-21): a quote or a newline in server text no longer reaches the message verbatim.
 
@@ -77,6 +87,10 @@ one model addition is a pair of trailing members with a default.
   revocation endpoints gets no session bearer, cookie or CSRF header on them (revoke is called
   through the client after a cookie login, so only the discovery wiring protects it), the next
   management `POST` carries both as the control, and an unadvertised path still does.
+- **C164-25, C164-28, C164-29, C164-33** — the in-poll §16 retry (two `500`s then `200`: three requests, one
+  interval; a third `500` exhausts the cap; a `429` and retry-disabled make one request), a 25 s callback
+  against a 30 s grant, the 429 mock with the server's exact body, and a distinct refresh token in
+  `OidcRefreshTest` (it flaked under load).
 - **Contract 1.64 amended** — a `500 {"error":"server_error"}` mid-poll, a `429 slow_down`, a
   bodiless `429` with `Retry-After`, and a deadline that counts request time.
 
