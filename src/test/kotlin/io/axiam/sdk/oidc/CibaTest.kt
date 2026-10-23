@@ -298,6 +298,49 @@ class CibaTest {
         }
     }
 
+    @Test
+    fun `t04b initiate is sent once over a pooled connection that drops, on 503 with Retry-After 0, and on 408 (C164-53)`() = runBlocking {
+        val client = client() // retry ENABLED
+        val configuration = client.oidcDiscover() // leaves a kept-alive connection in the pool
+        fun p() = params(client).copy(configuration = configuration)
+
+        bcAnswer = { MockResponse().setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.DISCONNECT_AFTER_REQUEST) }
+        assertThrows<NetworkError> { runBlocking { client.cibaInitiate(p()) } }
+        assertEquals(1, initiates.size, "a drop on a pooled connection: OkHttp does not replay a one-shot body")
+
+        client.oidcDiscover(); client.okHttpClient().connectionPool.evictAll()
+        bcAnswer = { MockResponse().setResponseCode(503).addHeader("Retry-After", "0") }
+        assertThrows<NetworkError> { runBlocking { client.cibaInitiate(p()) } }
+        assertEquals(2, initiates.size, "503 + Retry-After: 0 is not followed up by OkHttp")
+
+        bcAnswer = { MockResponse().setResponseCode(408) }
+        assertThrows<NetworkError> { runBlocking { client.cibaInitiate(p()) } }
+        assertEquals(3, initiates.size, "408 is not followed up by OkHttp")
+    }
+
+    @Test
+    fun `t04c a host whose first address refuses still reaches bc-authorize, with the pool empty (C164-53)`() = runBlocking {
+        val dns = object : okhttp3.Dns {
+            override fun lookup(hostname: String): List<java.net.InetAddress> =
+                if (hostname == "localhost") {
+                    listOf(java.net.InetAddress.getByName("127.0.0.2"), java.net.InetAddress.getByName("127.0.0.1"))
+                } else {
+                    okhttp3.Dns.SYSTEM.lookup(hostname)
+                }
+        }
+        val client = AxiamClient.builder("http://localhost:${server.port}", tenant)
+            .oidcClientId(OidcTestKit.CLIENT_ID).oidcClientSecret(secret)
+            .httpClient(okhttp3.OkHttpClient.Builder().dns(dns).build()).build()
+        val configuration = client.oidcDiscover()
+        client.okHttpClient().connectionPool.evictAll()
+
+        client.cibaInitiate(
+            CibaInitiateParams(scope = "openid", hint = CibaUserHint.LoginHint("ada"), configuration = configuration),
+        )
+
+        assertEquals(1, initiates.size)
+    }
+
     // -- 5. Poll outcomes -------------------------------------------------------------------------
 
     @Test
@@ -426,6 +469,35 @@ class CibaTest {
         assertTrue(polls.all { it.at < Duration.ofSeconds(30) }, "nothing at or after the deadline: ${polls.map { it.at }}")
         assertEquals(5, polls.size, "one request per interval; the 120 s floor never waited")
         assertTrue((System.nanoTime() - started) < 20_000_000_000L)
+    }
+
+    @Test
+    fun `t08g the in-poll waits sleep on the injected clock (C164-54)`() {
+        val client = client()
+        val c = TestClock().also { clock = it }
+        tokenScript = listOf(
+            { MockResponse().setResponseCode(503).addHeader("Retry-After", "2") },
+            { MockResponse().setResponseCode(503).addHeader("Retry-After", "2") },
+            { tokens() },
+        )
+
+        await(client, initiated(600, 5, c.start), c)
+
+        assertEquals(3, polls.size)
+        assertEquals(listOf(5L, 2L, 2L), c.sleeps, "the interval, then the two Retry-After floors, on the clock")
+    }
+
+    @Test
+    fun `t08h a retry whose wait ends exactly at the deadline is not sent (C164-54)`() {
+        val client = client()
+        val c = TestClock().also { clock = it }
+        // The poll leaves at 5 s of a 6 s grant; the 1 s floor ends exactly at 6 s.
+        tokenScript = listOf { MockResponse().setResponseCode(503).addHeader("Retry-After", "1") }
+
+        val e = assertThrows<OAuthProtocolError> { await(client, initiated(6, 5, c.start), c) }
+
+        assertTrue(e.isExpiredToken)
+        assertEquals(1, polls.size)
     }
 
     @Test

@@ -537,8 +537,9 @@ class OidcDeviceFlowTest {
         val requests = AtomicInteger(0)
         scriptToken({ requests.incrementAndGet(); transportFailure() })
         val client = dualStackClient()
+        // The discovery connection stays pooled: a drop on a REUSED connection is what OkHttp replays
+        // for a plain body (a fresh one is not replayed either way) (C164-54).
         val configuration = client.oidcDiscover()
-        client.okHttpClient().connectionPool.evictAll()
 
         assertThrows(io.axiam.sdk.errors.NetworkError::class.java) {
             runBlocking { client.devicePoll(DevicePollParams(Sensitive.of("dc"), tenantId = tenantId, configuration = configuration)) }
@@ -565,6 +566,20 @@ class OidcDeviceFlowTest {
         // 5 s interval, two in-poll waits floored at the 20 s Retry-After, then the exhausted poll's
         // Retry-After as the floor of the next wait (20 s), not the plain interval.
         assertEquals(listOf(5L, 20L, 20L, 20L), clock.sleeps)
+    }
+
+    @Test
+    fun `a retry whose wait ends exactly at the deadline is not sent (C164-54)`() {
+        mountAuthorization(expiresIn = 6, interval = 5)
+        val requests = AtomicInteger(0)
+        // The poll leaves at 5 s of a 6 s grant; the 1 s floor ends exactly at 6 s.
+        scriptToken({ requests.incrementAndGet(); MockResponse().setResponseCode(503).addHeader("Retry-After", "1") })
+        val clock = RecordingClock()
+
+        val error = assertThrows(OAuthProtocolError::class.java) { login(clock) }
+
+        assertTrue(error.isExpiredToken)
+        assertEquals(1, requests.get())
     }
 
     @Test
