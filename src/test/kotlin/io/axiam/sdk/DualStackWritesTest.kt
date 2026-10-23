@@ -11,6 +11,7 @@ import okhttp3.mockwebserver.RecordedRequest
 import okhttp3.mockwebserver.SocketPolicy
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -35,7 +36,7 @@ class DualStackWritesTest {
     private val seen = Collections.synchronizedList(mutableListOf<RecordedRequest>())
     private val tenant = "22222222-2222-2222-2222-222222222222"
     private val groupId = UUID.randomUUID()
-    private var dropGroups = false
+    private var drop = false
 
     @BeforeEach
     fun setUp() {
@@ -45,9 +46,9 @@ class DualStackWritesTest {
                 val path = request.requestUrl?.encodedPath ?: ""
                 return when {
                     path == "/api/v1/auth/login" -> TestSupport.loginOkResponse()
-                    path.startsWith("/api/v1/") || path.startsWith("/oauth2/register/") -> {
+                    path.startsWith("/api/v1/") || path.startsWith("/oauth2/register/") || path.startsWith("/ssf/v1/poll/") -> {
                         seen += request
-                        if (dropGroups) {
+                        if (drop) {
                             MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST)
                         } else {
                             MockResponse().setResponseCode(204)
@@ -65,18 +66,35 @@ class DualStackWritesTest {
         server.shutdown()
     }
 
-    private fun client(): AxiamClient {
-        val dns = object : Dns {
-            override fun lookup(hostname: String): List<InetAddress> =
-                if (hostname == "localhost") {
-                    listOf(InetAddress.getByName("127.0.0.2"), InetAddress.getByName("127.0.0.1"))
-                } else {
-                    Dns.SYSTEM.lookup(hostname)
-                }
-        }
-        return AxiamClient.builder("http://localhost:${server.port}", tenant)
-            .httpClient(OkHttpClient.Builder().dns(dns).build())
+    private fun dualStack() = object : Dns {
+        override fun lookup(hostname: String): List<InetAddress> =
+            if (hostname == "localhost") {
+                listOf(InetAddress.getByName("127.0.0.2"), InetAddress.getByName("127.0.0.1"))
+            } else {
+                Dns.SYSTEM.lookup(hostname)
+            }
+    }
+
+    private fun client(): AxiamClient =
+        AxiamClient.builder("http://localhost:${server.port}", tenant)
+            .httpClient(OkHttpClient.Builder().dns(dualStack()).build())
             .build()
+
+    private val registrationUri get() = "http://localhost:${server.port}/oauth2/register/dcr-client-1?tenant_id=$tenant"
+
+    private fun registrations() = seen.filter { it.path?.startsWith("/oauth2/register/") == true }
+
+    private fun ssfPolls() = seen.filter { it.path?.startsWith("/ssf/v1/poll/") == true }
+
+    /** A logged-in client with a kept-alive connection to 127.0.0.1 in the pool, then the server drops what it reads. */
+    private suspend fun pooledClientThatDrops(retry: Boolean = true): AxiamClient {
+        val client = AxiamClient.builder("http://localhost:${server.port}", tenant)
+            .httpClient(OkHttpClient.Builder().dns(dualStack()).build())
+            .apply { if (!retry) retryDisabled() }
+            .build()
+        client.login("admin@example.test", "hunter2hunter2")
+        drop = true
+        return client
     }
 
     private fun writes() = seen.filter { it.path?.startsWith("/api/v1/groups") == true }
@@ -110,7 +128,7 @@ class DualStackWritesTest {
     fun `a management write is not replayed after a drop on a pooled connection (P11)`(): Unit = runBlocking {
         val client = client()
         client.login("admin@example.test", "hunter2hunter2") // leaves a pooled connection to 127.0.0.1
-        dropGroups = true
+        drop = true
 
         assertThrows<NetworkError> { runBlocking { client.groups.delete(groupId) } }
 
@@ -122,11 +140,78 @@ class DualStackWritesTest {
         val client = client()
         client.login("admin@example.test", "hunter2hunter2")
         client.okHttpClient().connectionPool.evictAll()
-        val uri = "http://localhost:${server.port}/oauth2/register/dcr-client-1?tenant_id=$tenant"
+        val uri = registrationUri
 
         client.deleteClientRegistration(uri, Sensitive.of(Redaction.secret("tok-")))
 
         val deletes = seen.filter { it.path?.startsWith("/oauth2/register/") == true }
         assertEquals(1, deletes.size, "one DELETE at the server")
+    }
+
+    // -- C164-56: the P11 read-and-drop case on each sessionless write ------------------------------
+
+    @Test
+    fun `a registration DELETE is sent once over a pooled connection that drops (P11, C164-56)`(): Unit = runBlocking {
+        val client = pooledClientThatDrops()
+
+        assertThrows<NetworkError> {
+            runBlocking { client.deleteClientRegistration(registrationUri, Sensitive.of(Redaction.secret("tok-"))) }
+        }
+
+        assertEquals(1, registrations().size, "exactly one DELETE")
+    }
+
+    @Test
+    fun `a registration PUT is sent once over a pooled connection that drops (P11, C164-56)`(): Unit = runBlocking {
+        val client = pooledClientThatDrops()
+
+        assertThrows<NetworkError> {
+            runBlocking {
+                client.updateClientRegistration(
+                    registrationUri, Sensitive.of(Redaction.secret("tok-")),
+                    io.axiam.sdk.oidc.ClientRegistration("dcr-client-1"),
+                )
+            }
+        }
+
+        assertEquals(1, registrations().size, "exactly one PUT")
+    }
+
+    @Test
+    fun `ssf poll is sent exactly three times, its section 16 cap, over a pooled connection that drops (P11, C164-56)`(): Unit = runBlocking {
+        val client = pooledClientThatDrops()
+        val receiver = io.axiam.sdk.ssf.SsfReceiver(
+            client,
+            io.axiam.sdk.ssf.SsfReceiverConfig(
+                "https://iam.example.test/t/$tenant",
+                "https://rp.example.test",
+                io.axiam.sdk.ssf.SsfKeySource.JwksUri("http://localhost:${server.port}/oauth2/jwks"),
+                accessTokenProvider = { Sensitive.of(Redaction.secret("cc-")) },
+            ),
+        )
+
+        assertThrows<NetworkError> { runBlocking { receiver.poll("stream-1") } }
+
+        assertEquals(3, ssfPolls().size, "three attempts under §16, no OkHttp replay on top")
+    }
+
+    // -- C164-55: the one sessionless READ is an idempotent GET OkHttp may recover once -----------------
+
+    @Test
+    fun `a registration read over a pooled connection that drops reaches at most four sends with retry, two without (C164-55)`(): Unit = runBlocking {
+        val client = pooledClientThatDrops()
+        assertThrows<NetworkError> {
+            runBlocking { client.readClientRegistration(registrationUri, Sensitive.of(Redaction.secret("tok-"))) }
+        }
+        val withRetry = registrations().size
+        assertTrue(withRetry in 3..4, "§16's three attempts, plus at most one OkHttp recovery of the idempotent GET: $withRetry")
+
+        seen.clear()
+        val without = pooledClientThatDrops(retry = false)
+        assertThrows<NetworkError> {
+            runBlocking { without.readClientRegistration(registrationUri, Sensitive.of(Redaction.secret("tok-"))) }
+        }
+        val withoutRetry = registrations().size
+        assertTrue(withoutRetry in 1..2, "one attempt, plus at most one OkHttp recovery: $withoutRetry")
     }
 }
