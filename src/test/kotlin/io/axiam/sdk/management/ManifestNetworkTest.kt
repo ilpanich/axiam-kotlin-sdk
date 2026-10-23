@@ -12,7 +12,6 @@ import io.axiam.sdk.management.models.RadiusServiceType
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -445,11 +444,11 @@ class ManifestNetworkTest : ManagementTestBase() {
         val sent = put.last().json()["profile"]!!.jsonObject
         assertEquals(JsonPrimitive("framed_user"), sent["service_type"], "the stated value, never the unknown one")
 
-        // "None" is stated too: it replaces the unknown value and is sent as null.
+        // "None" is stated too: it replaces the unknown value and is left out of the body.
         val none = manifest(profiles = listOf(NetworkProfileSpec("lab", 900, serviceType = JsonNullable.Null)))
         client.management().manifest().apply(none)
         assertEquals(2, put.calls())
-        assertEquals(JsonNull, put.last().json()["profile"]!!.jsonObject["service_type"])
+        assertFalse(put.last().json()["profile"]!!.jsonObject.containsKey("service_type"), "none: the key is left out, never the unknown value")
     }
 
     // -- refusals before any request -----------------------------------------------------------
