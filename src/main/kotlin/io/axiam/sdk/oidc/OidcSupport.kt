@@ -156,8 +156,27 @@ internal class OidcSupport(
         val response = executeRequest(request)
         response.use {
             if (it.code != 200) throw ErrorMapper.fromHttpStatus(it.code, "oidc discovery request failed", it)
-            return parseDiscoveryDocument(parseJsonObject(it))
+            return parseDiscoveryDocument(parseJsonObject(it)).also(::registerAdvertisedEndpoints)
         }
+    }
+
+    /**
+     * C163-19: the endpoints the document advertises are `/oauth2/*` requests
+     * for §12.1 rule 3 wherever they sit, so the session and CSRF exclusion
+     * follows them rather than the conventional `{base}/oauth2/` layout.
+     */
+    private fun registerAdvertisedEndpoints(doc: OidcConfiguration) {
+        val aliases = doc.mtls_endpoint_aliases
+        session.registerOauth2Endpoints(
+            listOf(
+                doc.authorization_endpoint, doc.token_endpoint, doc.jwks_uri, doc.revocation_endpoint,
+                doc.introspection_endpoint, doc.device_authorization_endpoint,
+                doc.pushed_authorization_request_endpoint, doc.backchannel_authentication_endpoint,
+                aliases?.token_endpoint, aliases?.revocation_endpoint, aliases?.introspection_endpoint,
+                aliases?.device_authorization_endpoint, aliases?.pushed_authorization_request_endpoint,
+                aliases?.backchannel_authentication_endpoint,
+            ),
+        )
     }
 
     private fun parseDiscoveryDocument(json: JsonObject): OidcConfiguration = OidcConfiguration(
@@ -1089,6 +1108,10 @@ internal class OidcSupport(
      * failure mid-poll is **not** terminal (rule 6) — a server restart must not
      * lose a grant the user has already approved.
      *
+     * A `429 rate_limit_exceeded` on a poll is waited out (rule 9, contract 1.64):
+     * `Retry-After` is a minimum, the wait counts as one interval, and the
+     * interval is not raised for it.
+     *
      * The inter-poll wait is `delay`, so cancelling the calling coroutine
      * cancels the login promptly rather than after the current interval.
      */
@@ -1105,16 +1128,23 @@ internal class OidcSupport(
         // §14.3 rule 2 — before any polling.
         params.onUserCode(authorization)
 
+        val clock = params.clock
         var intervalSeconds = authorization.interval
         var remainingSeconds = authorization.expiresIn
+        // §14.2 rule 9 (contract 1.64): after a `429`, the wait that stands in for the next
+        // interval — at least the Retry-After, never less than the interval itself.
+        var rateLimitedWaitSeconds: Long? = null
 
         while (true) {
+            val waitSeconds = rateLimitedWaitSeconds ?: intervalSeconds.toLong()
+            rateLimitedWaitSeconds = null
             // §14.2 rule 4: the deadline is authoritative. Checking before
             // waiting keeps the SDK from issuing a request that can only be
             // refused, and reports it under the same `expired_token` code the
             // server would have used — so a caller's branch does not care which
-            // side noticed first.
-            if (intervalSeconds >= remainingSeconds) {
+            // side noticed first. A Retry-After past the deadline is capped by
+            // the same rule, at once (§14.6, contract 1.64).
+            if (waitSeconds >= remainingSeconds) {
                 throw OAuthProtocolError(
                     error = "expired_token",
                     errorDescription = "the device authorization expired before the user " +
@@ -1122,9 +1152,9 @@ internal class OidcSupport(
                         "CONTRACT.md §14.2 rule 4)",
                 )
             }
-            remainingSeconds -= intervalSeconds
+            remainingSeconds -= waitSeconds
 
-            delay(intervalSeconds * 1000L)
+            clock.sleep(java.time.Duration.ofSeconds(waitSeconds))
 
             try {
                 return devicePoll(
@@ -1142,6 +1172,13 @@ internal class OidcSupport(
                         intervalSeconds += SLOW_DOWN_INCREMENT_SECONDS
                         continue
                     }
+                    // §14.2 rule 9 (contract 1.64): not terminal. Wait the Retry-After out as
+                    // a minimum, count it as one interval, leave the interval alone.
+                    "rate_limit_exceeded" -> {
+                        val retryAfterSeconds = e.retryAfter?.let { ceilSeconds(it) } ?: 0L
+                        rateLimitedWaitSeconds = maxOf(intervalSeconds.toLong(), retryAfterSeconds)
+                        continue
+                    }
                     // expired_token / access_denied / invalid_grant — terminal.
                     else -> throw e
                 }
@@ -1152,6 +1189,9 @@ internal class OidcSupport(
             }
         }
     }
+
+    private fun ceilSeconds(d: kotlin.time.Duration): Long =
+        (d.inWholeMilliseconds + 999L) / 1000L
 
     // -- §33 CIBA -------------------------------------------------------------
 
@@ -1935,6 +1975,15 @@ internal class OidcSupport(
             }
             val parsed = bodyText?.let(::parseOAuth2ErrorBody)
             if (parsed != null) return OAuthProtocolError(parsed.first, parsed.second)
+        }
+        if (response.code == 429) {
+            // §14.2 rule 9 (contract 1.63): a `429 {"error":"rate_limit_exceeded"}` is the §2
+            // OAuthProtocolError dispatched on `error`, carrying its Retry-After for the loop.
+            val limited = ErrorMapper.fromOAuth2ResponseAtAnyStatus(fallbackMessage, response)
+            if (limited is OAuthProtocolError) {
+                limited.retryAfter = ErrorMapper.retryAfterOf(response)
+                return limited
+            }
         }
         return ErrorMapper.fromHttpStatus(response.code, fallbackMessage, response)
     }

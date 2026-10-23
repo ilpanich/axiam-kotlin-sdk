@@ -198,6 +198,105 @@ class OidcDeviceFlowTest {
         assertEquals("device-access-token", tokens.accessToken.expose())
     }
 
+    // -----------------------------------------------------------------------
+    // Contract 1.64, §14.2 rule 9 / §14.6: a 429 on a poll is waited out
+    // -----------------------------------------------------------------------
+
+    /** Records every wait instead of sleeping, so the schedule is asserted exactly (§14.6). */
+    private class RecordingClock : CibaClock {
+        val start: java.time.Instant = java.time.Instant.now()
+        val sleeps = mutableListOf<Long>()
+        override fun now(): java.time.Instant = start.plusSeconds(sleeps.sum())
+        override suspend fun sleep(duration: java.time.Duration) {
+            sleeps += duration.seconds
+        }
+    }
+
+    private fun rateLimited(retryAfter: String) = MockResponse()
+        .setResponseCode(429)
+        .addHeader("Content-Type", "application/json")
+        .addHeader("Retry-After", retryAfter)
+        .setBody(OidcTestKit.oauth2ErrorJson("rate_limit_exceeded", "too many requests"))
+
+    private fun login(clock: RecordingClock): OidcTokenSet = runBlocking {
+        deviceClient().deviceLogin(
+            DeviceLoginParams(tenantId = tenantId, onUserCode = { }).also { it.clock = clock },
+        )
+    }
+
+    @Test
+    fun `a 429 with Retry-After is waited out, the loop polls again and completes, and the interval is unchanged`() {
+        mountAuthorization(expiresIn = 600, interval = 5)
+        val polls = AtomicInteger(0)
+        scriptToken(
+            { polls.incrementAndGet(); rateLimited("30") },
+            { polls.incrementAndGet(); oauthError("authorization_pending") },
+            { polls.incrementAndGet(); tokenSuccess() },
+        )
+        val clock = RecordingClock()
+
+        val tokens = login(clock)
+
+        assertEquals("device-access-token", tokens.accessToken.expose())
+        assertEquals(3, polls.get(), "the 429 is answered by another poll, not by raising")
+        assertEquals(
+            listOf(5L, 30L, 5L),
+            clock.sleeps,
+            "the 429 waited the Retry-After (a minimum, standing for that interval), and the poll " +
+                "after it is scheduled at the interval held before — not five seconds longer",
+        )
+    }
+
+    @Test
+    fun `a Retry-After shorter than the interval does not shorten the wait`() {
+        mountAuthorization(expiresIn = 600, interval = 5)
+        scriptToken({ rateLimited("1") }, { tokenSuccess() })
+        val clock = RecordingClock()
+
+        login(clock)
+
+        assertEquals(listOf(5L, 5L), clock.sleeps, "a Retry-After is a minimum, never below the interval")
+    }
+
+    @Test
+    fun `slow_down still raises the interval after a 429 and only the 400 does`() {
+        mountAuthorization(expiresIn = 600, interval = 5)
+        scriptToken({ rateLimited("20") }, { oauthError("slow_down") }, { tokenSuccess() })
+        val clock = RecordingClock()
+
+        login(clock)
+
+        assertEquals(listOf(5L, 20L, 10L), clock.sleeps)
+    }
+
+    @Test
+    fun `a Retry-After past the expires_in deadline ends in expired_token and sends nothing after it`() {
+        mountAuthorization(expiresIn = 20, interval = 5)
+        val polls = AtomicInteger(0)
+        scriptToken({ polls.incrementAndGet(); rateLimited("3600") })
+        val clock = RecordingClock()
+
+        val error = assertThrows(OAuthProtocolError::class.java) { login(clock) }
+
+        assertTrue(error.isExpiredToken, "rule 4: the typed expired_token outcome")
+        assertEquals(1, polls.get(), "nothing is sent after the deadline")
+        assertEquals(listOf(5L), clock.sleeps, "raised at once, without serving the wait")
+    }
+
+    @Test
+    fun `a single devicePoll raises the 429 as an OAuthProtocolError carrying its Retry-After`(): Unit = runBlocking {
+        scriptToken({ rateLimited("7") })
+
+        val error = assertThrows(OAuthProtocolError::class.java) {
+            runBlocking {
+                deviceClient().devicePoll(DevicePollParams(deviceCode = Sensitive.of("dc"), tenantId = tenantId))
+            }
+        }
+
+        assertEquals("rate_limit_exceeded", error.error)
+        assertEquals(kotlin.time.Duration.parse("7s"), error.retryAfter)
+    }
+
     @Test
     fun `access_denied, expired_token and invalid_grant are terminal and distinct`(): Unit = runBlocking {
         // §14.2 rule 3: "a human said no" and "nobody answered" are the only

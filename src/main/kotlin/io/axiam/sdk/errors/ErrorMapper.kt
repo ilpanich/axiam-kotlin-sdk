@@ -4,6 +4,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.Response
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * Central HTTP-status → error-type mapper (CONTRACT.md §2). The single source
@@ -85,6 +87,23 @@ object ErrorMapper {
         } catch (_: Exception) {
             null
         }
+
+    /**
+     * The response's `Retry-After` (RFC 9110 §10.2.3) as a [kotlin.time.Duration]:
+     * delta-seconds or an HTTP-date, `null` when absent, unparseable or negative.
+     */
+    internal fun retryAfterOf(response: Response): kotlin.time.Duration? {
+        val raw = response.header("Retry-After")?.trim().orEmpty()
+        if (raw.isEmpty()) return null
+        raw.toLongOrNull()?.let { return if (it >= 0) it.seconds else null }
+        val at = try {
+            java.time.ZonedDateTime.parse(raw, java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME)
+        } catch (_: java.time.format.DateTimeParseException) {
+            return null
+        }
+        val ms = at.toInstant().toEpochMilli() - System.currentTimeMillis()
+        return if (ms > 0) ms.milliseconds else kotlin.time.Duration.ZERO
+    }
 
     private fun authzErrorFromBody(message: String, response: Response?): AuthzError {
         if (response == null || response.body == null) {
