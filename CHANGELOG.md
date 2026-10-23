@@ -9,9 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.1.2] - 2026-10-23
 
-Contract 1.64 (accompanying the AXIAM 1.1.2 release): `CONTRACT.md`, `openapi.json`,
-`management-registry.json` and `proto/` re-vendored byte for byte from `ilpanich/axiam` `fb92ec4`
-(`proto/` and `opaque-test-vectors.json` are unchanged; the §27 surface regenerates to 202
+Contract 1.64 (accompanying the AXIAM 1.1.2 release): `CONTRACT.md` re-vendored byte for byte from
+`ilpanich/axiam` `21beda0` (1.64 as amended 2026-10-23, sha256 `8b2cb9a3…7a9a`), `openapi.json`,
+`management-registry.json` and `proto/` from `fb92ec4` (`proto/` and `opaque-test-vectors.json` are unchanged; the §27 surface regenerates to 202
 operations across 29 namespaces, none added), and the README states conformance at contract 1.64.
 Closes ilpanich/axiam-kotlin-sdk#79. This is a **patch** release: nothing below removes or retypes
 a public member. The refusal that changes type is now a `ValidationError`, which is a
@@ -38,6 +38,16 @@ one model addition is a pair of trailing members with a default.
   backchannel endpoints (and their `mtls_endpoint_aliases`) of the discovery document are now
   matched by origin and path as well, so a deployment that serves them elsewhere gets the same
   treatment. The conventional prefix still applies before discovery has run.
+- **The status decides on a poll** (§14.2 rules 6 and 9, contract 1.64 amended; C164-04, C164-17):
+  any `429` on a device poll is the rate-limit wait, whatever its body names, and a `429` whose body
+  says `slow_down` (a server before 1.1.2, or an intermediary) no longer raises the interval — only
+  the `400` does. A bodiless `429` honours its `Retry-After` as the floor of the wait. A `500`
+  whose body is `{"error":"server_error"}` is a transport failure and does not end the flow.
+- **The `expires_in` deadline is an instant on the clock** (§14.2 rule 4, C164-05): taken when the
+  authorization arrives, so request time and slow answers count against it; before, only the waits
+  slept were subtracted and a slow server could be polled past the deadline.
+- **The value quoted by the refusal at `plan` is JSON-escaped and capped at 64 characters**
+  (C164-21): a quote or a newline in server text no longer reaches the message verbatim.
 
 ### Added
 
@@ -51,7 +61,7 @@ one model addition is a pair of trailing members with a default.
 ### Fixed
 
 - **README and change log text** (C163-18): the 1.60 list said a read's `toInput()` carries its
-  `updatedAt` where 1.63 made it the raw string (`updatedAtRaw`), and the 1.2.0 entry below labelled
+  `updatedAt` where 1.63 made it the raw string (`updatedAtRaw`), and the 1.1.1 entry below labelled
   the unknown-value refusal "contract 1.63 item (ab)", a 1.62 item letter (§34.6 (ab)); corrected.
 
 ### Tests
@@ -63,8 +73,12 @@ one model addition is a pair of trailing members with a default.
 - **§27.9 C162-07, C163-09** — a stated `serviceType` (a value, and `null`) resolves the unknown one
   and the `PUT` carries the stated value; the refusals assert `ValidationError` with the member in
   `fields`, and the quoted value.
-- **C163-19** — a discovery document that relocates the token and device-authorization endpoints
-  gets no session bearer, cookie or CSRF header on them, and an unadvertised path still does.
+- **C163-19, C164-13** — a discovery document that relocates the token, device-authorization and
+  revocation endpoints gets no session bearer, cookie or CSRF header on them (revoke is called
+  through the client after a cookie login, so only the discovery wiring protects it), the next
+  management `POST` carries both as the control, and an unadvertised path still does.
+- **Contract 1.64 amended** — a `500 {"error":"server_error"}` mid-poll, a `429 slow_down`, a
+  bodiless `429` with `Retry-After`, and a deadline that counts request time.
 
 ### Notes
 
@@ -85,16 +99,18 @@ one model addition is a pair of trailing members with a default.
 
 - Contract 1.63 follow-ups — SCIM updatedAtRaw (C162-10), unknown open enum refused at plan (C162-07), /oauth2 cookie test
 
-## [1.2.0] - 2026-10-20
+### Contract 1.63 notes (prepared as 1.2.0, released as 1.1.1)
+
+**1.1.1 contains a source-breaking change despite its patch number** (`ScimTargetInput.expectedUpdatedAt` is a `String?`, below): the version was set to 1.1.1 and tagged `v1.1.1`; no 1.2.0 was ever released. The text below was written for it under that name.
 
 Contract 1.63 (accompanying the AXIAM 1.1.1 release): `CONTRACT.md`, `openapi.json` and
 `management-registry.json` re-vendored byte for byte from `ilpanich/axiam` `d919ba0cc`
 (`openapi.json` digest `sha256:443c9d39…8098`; `proto/` is unchanged), the §27 surface regenerated
 (202 operations across 29 namespaces, none added), and the README states conformance at contract
-1.63. Closes ilpanich/axiam-kotlin-sdk#77. This is a **minor** release, because the SCIM
-change below is source-breaking.
+1.63. Closes ilpanich/axiam-kotlin-sdk#77. This was to be a **minor** release, because the SCIM
+change below is source-breaking; it shipped as 1.1.1.
 
-### Source-breaking changes
+#### Source-breaking changes
 
 - **`ScimTargetInput.expectedUpdatedAt` is a `String?`, no longer an `Instant?`** (§31.3 rule 4,
   contract 1.63 item (b), C162-10). `ScimTargetResponse` keeps the response's own `updated_at`
@@ -105,7 +121,7 @@ change below is source-breaking.
   string (`target.updatedAtRaw`), not an `Instant`; an assigned `null` is still "none" and the key
   is omitted.
 
-### Fixed
+#### Fixed
 
 - **An unknown open-enum value on an unstated member is refused at `plan`** (§27.6.2 item 4,
   contract 1.62 item (ab), §34.6, C162-07). A profile read with a `termination_action` or `service_type`
@@ -114,7 +130,7 @@ change below is source-breaking.
   with no non-`GET` request; before, `apply` reached the `PUT` step and the serializer refused it
   there. A manifest that states the member resolves it, and an unchanged profile is `NoChange`.
 
-### Tests
+#### Tests
 
 - **No session cookie and no `X-CSRF-Token` on `/oauth2/*`** (§6.1 rule 11, §12.1 rule 3, §14.6
   contract 1.63): this SDK already withholds them; the new test signs in with a cookie login that
@@ -122,7 +138,7 @@ change below is source-breaking.
   introspect/revoke, and asserts neither header, with the control that the next `POST` management
   request carries both.
 
-### Notes
+#### Notes
 
 - `DeviceAuthorizationRequest.client_id` is no longer required in `openapi.json`; this SDK models no
   such request type (the device operations take parameter objects), so nothing changes.

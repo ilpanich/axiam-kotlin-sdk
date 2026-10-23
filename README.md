@@ -44,8 +44,9 @@ as `suspend` functions on the same `AxiamClient`.
 - **§14.2 rule 9 — a `429 rate_limit_exceeded` on a poll is waited out.** `deviceLogin` waits the
   `Retry-After` as a minimum (capped at the `expires_in` deadline), counts it as one interval, does
   not raise the interval for it, and polls again; a single `devicePoll` still raises it as an
-  `OAuthProtocolError` (`error == "rate_limit_exceeded"`). Only the `400 slow_down` raises the
-  interval. See [Device authorization grant](#device-authorization-grant-14).
+  `OAuthProtocolError` (`error == "rate_limit_exceeded"`). The **status decides**: any `429` on a poll
+  is that wait, a `429` whose body says `slow_down` included; only the `400 slow_down` raises the
+  interval. A `5xx` is a transport failure whatever its body. See [Device authorization grant](#device-authorization-grant-14).
 - **§27.6.2 item 4 — the refusal names the member and the value.** An unknown `termination_action`
   or `service_type` read from the server, on a member the manifest does not state, is refused at
   `plan` as a `ValidationError` whose `fields` name the member and whose message quotes the value
