@@ -208,8 +208,11 @@ class OidcDeviceFlowTest {
         val start: java.time.Instant = java.time.Instant.now()
         val sleeps = mutableListOf<Long>()
 
+        /** Time that passed outside any wait, e.g. inside the user-code callback (C164-28). */
+        var extraSeconds = 0L
+
         /** Time spent in requests also passes (C164-05): every wait is followed by one poll of [requestSeconds]. */
-        override fun now(): java.time.Instant = start.plusSeconds(sleeps.sum() + sleeps.size * requestSeconds)
+        override fun now(): java.time.Instant = start.plusSeconds(sleeps.sum() + sleeps.size * requestSeconds + extraSeconds)
         override suspend fun sleep(duration: java.time.Duration) {
             sleeps += duration.seconds
         }
@@ -219,11 +222,16 @@ class OidcDeviceFlowTest {
         .setResponseCode(429)
         .addHeader("Content-Type", "application/json")
         .addHeader("Retry-After", retryAfter)
-        .setBody(OidcTestKit.oauth2ErrorJson("rate_limit_exceeded", "too many requests"))
+        // The server's own body (§14.6, contract 1.64 amended): no error_description.
+        .setBody("""{"error":"rate_limit_exceeded"}""")
 
-    private fun login(clock: RecordingClock): OidcTokenSet = runBlocking {
-        deviceClient().deviceLogin(
-            DeviceLoginParams(tenantId = tenantId, onUserCode = { }).also { it.clock = clock },
+    private fun login(
+        clock: RecordingClock,
+        client: io.axiam.sdk.AxiamClient = deviceClient(),
+        onUserCode: suspend (DeviceAuthorization) -> Unit = { },
+    ): OidcTokenSet = runBlocking {
+        client.deviceLogin(
+            DeviceLoginParams(tenantId = tenantId, onUserCode = onUserCode).also { it.clock = clock },
         )
     }
 
@@ -325,6 +333,104 @@ class OidcDeviceFlowTest {
 
         assertTrue(error.isExpiredToken)
         assertEquals(2, polls.get(), "no poll once now + interval reaches the deadline")
+    }
+
+    @Test
+    fun `the deadline is taken before the user-code callback, whose time counts (C164-28)`() {
+        // The callback takes 25 s of a 30 s grant at interval 5: the first poll would leave at 30.
+        mountAuthorization(expiresIn = 30, interval = 5)
+        val polls = AtomicInteger(0)
+        dispatcher.on("/oauth2/token") { polls.incrementAndGet(); oauthError("authorization_pending") }
+        val clock = RecordingClock()
+
+        val error = assertThrows(OAuthProtocolError::class.java) {
+            login(clock, onUserCode = { clock.extraSeconds += 25 })
+        }
+
+        assertTrue(error.isExpiredToken)
+        assertTrue(polls.get() <= 1, "at most one poll, not five: ${polls.get()}")
+    }
+
+    // §14.6 contract 1.64 amended (C164-35, C164-25): the poll is §16-retried inside the attempt.
+
+    private fun serverError() = MockResponse().setResponseCode(500)
+        .addHeader("Content-Type", "application/json")
+        .setBody("""{"error":"server_error","error_description":"db"}""")
+
+    @Test
+    fun `a single devicePoll retries two 500s inside the poll and returns the tokens (three requests)`(): Unit = runBlocking {
+        val requests = AtomicInteger(0)
+        scriptToken(
+            { requests.incrementAndGet(); serverError() },
+            { requests.incrementAndGet(); serverError() },
+            { requests.incrementAndGet(); tokenSuccess() },
+        )
+
+        val tokens = deviceClient().devicePoll(DevicePollParams(Sensitive.of("dc"), tenantId = tenantId))
+
+        assertEquals("device-access-token", tokens.accessToken.expose())
+        assertEquals(3, requests.get(), "the attempt cap of §16.1 is three in total")
+    }
+
+    @Test
+    fun `deviceLogin completes within one interval when the poll retries two 500s`() {
+        mountAuthorization(expiresIn = 600, interval = 5)
+        val requests = AtomicInteger(0)
+        scriptToken(
+            { requests.incrementAndGet(); serverError() },
+            { requests.incrementAndGet(); serverError() },
+            { requests.incrementAndGet(); tokenSuccess() },
+        )
+        val clock = RecordingClock()
+
+        login(clock)
+
+        assertEquals(3, requests.get())
+        assertEquals(listOf(5L), clock.sleeps, "one interval: the retries happened inside the poll")
+    }
+
+    @Test
+    fun `a third 500 exhausts the cap, devicePoll surfaces it and deviceLogin takes its next interval`() {
+        mountAuthorization(expiresIn = 600, interval = 5)
+        val requests = AtomicInteger(0)
+        scriptToken(
+            { requests.incrementAndGet(); serverError() },
+            { requests.incrementAndGet(); serverError() },
+            { requests.incrementAndGet(); serverError() },
+            { requests.incrementAndGet(); tokenSuccess() },
+        )
+        val clock = RecordingClock()
+
+        login(clock)
+
+        assertEquals(4, requests.get())
+        assertEquals(listOf(5L, 5L), clock.sleeps, "rule 6: the exhausted poll costs one interval, not the flow")
+    }
+
+    @Test
+    fun `a 429 is not retried inside the poll`(): Unit = runBlocking {
+        val requests = AtomicInteger(0)
+        scriptToken({ requests.incrementAndGet(); rateLimited("1") })
+
+        assertThrows(OAuthProtocolError::class.java) {
+            runBlocking { deviceClient().devicePoll(DevicePollParams(Sensitive.of("dc"), tenantId = tenantId)) }
+        }
+
+        assertEquals(1, requests.get(), "the wait is the loop's (rule 9)")
+    }
+
+    @Test
+    fun `with retry disabled a 5xx makes one request per poll`(): Unit = runBlocking {
+        val requests = AtomicInteger(0)
+        scriptToken({ requests.incrementAndGet(); serverError() }, { requests.incrementAndGet(); tokenSuccess() })
+        val client = io.axiam.sdk.AxiamClient.builder(server.url("/").toString(), tenantId)
+            .oidcClientId(OidcTestKit.CLIENT_ID).retryDisabled().build()
+
+        assertThrows(io.axiam.sdk.errors.NetworkError::class.java) {
+            runBlocking { client.devicePoll(DevicePollParams(Sensitive.of("dc"), tenantId = tenantId)) }
+        }
+
+        assertEquals(1, requests.get())
     }
 
     @Test

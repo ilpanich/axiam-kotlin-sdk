@@ -1076,7 +1076,21 @@ internal class OidcSupport(
             "client_id" to clientId,
             "client_secret" to oidcClientSecret?.expose(),
         )
-        val json = postToken(configuration, form, params.tenantId, withoutSession = true, devicePoll = true)
+        // §14.2 rule 6 / §16.2 (C164-25): a 5xx or a transport failure is retried under §16
+        // INSIDE this poll (the budget is per poll attempt, the same runner `cibaPoll` uses),
+        // never a 429 (an OAuthProtocolError here, the loop's wait) nor any other 4xx. The 200 is
+        // parsed outside the retry.
+        val trace = PollTrace()
+        val json = io.axiam.sdk.internal.Retry.withRetry(
+            operation = "devicePoll",
+            enabled = retryEnabled,
+            telemetry = telemetry,
+            random = jitter,
+            retryable = { trace.lastStatus.let { it == null || it >= 500 } },
+        ) { _ ->
+            trace.lastStatus = null
+            postToken(configuration, form, params.tenantId, withoutSession = true, devicePoll = true, trace = trace)
+        }
         // No nonce: the device grant has no authorization request to carry one.
         val expectations = OidcIdToken.Expectations(
             issuer = configuration.issuer,
@@ -1125,14 +1139,16 @@ internal class OidcSupport(
             ),
         )
 
+        val clock = params.clock
+        // §14.2 rule 4 (C164-05, C164-28): the deadline is an instant on the clock, taken when the
+        // authorization arrives and BEFORE the user-code callback, so the callback's time, request
+        // time and slow answers all count against it.
+        val deadline = clock.now().plusSeconds(authorization.expiresIn.toLong())
+
         // §14.3 rule 2 — before any polling.
         params.onUserCode(authorization)
 
-        val clock = params.clock
         var intervalSeconds = authorization.interval
-        // §14.2 rule 4 (C164-05): the deadline is an instant on the clock, taken when the
-        // authorization arrives, so request time and slow answers count against it.
-        val deadline = clock.now().plusSeconds(authorization.expiresIn.toLong())
         // §14.2 rule 9 (contract 1.64): after a `429`, the wait that stands in for the next
         // interval — at least the Retry-After, never less than the interval itself.
         var rateLimitedWaitSeconds: Long? = null
@@ -1887,12 +1903,13 @@ internal class OidcSupport(
         tenantIdOverride: String?,
         withoutSession: Boolean = false,
         devicePoll: Boolean = false,
+        trace: PollTrace? = null,
     ): JsonObject {
         val url = endpointUrl(
             preferredEndpoint(configuration, { it.token_endpoint }, configuration.token_endpoint)!!,
             tenantIdOverride,
         )
-        return postOAuth2Form(url, form, "token request failed", withoutSession, devicePoll)
+        return postOAuth2Form(url, form, "token request failed", withoutSession, devicePoll, trace)
     }
 
     /**
@@ -1907,6 +1924,7 @@ internal class OidcSupport(
         fallbackMessage: String,
         withoutSession: Boolean = false,
         devicePoll: Boolean = false,
+        trace: PollTrace? = null,
     ): JsonObject {
         // [withoutSession]: the §14 device operations carry the CLIENT's credential
         // and nothing else — no session bearer, no cookie (contract 1.62, §14.6).
@@ -1915,6 +1933,7 @@ internal class OidcSupport(
         val request = builder.build()
         val response = executeRequest(request)
         response.use {
+            trace?.lastStatus = it.code
             if (!it.isSuccessful) throw mapOAuth2ErrorResponse(it, fallbackMessage, devicePoll)
             return parseJsonObject(it)
         }
