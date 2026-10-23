@@ -2518,8 +2518,8 @@ retries), 200 ms base, 5 s cap, **full jitter** (uniform over `[0, backoff]`), a
 
 One transport detail the attempt cap does not cover: OkHttp 4.12 recovers an **idempotent read** on a
 stale pooled connection by itself. The RFC 7592 `readClientRegistration` is such a `GET`, so over a
-connection that drops it can reach the server **once more per §16 attempt** (at most 4 sends with retry
-on, 2 with `retryDisabled()`). Every write is a one-shot body and is sent exactly once per attempt: a
+connection that drops it can reach the server **once more in total** (OkHttp replays it once on a stale
+pooled connection): at most 4 sends with retry on, 2 with `retryDisabled()`. Every write is a one-shot body and is sent exactly once per attempt: a
 management write, the registration `PUT` and `DELETE`, `cibaInitiate`, and the `ssf.poll` / device / CIBA
 polls (three §16 attempts in total, no OkHttp replay on top).
 
