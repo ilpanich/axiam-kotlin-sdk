@@ -132,8 +132,10 @@ class OidcRefreshTest {
         assertNull(narrowed.idClaims, "no openid: no ID token")
 
         dispatcher.onJson("/oauth2/token", 200, OidcTestKit.tokenResponseJson())
+        // A distinct refresh token: the same one can land in the first call's settled single-flight
+        // slot under load and read its scope (C164-33).
         val unstated = client.oidcRefresh(
-            OidcRefreshParams.of("rt", scope = "openid profile", tenantId = "22222222-2222-2222-2222-222222222222"),
+            OidcRefreshParams.of("rt2", scope = "openid profile", tenantId = "22222222-2222-2222-2222-222222222222"),
         )
         assertNull(unstated.scope, "the requested scope is never substituted for the response's")
     }
