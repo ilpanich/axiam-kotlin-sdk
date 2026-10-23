@@ -74,7 +74,16 @@ one model addition is a pair of trailing members with a default.
   next resolved address, so a host whose first address refuses (an AAAA record on an IPv4-only path, a
   dual-stack `localhost`) failed every poll once the connection pool was empty and `deviceLogin`/`cibaAwait`
   could only end in `expired_token`. A one-shot body keeps the fallback (a connect failure is not a send) and
-  refuses only the replay of a request that was written. `cibaInitiate` uses the same body.
+  refuses what must not be repeated: the replay of a request that was written, OkHttp's follow-ups of a `408` and
+  of a `503` + `Retry-After: 0` (a §16.1 cap and §33.7 rule 1 fix in itself), and a `307`/`308` re-POST (a token
+  endpoint that redirects a POST is not a supported deployment, and credentials are not re-sent to a `Location`).
+  `cibaInitiate` uses the same body.
+- **Management writes and the sessionless transport keep route fallback too** (C164-50, same root cause; the
+  transports date from 1.0): `ManagementTransport`'s dedicated write client and `Sessionless.of` (RFC 7592
+  client registration, the SSF receiver) were built with `retryOnConnectionFailure(false)`, so a management
+  `DELETE` on a host whose first address refuses reached the server 0 times once the pool was empty. They now
+  use the ordinary client with a one-shot body on every write (a bodiless `DELETE` sends an empty one, so it
+  carries `Content-Length: 0`); §34.2 P11 still holds (no replay after a drop on a pooled connection).
 - **The CIBA in-poll retry honours the deadline** (§33.7 rule 5, §34.2 P10, C164-43): `cibaAwait` hands its
   deadline and clock to the poll, and a §16 retry whose wait would end at or past `received_at + expires_in` is
   not sent; before round 3's `Retry-After` floor this was jitter only, with it a `503` + `Retry-After: 120`
@@ -113,6 +122,13 @@ one model addition is a pair of trailing members with a default.
   revocation endpoints gets no session bearer, cookie or CSRF header on them (revoke is called
   through the client after a cookie login, so only the discovery wiring protects it), the next
   management `POST` carries both as the control, and an unadvertised path still does.
+- **Round 5 — C164-50, -53, -54:** a management `DELETE`, a management `POST` and a sessionless
+  `deleteClientRegistration` on a host whose first address refuses (custom `Dns` `[127.0.0.2, 127.0.0.1]`, pool
+  evicted) reach the server once; a management write after a drop on a pooled connection is still sent once
+  (P11); `cibaInitiate` is sent once over a pooled connection that drops, on `503` + `Retry-After: 0` and on
+  `408`, and reaches `bc-authorize` on the dual-stack host (t04b, t04c); the poll's replay test drops on a
+  pooled connection; the CIBA in-poll waits are recorded on the clock; a retry whose wait ends exactly at the
+  deadline is not sent (device and CIBA).
 - **Round 4 — C164-43, -44, -48:** a host whose first address refuses (custom `Dns` `[127.0.0.2, 127.0.0.1]`,
   pool evicted) still reaches the server for `devicePoll` and `cibaPoll` in one request; a drop after the body was
   sent is not replayed (three attempts, not four, route fallback on); the CIBA P10 case (`expires_in` 30, every poll
