@@ -7,6 +7,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-10-23
+
+Contract 1.64 (accompanying the AXIAM 1.1.2 release): `CONTRACT.md`, `openapi.json`,
+`management-registry.json` and `proto/` re-vendored byte for byte from `ilpanich/axiam` `fb92ec4`
+(`proto/` and `opaque-test-vectors.json` are unchanged; the §27 surface regenerates to 202
+operations across 29 namespaces, none added), and the README states conformance at contract 1.64.
+Closes ilpanich/axiam-kotlin-sdk#79. This is a **patch** release: nothing below removes or retypes
+a public member. The refusal that changes type is now a `ValidationError`, which is a
+`NetworkError` by subtype (§27.4 rule 7), so no `catch` written for 1.1.1 stops matching, and the
+one model addition is a pair of trailing members with a default.
+
+### Changed
+
+- **A `429 rate_limit_exceeded` on a device poll is waited out** (§14.2 rule 9, contract 1.64
+  item (b)). `deviceLogin` no longer treats it as a failure to retry at the next tick: it waits the
+  `Retry-After` as a minimum (never below the interval, and counted as that one interval), does
+  **not** raise the interval for it, and polls again; a `Retry-After` past the `expires_in`
+  deadline ends in the typed `expired_token` outcome without sending anything after the deadline.
+  A single `devicePoll` raises the `429` as an `OAuthProtocolError` with
+  `error == "rate_limit_exceeded"` (§14.2 rule 9, contract 1.63) — before, it surfaced as a bare
+  `NetworkError`. Only the `400 slow_down` raises the interval.
+- **The refusal at `plan` of an unknown open-enum value is a `ValidationError`** (C163-07, §27.6.2
+  item 4): `ValidationError.fields` names the member (`termination_action` or `service_type`), as
+  1.1.0's apply-time refusal did, and it quotes the value (C163-10, below). It is still a
+  `NetworkError` by subtype, and nothing is written.
+- **The `/oauth2/*` exclusion follows the endpoints discovery advertises** (C163-19, §12.1 rule 3).
+  The session bearer, the cookies and the CSRF header were withheld only under the base URL's own
+  `/oauth2/` prefix; the token, device-authorization, PAR, revocation, introspection, JWKS and
+  backchannel endpoints (and their `mtls_endpoint_aliases`) of the discovery document are now
+  matched by origin and path as well, so a deployment that serves them elsewhere gets the same
+  treatment. The conventional prefix still applies before discovery has run.
+
+### Added
+
+- **`NetworkReplyProfile.terminationActionRaw` and `serviceTypeRaw`** (C163-10, D-15; §27.6.2 item 4
+  as relaxed by contract 1.64 §34.8 (c)): trailing `String? = null` members that keep the server's
+  own text next to the open enumeration, which decodes a value this SDK does not know to `UNKNOWN`.
+  The refusal at `plan` quotes it (`termination_action "future"`). Read-only diagnostics, never
+  sent; the same mechanism as `updatedAtRaw`, generalised from timestamps to any member the
+  generator lists (`RAW_VALUE_MEMBERS`).
+
+### Fixed
+
+- **README and change log text** (C163-18): the 1.60 list said a read's `toInput()` carries its
+  `updatedAt` where 1.63 made it the raw string (`updatedAtRaw`), and the 1.2.0 entry below labelled
+  the unknown-value refusal "contract 1.63 item (ab)", a 1.62 item letter (§34.6 (ab)); corrected.
+
+### Tests
+
+- **§14.6, contract 1.64** — a mock answers one poll with `429` and `Retry-After`: the loop waits at
+  least the `Retry-After` (a recorded clock, not a wall-clock sleep), polls again, completes with
+  the token set, and the poll after it is scheduled at the unchanged interval; a second case caps a
+  `Retry-After` past `expires_in` at the deadline. The 1.63 §14.6 tests are unchanged.
+- **§27.9 C162-07, C163-09** — a stated `serviceType` (a value, and `null`) resolves the unknown one
+  and the `PUT` carries the stated value; the refusals assert `ValidationError` with the member in
+  `fields`, and the quoted value.
+- **C163-19** — a discovery document that relocates the token and device-authorization endpoints
+  gets no session bearer, cookie or CSRF header on them, and an unadvertised path still does.
+
+### Notes
+
+- This SDK generates no DPoP proofs (§21.9) and ships no AMQP, as in 1.1.1. Item (c) of contract
+  1.64 needed no port beyond the optional raw value above.
+
 ## [1.1.1] - 2026-10-21
 
 ### Changed
@@ -44,7 +108,7 @@ change below is source-breaking.
 ### Fixed
 
 - **An unknown open-enum value on an unstated member is refused at `plan`** (§27.6.2 item 4,
-  contract 1.63 item (ab), C162-07). A profile read with a `termination_action` or `service_type`
+  contract 1.62 item (ab), §34.6, C162-07). A profile read with a `termination_action` or `service_type`
   this SDK does not know, in a manifest that changes another member and does not state the unknown
   one, now fails `plan` (and `apply`, which plans first) with a `NetworkError` naming the member,
   with no non-`GET` request; before, `apply` reached the `PUT` step and the serializer refused it
