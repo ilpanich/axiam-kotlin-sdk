@@ -1152,7 +1152,7 @@ internal class OidcSupport(
                         "CONTRACT.md §14.2 rule 4)",
                 )
             }
-            remainingSeconds -= waitSeconds
+            remainingSeconds -= waitSeconds.toInt()
 
             clock.sleep(java.time.Duration.ofSeconds(waitSeconds))
 
