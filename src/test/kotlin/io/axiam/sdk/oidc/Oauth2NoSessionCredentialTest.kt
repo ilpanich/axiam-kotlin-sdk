@@ -211,6 +211,62 @@ class Oauth2NoSessionCredentialTest {
         assertNotNull(recorded[3].getHeader("Authorization"))
     }
 
+    @Test
+    fun `the exclusion follows the endpoints discovery advertises, not the conventional base path (C163-19)`(): Unit = runBlocking {
+        val base = server.url("/").toString()
+        val relocated = OidcTestKit.RoutingDispatcher(
+            discoveryBody = {
+                OidcTestKit.discoveryJson(base)
+                    .replace("/oauth2/token", "/idp/token")
+                    .replace("/oauth2/device_authorization", "/idp/device")
+            },
+            jwksBody = { OidcTestKit.jwksJson(OidcTestKit.generateSigningKey().toPublicJWK()) },
+        )
+        relocated.on("/api/v1/auth/login") { TestSupport.loginOkResponse() }
+        relocated.onJson("/api/v1/groups", 200, """{"items":[],"total":0,"offset":0,"limit":50}""")
+        relocated.on("/idp/device") {
+            seen += it
+            MockResponse().setResponseCode(200).addHeader("Content-Type", "application/json")
+                .setBody(OidcTestKit.deviceAuthorizationJson(base, 30, 1))
+        }
+        relocated.on("/idp/token") {
+            seen += it
+            MockResponse().setResponseCode(400).addHeader("Content-Type", "application/json")
+                .setBody(OidcTestKit.oauth2ErrorJson("authorization_pending", "pending"))
+        }
+        relocated.on("/idp/elsewhere") {
+            seen += it
+            MockResponse().setResponseCode(200).setBody("{}")
+        }
+        server.dispatcher = relocated
+        val client = AxiamClient.builder(base, tenantId).oidcClientId(OidcTestKit.CLIENT_ID).build()
+        client.login("alice@example.com", "pw")
+
+        // Discovery names the endpoints; from then on they are /oauth2/* requests wherever they sit.
+        val authorization = client.deviceAuthorize(DeviceAuthorizeParams(tenantId = tenantId))
+        runCatching { client.devicePoll(DevicePollParams(authorization.deviceCode, tenantId = tenantId)) }
+
+        val relocatedRequests = seen.filter { it.path.orEmpty().startsWith("/idp/") }
+        assertEquals(2, relocatedRequests.size)
+        for (r in relocatedRequests) {
+            assertNull(r.getHeader("Authorization"), "${r.path}: no session bearer")
+            assertNull(r.getHeader("Cookie"), "${r.path}: no cookie")
+            assertNull(r.getHeader("X-CSRF-Token"), "${r.path}: no CSRF header")
+        }
+
+        // The control, and the boundary: a path discovery did not advertise is an ordinary request.
+        val session = SessionState(CookieManager(), base, tenantId, null, null)
+        session.adoptDeviceToken(deviceToken)
+        session.registerOauth2Endpoints(listOf(server.url("/idp/token").toString()))
+        val http = OkHttpClient.Builder().addInterceptor(AuthHeaderInterceptor(session)).build()
+        http.newCall(Request.Builder().url(server.url("/idp/token")).build()).execute().close()
+        http.newCall(Request.Builder().url(server.url("/idp/elsewhere")).build()).execute().close()
+        val token = seen.last { it.path == "/idp/token" }
+        val elsewhere = seen.last { it.path == "/idp/elsewhere" }
+        assertNull(token.getHeader("Authorization"))
+        assertNotNull(elsewhere.getHeader("Authorization"), "not advertised, not under /oauth2/: attached")
+    }
+
     private fun dispatcherRequest(path: String): RecordedRequest {
         while (true) {
             val r = server.takeRequest(1, java.util.concurrent.TimeUnit.SECONDS) ?: error("no request to $path")

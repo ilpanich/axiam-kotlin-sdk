@@ -47,7 +47,7 @@ class AuthHeaderInterceptor(private val session: SessionState) : Interceptor {
         // the form body). A credential the caller put on THIS request (RFC 7591
         // / 7592 registration tokens) is left exactly as set: this interceptor
         // adds nothing and removes nothing there.
-        val oauth2 = sameHost && session.isOauth2Path(original.url.encodedPath)
+        val oauth2 = session.isOauth2Request(original.url)
         val credentialFree = oauth2 || original.header(NO_SESSION_CREDENTIALS_HEADER) != null
 
         val builder = original.newBuilder()
