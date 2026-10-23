@@ -1,5 +1,6 @@
 package io.axiam.sdk.oidc
 
+import io.axiam.sdk.Sensitive
 import io.axiam.sdk.errors.AuthError
 import io.axiam.sdk.errors.OAuthProtocolError
 import kotlinx.coroutines.runBlocking
