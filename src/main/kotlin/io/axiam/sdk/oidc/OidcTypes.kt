@@ -719,7 +719,13 @@ data class DeviceLoginParams(
     val tenantId: String? = null,
     val configuration: OidcConfiguration? = null,
     val onUserCode: suspend (DeviceAuthorization) -> Unit,
-)
+) {
+    /**
+     * The clock the polling loop waits on. A test seam, not API: internal, outside the
+     * constructor, so the public shape of this class is unchanged (§14.6, contract 1.64).
+     */
+    internal var clock: CibaClock = CibaClock.SYSTEM
+}
 
 // ---------------------------------------------------------------------------
 // §15 Token Exchange (RFC 8693)

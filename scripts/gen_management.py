@@ -815,7 +815,23 @@ def field_list(schema_name: str, secrets: set[str]) -> tuple[list[dict[str, Any]
             "explicit_null": explicit_null,
         })
         raw = RAW_TIMESTAMP_MEMBERS.get((schema_name, wire))
-        if raw:
+        if (schema_name, wire) in RAW_VALUE_MEMBERS:
+            raw = RAW_VALUE_MEMBERS[(schema_name, wire)]
+            raw_fields.append({
+                "wire": raw,
+                "name": prop(raw),
+                "type": "String",
+                "required": False,
+                "doc": (f"The server's OWN string for `{wire}`, exactly as the response carried "
+                        "it, next to the open enumeration above: the enumeration decodes a value "
+                        "this SDK does not know to `UNKNOWN`, which has no text, and this member "
+                        "keeps the text so that a refusal can quote it (CONTRACT.md §27.6.2 "
+                        "item 4, contract 1.64). Read-only diagnostics: never sent. `null` only "
+                        "on a value built by hand rather than decoded from a response."),
+                "secret": False,
+                "explicit_null": False,
+            })
+        elif raw:
             raw_fields.append({
                 "wire": raw,
                 "name": prop(raw),
@@ -868,6 +884,17 @@ UNTYPED_STRING_MEMBERS = {
 RAW_TIMESTAMP_MEMBERS = {
     ("SsfStream", "updated_at"): "updated_at_raw",
     ("ScimTargetResponse", "updated_at"): "updated_at_raw",
+}
+
+# Open-enumeration members of a RESPONSE that keep the server's own text next to
+# the decoded constant (C163-10, contract 1.64): a value this SDK does not know
+# decodes to `UNKNOWN`, which has no text, and the manifest's refusal at `plan`
+# (CONTRACT.md §27.6.2 item 4) names the value where the SDK keeps it. Same
+# mechanism as RAW_TIMESTAMP_MEMBERS (ManagementSupport.RAW_VALUES names the
+# same pairs). Maps (schema, wire name) -> the synthetic member's wire name.
+RAW_VALUE_MEMBERS = {
+    ("NetworkReplyProfile", "termination_action"): "termination_action_raw",
+    ("NetworkReplyProfile", "service_type"): "service_type_raw",
 }
 
 # String enums modelled as an open STRING type with the known values as named

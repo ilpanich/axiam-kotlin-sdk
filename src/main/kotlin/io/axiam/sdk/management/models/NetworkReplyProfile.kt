@@ -32,6 +32,17 @@ import kotlinx.serialization.Serializable
  * @property updatedAt Last write time.
  * @property updatedBy The administrator who last wrote it.
  * @property version The version the next replace or delete must name. Starts at 1.
+ * @property serviceTypeRaw The server's OWN string for `service_type`, exactly as the response
+ *     carried it, next to the open enumeration above: the enumeration decodes a value this SDK
+ *     does not know to `UNKNOWN`, which has no text, and this member keeps the text so that a
+ *     refusal can quote it (CONTRACT.md §27.6.2 item 4, contract 1.64). Read-only diagnostics:
+ *     never sent. `null` only on a value built by hand rather than decoded from a response.
+ * @property terminationActionRaw The server's OWN string for `termination_action`, exactly as
+ *     the response carried it, next to the open enumeration above: the enumeration decodes a value
+ *     this SDK does not know to `UNKNOWN`, which has no text, and this member keeps the text so
+ *     that a refusal can quote it (CONTRACT.md §27.6.2 item 4, contract 1.64). Read-only
+ *     diagnostics: never sent. `null` only on a value built by hand rather than decoded from a
+ *     response.
  */
 @Serializable
 data class NetworkReplyProfile(
@@ -49,4 +60,6 @@ data class NetworkReplyProfile(
     @SerialName("updated_at") val updatedAt: @Serializable(with = InstantSerializer::class) Instant,
     @SerialName("updated_by") val updatedBy: @Serializable(with = UuidSerializer::class) UUID,
     @SerialName("version") val version: Long,
+    @SerialName("service_type_raw") val serviceTypeRaw: String? = null,
+    @SerialName("termination_action_raw") val terminationActionRaw: String? = null,
 )

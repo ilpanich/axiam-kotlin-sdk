@@ -1,7 +1,9 @@
 package io.axiam.sdk.management
 
 import io.axiam.sdk.errors.ConflictError
+import io.axiam.sdk.errors.FieldError
 import io.axiam.sdk.errors.NetworkError
+import io.axiam.sdk.errors.ValidationError
 import io.axiam.sdk.management.models.AddMemberRequest
 import io.axiam.sdk.management.models.AssignRoleToGroupRequest
 import io.axiam.sdk.management.models.AssignRoleToServiceAccountRequest
@@ -551,15 +553,15 @@ class ManifestApi internal constructor(private val api: ManagementApi) {
                 !spec.idleTimeoutSecs.matches(found.idleTimeoutSecs) ||
                 !spec.filterId.matches(found.filterId) ||
                 !spec.serviceType.matches(found.serviceType)
-            // §27.6.2 item 4 (contract 1.63 (ab)): an Update would carry the read's value for a
+            // §27.6.2 item 4 (contract 1.62 (ab), §34.6): an Update would carry the read's value for a
             // member the manifest does not state, and a value this SDK does not know is never sent.
             // Refused here, before any write, rather than half-way through an apply.
             if (drifted) {
                 if (spec.terminationAction == null && found.terminationAction == RadiusTerminationAction.UNKNOWN) {
-                    throw unknownCarried(summary, "termination_action")
+                    throw unknownCarried(summary, "termination_action", found.terminationActionRaw)
                 }
                 if (spec.serviceType === JsonNullable.Absent && found.serviceType == RadiusServiceType.UNKNOWN) {
-                    throw unknownCarried(summary, "service_type")
+                    throw unknownCarried(summary, "service_type", found.serviceTypeRaw)
                 }
             }
             out += step(
@@ -570,11 +572,23 @@ class ManifestApi internal constructor(private val api: ManagementApi) {
         }
     }
 
-    private fun unknownCarried(summary: String, member: String) = NetworkError(
-        "$summary: the server returned a $member this SDK does not know, the manifest does not state " +
-            "$member, and the profile would be updated; an unknown value is never sent (§34.2 P12.2). " +
-            "Nothing was sent: state $member in the manifest (§27.6.2 item 4).",
-    )
+    /**
+     * The local refusal of §27.6.2 item 4: a [ValidationError] (as 1.1.0's apply-time refusal
+     * was; still a [NetworkError] by subtype, §27.4 rule 7) naming the member in its
+     * [FieldError]. The value is quoted where the decoded type kept it ([raw], C163-10, contract
+     * 1.64); an SDK that did not keep it says the value is unknown.
+     */
+    private fun unknownCarried(summary: String, member: String, raw: String?): ValidationError {
+        val value = if (raw != null) {
+            // JSON-escaped and quoted: the text is the server's, and a quote or a newline in it
+            // must not reach the message or the log verbatim (C164-21).
+            "$member " + kotlinx.serialization.json.JsonPrimitive(raw.take(MAX_QUOTED_VALUE))
+        } else "a $member (the value is unknown)"
+        val msg = "$summary: the server returned $value this SDK does not know, the manifest does not " +
+            "state $member, and the profile would be updated; an unknown value is never sent " +
+            "(§34.2 P12.2). Nothing was sent: state $member in the manifest (§27.6.2 item 4)."
+        return ValidationError(msg, listOf(FieldError(member, msg)))
+    }
 
     /**
      * Whether a stated optional member agrees with the read: unstated
@@ -1130,5 +1144,8 @@ class ManifestApi internal constructor(private val api: ManagementApi) {
     private companion object {
         /** The key a plan action for the singleton `network.policy` carries (it has none of its own). */
         const val NETWORK_POLICY_KEY = "network.policy"
+
+        /** Longest part of a server-sent value a refusal quotes: the text is the server's, not ours. */
+        const val MAX_QUOTED_VALUE = 64
     }
 }

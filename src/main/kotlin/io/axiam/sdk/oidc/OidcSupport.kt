@@ -6,6 +6,7 @@ import io.axiam.sdk.errors.AxiamException
 import io.axiam.sdk.errors.ErrorMapper
 import io.axiam.sdk.errors.NetworkError
 import io.axiam.sdk.errors.OAuthProtocolError
+import io.axiam.sdk.internal.OneShotBody
 import io.axiam.sdk.internal.AuthHeaderInterceptor
 import io.axiam.sdk.internal.JwksVerifier
 import io.axiam.sdk.internal.SessionState
@@ -156,8 +157,27 @@ internal class OidcSupport(
         val response = executeRequest(request)
         response.use {
             if (it.code != 200) throw ErrorMapper.fromHttpStatus(it.code, "oidc discovery request failed", it)
-            return parseDiscoveryDocument(parseJsonObject(it))
+            return parseDiscoveryDocument(parseJsonObject(it)).also(::registerAdvertisedEndpoints)
         }
+    }
+
+    /**
+     * C163-19: the endpoints the document advertises are `/oauth2/…` requests
+     * for §12.1 rule 3 wherever they sit, so the session and CSRF exclusion
+     * follows them rather than the conventional `{base}/oauth2/` layout.
+     */
+    private fun registerAdvertisedEndpoints(doc: OidcConfiguration) {
+        val aliases = doc.mtls_endpoint_aliases
+        session.registerOauth2Endpoints(
+            listOf(
+                doc.authorization_endpoint, doc.token_endpoint, doc.jwks_uri, doc.revocation_endpoint,
+                doc.introspection_endpoint, doc.device_authorization_endpoint,
+                doc.pushed_authorization_request_endpoint, doc.backchannel_authentication_endpoint,
+                aliases?.token_endpoint, aliases?.revocation_endpoint, aliases?.introspection_endpoint,
+                aliases?.device_authorization_endpoint, aliases?.pushed_authorization_request_endpoint,
+                aliases?.backchannel_authentication_endpoint,
+            ),
+        )
     }
 
     private fun parseDiscoveryDocument(json: JsonObject): OidcConfiguration = OidcConfiguration(
@@ -1048,7 +1068,19 @@ internal class OidcSupport(
      * above. A client registered for mTLS-bound tokens works: the certificate
      * accompanies each poll.
      */
-    suspend fun devicePoll(params: DevicePollParams): OidcTokenSet {
+    suspend fun devicePoll(params: DevicePollParams): OidcTokenSet = devicePoll(params, null, null)
+
+    /**
+     * [devicePoll] inside `deviceLogin`'s loop (C164-36): a §16 retry whose wait would end at or
+     * past [deadline] on [clock] is not made, so nothing is sent after the `expires_in` deadline
+     * (§14.2 rule 4); the failure is surfaced and the loop's next check raises `expired_token`.
+     * A bare `devicePoll` has no deadline and keeps the plain §16 behaviour.
+     */
+    private suspend fun devicePoll(
+        params: DevicePollParams,
+        deadline: java.time.Instant?,
+        clock: CibaClock?,
+    ): OidcTokenSet {
         val configuration = params.configuration ?: oidcDiscover()
         val clientId = requireClientId()
         val form = buildForm(
@@ -1057,7 +1089,26 @@ internal class OidcSupport(
             "client_id" to clientId,
             "client_secret" to oidcClientSecret?.expose(),
         )
-        val json = postToken(configuration, form, params.tenantId, withoutSession = true)
+        // §14.2 rule 6 / §16.2 (C164-25): a 5xx or a transport failure is retried under §16
+        // INSIDE this poll (the budget is per poll attempt, the same runner `cibaPoll` uses),
+        // never a 429 (an OAuthProtocolError here, the loop's wait) nor any other 4xx. The 200 is
+        // parsed outside the retry.
+        val trace = PollTrace()
+        val json = io.axiam.sdk.internal.Retry.withRetry(
+            operation = "devicePoll",
+            enabled = retryEnabled,
+            telemetry = telemetry,
+            random = jitter,
+            retryable = { trace.lastStatus.let { it == null || it >= 500 } },
+            mayWait = { wait ->
+                deadline == null || clock!!.now().plusMillis(wait.inWholeMilliseconds).isBefore(deadline)
+            },
+            // The in-poll waits sleep on the injected clock inside the loop (C164-48).
+            sleep = { wait -> if (clock != null) clock.sleep(java.time.Duration.ofMillis(wait.inWholeMilliseconds)) else delay(wait) },
+        ) { _ ->
+            trace.lastStatus = null
+            postToken(configuration, form, params.tenantId, withoutSession = true, devicePoll = true, trace = trace)
+        }
         // No nonce: the device grant has no authorization request to carry one.
         val expectations = OidcIdToken.Expectations(
             issuer = configuration.issuer,
@@ -1089,6 +1140,10 @@ internal class OidcSupport(
      * failure mid-poll is **not** terminal (rule 6) — a server restart must not
      * lose a grant the user has already approved.
      *
+     * A `429 rate_limit_exceeded` on a poll is waited out (rule 9, contract 1.64):
+     * `Retry-After` is a minimum, the wait counts as one interval, and the
+     * interval is not raised for it.
+     *
      * The inter-poll wait is `delay`, so cancelling the calling coroutine
      * cancels the login promptly rather than after the current interval.
      */
@@ -1102,19 +1157,30 @@ internal class OidcSupport(
             ),
         )
 
+        val clock = params.clock
+        // §14.2 rule 4 (C164-05, C164-28): the deadline is an instant on the clock, taken when the
+        // authorization arrives and BEFORE the user-code callback, so the callback's time, request
+        // time and slow answers all count against it.
+        val deadline = clock.now().plusSeconds(authorization.expiresIn.toLong())
+
         // §14.3 rule 2 — before any polling.
         params.onUserCode(authorization)
 
         var intervalSeconds = authorization.interval
-        var remainingSeconds = authorization.expiresIn
+        // §14.2 rule 9 (contract 1.64): after a `429`, the wait that stands in for the next
+        // interval — at least the Retry-After, never less than the interval itself.
+        var rateLimitedWaitSeconds: Long? = null
 
         while (true) {
+            val waitSeconds = rateLimitedWaitSeconds ?: intervalSeconds.toLong()
+            rateLimitedWaitSeconds = null
             // §14.2 rule 4: the deadline is authoritative. Checking before
             // waiting keeps the SDK from issuing a request that can only be
             // refused, and reports it under the same `expired_token` code the
             // server would have used — so a caller's branch does not care which
-            // side noticed first.
-            if (intervalSeconds >= remainingSeconds) {
+            // side noticed first. A Retry-After past the deadline is capped by
+            // the same rule, at once (§14.6, contract 1.64).
+            if (!clock.now().plusSeconds(waitSeconds).isBefore(deadline)) {
                 throw OAuthProtocolError(
                     error = "expired_token",
                     errorDescription = "the device authorization expired before the user " +
@@ -1122,9 +1188,7 @@ internal class OidcSupport(
                         "CONTRACT.md §14.2 rule 4)",
                 )
             }
-            remainingSeconds -= intervalSeconds
-
-            delay(intervalSeconds * 1000L)
+            clock.sleep(java.time.Duration.ofSeconds(waitSeconds))
 
             try {
                 return devicePoll(
@@ -1133,6 +1197,8 @@ internal class OidcSupport(
                         tenantId = params.tenantId,
                         configuration = configuration,
                     ),
+                    deadline,
+                    clock,
                 )
             } catch (e: OAuthProtocolError) {
                 when (e.error) {
@@ -1142,30 +1208,31 @@ internal class OidcSupport(
                         intervalSeconds += SLOW_DOWN_INCREMENT_SECONDS
                         continue
                     }
+                    // §14.2 rule 9 (contract 1.64): not terminal. Wait the Retry-After out as
+                    // a minimum, count it as one interval, leave the interval alone.
+                    "rate_limit_exceeded" -> {
+                        val retryAfterSeconds = e.retryAfter?.let { ceilSeconds(it) } ?: 0L
+                        rateLimitedWaitSeconds = maxOf(intervalSeconds.toLong(), retryAfterSeconds)
+                        continue
+                    }
                     // expired_token / access_denied / invalid_grant — terminal.
                     else -> throw e
                 }
             } catch (e: NetworkError) {
                 // §14.2 rule 6: transport and 5xx failures are not among the
-                // five protocol answers and are not terminal.
+                // five protocol answers and are not terminal. A 5xx's Retry-After that outlived the
+                // in-poll retry stays the floor of the next wait, as for a 429 (C164-48).
+                e.retryAfter?.let { rateLimitedWaitSeconds = maxOf(intervalSeconds.toLong(), ceilSeconds(it)) }
                 continue
             }
         }
     }
 
+    private fun ceilSeconds(d: kotlin.time.Duration): Long =
+        (d.inWholeMilliseconds + 999L) / 1000L
+
     // -- §33 CIBA -------------------------------------------------------------
 
-    /**
-     * The transport `cibaInitiate` uses: the shared client with OkHttp's own
-     * silent retry on a connection failure switched off. §33.7 rule 1 forbids
-     * retrying an initiation on ANY transport error, and OkHttp would
-     * otherwise resend a non-one-shot form body on another route after a
-     * dropped connection — a second stored request, and possibly a second
-     * notification to a person, that nobody counted.
-     */
-    private val noRetryHttpClient: OkHttpClient by lazy {
-        httpClient.newBuilder().retryOnConnectionFailure(false).build()
-    }
 
     /**
      * The client's credential for a CIBA call (§33.1): `client_secret_post`,
@@ -1222,10 +1289,10 @@ internal class OidcSupport(
             for ((name, value) in cibaMembers(params)) form.add(name, value)
         }
 
-        val request = Request.Builder().url(url).post(form.build()).build()
-        // §33.7 rule 1: never retried — not by §16, not by OkHttp.
+        val request = Request.Builder().url(url).post(OneShotBody(form.build())).build()
+        // §33.7 rule 1: never retried — not by §16, not by OkHttp (a one-shot body is not replayed).
         val response = try {
-            withContext(Dispatchers.IO) { noRetryHttpClient.newCall(request).execute() }
+            withContext(Dispatchers.IO) { httpClient.newCall(request).execute() }
         } catch (e: IOException) {
             throw NetworkError("cibaInitiate request failed: ${e.javaClass.simpleName}", e)
         }
@@ -1274,24 +1341,35 @@ internal class OidcSupport(
         var lastStatus: Int? = null
     }
 
-    private suspend fun cibaPollTracked(params: CibaPollParams, trace: PollTrace): OidcTokenSet {
+    private suspend fun cibaPollTracked(
+        params: CibaPollParams,
+        trace: PollTrace,
+        deadline: java.time.Instant? = null,
+        clock: CibaClock? = null,
+    ): OidcTokenSet {
         val (clientId, secret) = cibaClientAuth("cibaPoll")
         val configuration = params.configuration ?: oidcDiscover()
         val url = endpointUrl(
             preferredEndpoint(configuration, { it.token_endpoint }, configuration.token_endpoint)!!,
             params.tenantId,
         )
-        val form = buildForm(
-            "grant_type" to CIBA_GRANT_TYPE,
-            "auth_req_id" to params.authReqId.expose(),
-            "client_id" to clientId,
-            "client_secret" to secret,
+        val form = OneShotBody(
+            buildForm(
+                "grant_type" to CIBA_GRANT_TYPE,
+                "auth_req_id" to params.authReqId.expose(),
+                "client_id" to clientId,
+                "client_secret" to secret,
+            ),
         )
         val json = io.axiam.sdk.internal.Retry.withRetry(
             operation = "cibaPoll",
             enabled = retryEnabled,
             telemetry = telemetry,
             random = jitter,
+            // §34.2 P10 (C164-43): a §16 retry inside the poll as `cibaAwait` calls it never waits
+            // past the deadline; nothing is sent after it. The wait sleeps on the injected clock.
+            mayWait = { wait -> deadline == null || clock!!.now().plusMillis(wait.inWholeMilliseconds).isBefore(deadline) },
+            sleep = { wait -> if (clock != null) clock.sleep(java.time.Duration.ofMillis(wait.inWholeMilliseconds)) else delay(wait) },
             // §33.7 rule 5: transport failures, 5xx, 408 and a bodiless 429 are
             // retried; a protocol answer (an OAuthProtocolError, which is not a
             // NetworkError) and any other 4xx are decisive. A 5xx is a
@@ -1355,6 +1433,8 @@ internal class OidcSupport(
                 return cibaPollTracked(
                     CibaPollParams(initiated.authReqId, params.tenantId, configuration),
                     trace,
+                    deadline,
+                    clock,
                 )
             } catch (e: OAuthProtocolError) {
                 when (e.error) {
@@ -1846,12 +1926,14 @@ internal class OidcSupport(
         form: RequestBody,
         tenantIdOverride: String?,
         withoutSession: Boolean = false,
+        devicePoll: Boolean = false,
+        trace: PollTrace? = null,
     ): JsonObject {
         val url = endpointUrl(
             preferredEndpoint(configuration, { it.token_endpoint }, configuration.token_endpoint)!!,
             tenantIdOverride,
         )
-        return postOAuth2Form(url, form, "token request failed", withoutSession)
+        return postOAuth2Form(url, form, "token request failed", withoutSession, devicePoll, trace)
     }
 
     /**
@@ -1865,15 +1947,20 @@ internal class OidcSupport(
         form: RequestBody,
         fallbackMessage: String,
         withoutSession: Boolean = false,
+        devicePoll: Boolean = false,
+        trace: PollTrace? = null,
     ): JsonObject {
         // [withoutSession]: the §14 device operations carry the CLIENT's credential
         // and nothing else — no session bearer, no cookie (contract 1.62, §14.6).
-        val builder = Request.Builder().url(url).post(form)
+        // A device poll's body is one-shot: OkHttp falls back to the next address but never replays a
+        // sent request, so §16 alone counts the attempts (cap 3 in total, C164-39, C164-44).
+        val builder = Request.Builder().url(url).post(if (devicePoll) OneShotBody(form) else form)
         if (withoutSession) builder.header(AuthHeaderInterceptor.NO_SESSION_CREDENTIALS_HEADER, "1")
         val request = builder.build()
         val response = executeRequest(request)
         response.use {
-            if (!it.isSuccessful) throw mapOAuth2ErrorResponse(it, fallbackMessage)
+            trace?.lastStatus = it.code
+            if (!it.isSuccessful) throw mapOAuth2ErrorResponse(it, fallbackMessage, devicePoll)
             return parseJsonObject(it)
         }
     }
@@ -1908,9 +1995,12 @@ internal class OidcSupport(
      * break this rule — see `OidcIntrospectRevokeTest` for the regression
      * test that would catch it.
      */
-    private suspend fun executeRequest(request: Request): Response = withContext(Dispatchers.IO) {
+    private suspend fun executeRequest(
+        request: Request,
+        client: OkHttpClient = httpClient,
+    ): Response = withContext(Dispatchers.IO) {
         try {
-            httpClient.newCall(request).execute()
+            client.newCall(request).execute()
         } catch (e: IOException) {
             throw NetworkError("request failed: ${e.message}", e)
         }
@@ -1926,7 +2016,11 @@ internal class OidcSupport(
      * [OAuthProtocolError] (the endpoint-qualified row only wins when the
      * body actually matches).
      */
-    private fun mapOAuth2ErrorResponse(response: Response, fallbackMessage: String): AxiamException {
+    private fun mapOAuth2ErrorResponse(
+        response: Response,
+        fallbackMessage: String,
+        devicePoll: Boolean = false,
+    ): AxiamException {
         if (response.code == 400 || response.code == 401) {
             val bodyText = try {
                 response.peekBody(MAX_OAUTH2_ERROR_BODY_BYTES).string()
@@ -1935,6 +2029,26 @@ internal class OidcSupport(
             }
             val parsed = bodyText?.let(::parseOAuth2ErrorBody)
             if (parsed != null) return OAuthProtocolError(parsed.first, parsed.second)
+        }
+        if (devicePoll && response.code == 429) {
+            // §14.2 rule 9 (contract 1.64, amended; C164-04, C164-17): the STATUS decides on a
+            // poll. Any 429 is the rate-limit wait whatever its body names (a `slow_down` from a
+            // server before 1.1.2 or an intermediary does not raise the interval), and a
+            // bodiless one still carries its Retry-After as the floor of the wait.
+            val description = ErrorMapper.fromOAuth2ResponseAtAnyStatus(fallbackMessage, response)
+                .let { (it as? OAuthProtocolError)?.errorDescription ?: "" }
+            return OAuthProtocolError("rate_limit_exceeded", description).also {
+                it.retryAfter = ErrorMapper.retryAfterOf(response)
+            }
+        }
+        if (response.code == 429) {
+            // §14.2 rule 9 (contract 1.63): a `429 {"error":"rate_limit_exceeded"}` is the §2
+            // OAuthProtocolError dispatched on `error`, carrying its Retry-After for the loop.
+            val limited = ErrorMapper.fromOAuth2ResponseAtAnyStatus(fallbackMessage, response)
+            if (limited is OAuthProtocolError) {
+                limited.retryAfter = ErrorMapper.retryAfterOf(response)
+                return limited
+            }
         }
         return ErrorMapper.fromHttpStatus(response.code, fallbackMessage, response)
     }

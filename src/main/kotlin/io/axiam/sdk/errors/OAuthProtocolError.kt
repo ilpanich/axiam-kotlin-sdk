@@ -36,6 +36,12 @@ class OAuthProtocolError(
 ) : AuthError(message = if (errorDescription.isEmpty()) error else "$error: $errorDescription") {
 
     /**
+     * The `Retry-After` of a `429 rate_limit_exceeded` (§14.2 rule 9), or `null`.
+     * Internal: the device polling loop reads it to wait the answer out.
+     */
+    internal var retryAfter: kotlin.time.Duration? = null
+
+    /**
      * Whether this is the `access_denied` answer — at a CIBA or device poll,
      * the user refused (CONTRACT.md §33.4, §14.2 rule 3).
      */

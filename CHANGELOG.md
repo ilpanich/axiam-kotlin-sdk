@@ -7,6 +7,163 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-10-23
+
+Contract 1.64 (accompanying the AXIAM 1.1.2 release): `CONTRACT.md` re-vendored byte for byte from
+`ilpanich/axiam` `b3f8687` (1.64 as amended twice on 2026-10-23, sha256 `a221f1bf…de39`), `openapi.json`,
+`management-registry.json` and `proto/` from `356a6da` (platform PR #793 merge) (`proto/` and `opaque-test-vectors.json` are unchanged; the §27 surface regenerates to 202
+operations across 29 namespaces, none added), and the README states conformance at contract 1.64.
+Closes ilpanich/axiam-kotlin-sdk#79. This is a **patch** release: nothing below removes or retypes
+a public member. The refusal that changes type is now a `ValidationError`, which is a
+`NetworkError` by subtype (§27.4 rule 7), so no `catch` written for 1.1.1 stops matching, and the
+one model addition is a pair of trailing members with a default.
+
+### Changed
+
+- **A `429 rate_limit_exceeded` on a device poll is waited out** (§14.2 rule 9, contract 1.64
+  item (b)). `deviceLogin` no longer treats it as a failure to retry at the next tick: it waits the
+  `Retry-After` as a minimum (never below the interval, and counted as that one interval), does
+  **not** raise the interval for it, and polls again; a `Retry-After` past the `expires_in`
+  deadline ends in the typed `expired_token` outcome without sending anything after the deadline.
+  A single `devicePoll` raises the `429` as an `OAuthProtocolError` with
+  `error == "rate_limit_exceeded"` (§14.2 rule 9, contract 1.63) — before, it surfaced as a bare
+  `NetworkError`. Only the `400 slow_down` raises the interval.
+- **The refusal at `plan` of an unknown open-enum value is a `ValidationError`** (C163-07, §27.6.2
+  item 4): `ValidationError.fields` names the member (`termination_action` or `service_type`), as
+  1.1.0's apply-time refusal did, and it quotes the value (C163-10, below). It is still a
+  `NetworkError` by subtype, and nothing is written.
+- **The `/oauth2/*` exclusion follows the endpoints discovery advertises** (C163-19, §12.1 rule 3).
+  The session bearer, the cookies and the CSRF header were withheld only under the base URL's own
+  `/oauth2/` prefix; the token, device-authorization, PAR, revocation, introspection, JWKS and
+  backchannel endpoints (and their `mtls_endpoint_aliases`) of the discovery document are now
+  matched by origin and path as well, so a deployment that serves them elsewhere gets the same
+  treatment. The conventional prefix still applies before discovery has run.
+- **The status decides on a poll** (§14.2 rules 6 and 9, contract 1.64 amended; C164-04, C164-17):
+  any `429` on a device poll is the rate-limit wait, whatever its body names, and a `429` whose body
+  says `slow_down` (a server before 1.1.2, or an intermediary) no longer raises the interval — only
+  the `400` does. A bodiless `429` honours its `Retry-After` as the floor of the wait. A `500`
+  whose body is `{"error":"server_error"}` is a transport failure and does not end the flow.
+- **The `expires_in` deadline is an instant on the clock** (§14.2 rule 4, C164-05): taken when the
+  authorization arrives, so request time and slow answers count against it; before, only the waits
+  slept were subtracted and a slow server could be polled past the deadline.
+- **The device poll is §16-retried inside the attempt** (§14.2 rule 6, §16.2, contract 1.64 amended;
+  C164-25): a `5xx` or a transport failure on `devicePoll` is retried under §16 (three attempts in
+  total, `Retry-After` as the floor, see below) before the loop takes its next interval; a `429` and any other
+  `4xx` are not. With retry disabled it is one request per poll.
+- **A single `devicePoll` raises every `429` as `OAuthProtocolError("rate_limit_exceeded")`** (C164-32),
+  a bodiless or proxy one included and a `429` whose body says `slow_down` too; 1.1.1 raised those as
+  `NetworkError`, so a hand-rolled loop whose `catch (e: NetworkError)` handled a proxy's `429` must
+  also handle `OAuthProtocolError` (an `AuthError`).
+- **The deadline is taken before the user-code callback** (C164-28), so the callback's time counts
+  against `expires_in`.
+- **`Retry-After` is now the floor of every §16 retry's wait** (§16.1, C164-37). Until now no
+  `NetworkError` built from a response carried it, so the entry above and the README claimed a floor
+  that was only in `delayFor`'s unit test: a `503` with `Retry-After: 120` was retried within
+  milliseconds. A `429` or `5xx` answer's `Retry-After` (delta-seconds or an HTTP date) is parsed onto
+  the `NetworkError` and the runner waits `max(jittered backoff, Retry-After)`, with the value clamped at
+  60 s (§16.1 sets no upper clamp; a hostile header must not park the caller). It reaches `checkAccess`,
+  the management transport, SSF and client registration as well as the device and CIBA polls.
+- **The in-poll retry honours the device-login deadline** (§14.2 rule 4, C164-36): a §16 retry whose wait
+  would end at or past the `expires_in` deadline is not sent; the failure is surfaced and the loop raises
+  `expired_token`. A bare `devicePoll` keeps the plain §16 behaviour. Landed with C164-37, as a floor
+  without the bound would sleep past the deadline.
+- **OkHttp's own resend after a dropped connection is switched off for the device poll and the CIBA poll**
+  (§16.1 cap of three attempts in total, C164-39): three disconnects then `200` made four requests; now
+  three attempts are counted by §16 alone, as for `cibaInitiate`. **Done with a one-shot request body, not with
+  `retryOnConnectionFailure(false)`** (C164-44): on OkHttp 4.12 that setting also switches off the fallback to the
+  next resolved address, so a host whose first address refuses (an AAAA record on an IPv4-only path, a
+  dual-stack `localhost`) failed every poll once the connection pool was empty and `deviceLogin`/`cibaAwait`
+  could only end in `expired_token`. A one-shot body keeps the fallback (a connect failure is not a send) and
+  refuses what must not be repeated: the replay of a request that was written, OkHttp's follow-ups of a `408` and
+  of a `503` + `Retry-After: 0` (a §16.1 cap and §33.7 rule 1 fix in itself), and a `307`/`308` re-POST (a token
+  endpoint that redirects a POST is not a supported deployment, and credentials are not re-sent to a `Location`).
+  `cibaInitiate` uses the same body.
+- **Management writes and the sessionless transport keep route fallback too** (C164-50, same root cause; the
+  transports date from 1.0): `ManagementTransport`'s dedicated write client and `Sessionless.of` (RFC 7592
+  client registration, the SSF receiver) were built with `retryOnConnectionFailure(false)`, so a management
+  `DELETE` on a host whose first address refuses reached the server 0 times once the pool was empty. They now
+  use the ordinary client with a one-shot body on every write (a bodiless `DELETE` sends an empty one, so it
+  carries `Content-Length: 0`); §34.2 P11 still holds (no replay after a drop on a pooled connection).
+- **The CIBA in-poll retry honours the deadline** (§33.7 rule 5, §34.2 P10, C164-43): `cibaAwait` hands its
+  deadline and clock to the poll, and a §16 retry whose wait would end at or past `received_at + expires_in` is
+  not sent; before round 3's `Retry-After` floor this was jitter only, with it a `503` + `Retry-After: 120`
+  would have been served up to 60 s twice past the deadline.
+- **The in-poll waits sleep on the injected clock, and a 5xx's `Retry-After` that outlived the retry stays the
+  floor of the next interval** (C164-48), as a 429's does. The 60 s clamp on `Retry-After` is kept (README states
+  it); a longer value is waited at 60 s rather than refusing the retry.
+- **The value quoted by the refusal at `plan` is JSON-escaped and capped at 64 characters**
+  (C164-21): a quote or a newline in server text no longer reaches the message verbatim.
+
+### Added
+
+- **`NetworkReplyProfile.terminationActionRaw` and `serviceTypeRaw`** (C163-10, D-15; §27.6.2 item 4
+  as relaxed by contract 1.64 §34.8 (c)): trailing `String? = null` members that keep the server's
+  own text next to the open enumeration, which decodes a value this SDK does not know to `UNKNOWN`.
+  The refusal at `plan` quotes it (`termination_action "future"`). Read-only diagnostics, never
+  sent; the same mechanism as `updatedAtRaw`, generalised from timestamps to any member the
+  generator lists (`RAW_VALUE_MEMBERS`).
+
+### Fixed
+
+- **README and change log text** (C163-18): the 1.60 list said a read's `toInput()` carries its
+  `updatedAt` where 1.63 made it the raw string (`updatedAtRaw`), and the 1.1.1 entry below labelled
+  the unknown-value refusal "contract 1.63 item (ab)", a 1.62 item letter (§34.6 (ab)); corrected.
+
+### Tests
+
+- **§14.6, contract 1.64** — a mock answers one poll with `429` and `Retry-After`: the loop waits at
+  least the `Retry-After` (a recorded clock, not a wall-clock sleep), polls again, completes with
+  the token set, and the poll after it is scheduled at the unchanged interval; a second case caps a
+  `Retry-After` past `expires_in` at the deadline. The 1.63 §14.6 tests are unchanged.
+- **§27.9 C162-07, C163-09** — a stated `serviceType` (a value, and `null`) resolves the unknown one
+  and the `PUT` carries the stated value; the refusals assert `ValidationError` with the member in
+  `fields`, and the quoted value.
+- **C163-19, C164-13** — a discovery document that relocates the token, device-authorization and
+  revocation endpoints gets no session bearer, cookie or CSRF header on them (revoke is called
+  through the client after a cookie login, so only the discovery wiring protects it), the next
+  management `POST` carries both as the control, and an unadvertised path still does.
+- **`readClientRegistration` may reach the server once more in total** (C164-55, documented; OkHttp replays it
+  once on a stale pooled connection, C164-59): with
+  OkHttp's connection retry back on in `Sessionless`, OkHttp 4.12 recovers the idempotent RFC 7592 `GET` once on
+  a stale pooled connection, so over a connection that drops it makes at most 4 sends with retry on (the §16 cap
+  is 3 attempts) and at most 2 with `retryDisabled()`; round 4 gave 3 and 1. The read changes no state; every
+  write stays exactly-once through its one-shot body. Moving to OkHttp 5.x (route fallback independent of the
+  flag) is a follow-up, not part of 1.1.2. Stated in the README §16 section and pinned by a test.
+- **Round 7 — C164-59:** wording only: the read's extra send is one replay in total, not one per §16 attempt (README §16
+  section and the entry above); the bounds (4 with retry on, 2 with it off) are unchanged.
+- **Round 6 — C164-55, -56:** `DualStackWritesTest` adds the read-and-drop case on each sessionless write over a
+  pooled connection (`deleteClientRegistration` 1 request, `updateClientRegistration` 1, `ssf.poll` exactly 3), and
+  pins the read at 3..4 sends with retry on and 1..2 without. Mutants killed: a plain body on the registration `PUT`,
+  on the `DELETE` and on the `ssf.poll` body.
+- **Round 5 — C164-50, -53, -54:** a management `DELETE`, a management `POST` and a sessionless
+  `deleteClientRegistration` on a host whose first address refuses (custom `Dns` `[127.0.0.2, 127.0.0.1]`, pool
+  evicted) reach the server once; a management write after a drop on a pooled connection is still sent once
+  (P11); `cibaInitiate` is sent once over a pooled connection that drops, on `503` + `Retry-After: 0` and on
+  `408`, and reaches `bc-authorize` on the dual-stack host (t04b, t04c); the poll's replay test drops on a
+  pooled connection; the CIBA in-poll waits are recorded on the clock; a retry whose wait ends exactly at the
+  deadline is not sent (device and CIBA).
+- **Round 4 — C164-43, -44, -48:** a host whose first address refuses (custom `Dns` `[127.0.0.2, 127.0.0.1]`,
+  pool evicted) still reaches the server for `devicePoll` and `cibaPoll` in one request; a drop after the body was
+  sent is not replayed (three attempts, not four, route fallback on); the CIBA P10 case (`expires_in` 30, every poll
+  `503` + `Retry-After: 120`: five polls, all before the deadline) and a poll answered at 5.95 s of 6 s is not
+  retried; the in-poll waits are recorded on the clock; the exhausted poll's `Retry-After` is the next wait. The
+  exact-count tests are back on `localhost`.
+- **Round 3 — C164-36, -37, -38, -39, -41:** 503 + `Retry-After: 120` sends nothing at or after the deadline
+  and does not sleep the floor; a 500 answered at 5.95 s of a 6 s grant is not retried; `checkAccess` waits a
+  `503`'s `Retry-After: 2`; the clamp; transport failures retried inside the poll (twice then tokens, three
+  exhaust the cap at exactly three requests, retry off makes one) and the same for `cibaPoll`.
+- **C164-25, C164-28, C164-29, C164-33** — the in-poll §16 retry (two `500`s then `200`: three requests, one
+  interval; a third `500` exhausts the cap; a `429` and retry-disabled make one request), a 25 s callback
+  against a 30 s grant, the 429 mock with the server's exact body, and a distinct refresh token in
+  `OidcRefreshTest` (it flaked under load).
+- **Contract 1.64 amended** — a `500 {"error":"server_error"}` mid-poll, a `429 slow_down`, a
+  bodiless `429` with `Retry-After`, and a deadline that counts request time.
+
+### Notes
+
+- This SDK generates no DPoP proofs (§21.9) and ships no AMQP, as in 1.1.1. Item (c) of contract
+  1.64 needed no port beyond the optional raw value above.
+
 ## [1.1.1] - 2026-10-21
 
 ### Changed
@@ -21,16 +178,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Contract 1.63 follow-ups — SCIM updatedAtRaw (C162-10), unknown open enum refused at plan (C162-07), /oauth2 cookie test
 
-## [1.2.0] - 2026-10-20
+### Contract 1.63 notes (prepared as 1.2.0, released as 1.1.1)
+
+**1.1.1 contains a source-breaking change despite its patch number** (`ScimTargetInput.expectedUpdatedAt` is a `String?`, below): the version was set to 1.1.1 and tagged `v1.1.1`; no 1.2.0 was ever released. The text below was written for it under that name.
 
 Contract 1.63 (accompanying the AXIAM 1.1.1 release): `CONTRACT.md`, `openapi.json` and
 `management-registry.json` re-vendored byte for byte from `ilpanich/axiam` `d919ba0cc`
 (`openapi.json` digest `sha256:443c9d39…8098`; `proto/` is unchanged), the §27 surface regenerated
 (202 operations across 29 namespaces, none added), and the README states conformance at contract
-1.63. Closes ilpanich/axiam-kotlin-sdk#77. This is a **minor** release, because the SCIM
-change below is source-breaking.
+1.63. Closes ilpanich/axiam-kotlin-sdk#77. This was to be a **minor** release, because the SCIM
+change below is source-breaking; it shipped as 1.1.1.
 
-### Source-breaking changes
+#### Source-breaking changes
 
 - **`ScimTargetInput.expectedUpdatedAt` is a `String?`, no longer an `Instant?`** (§31.3 rule 4,
   contract 1.63 item (b), C162-10). `ScimTargetResponse` keeps the response's own `updated_at`
@@ -41,16 +200,16 @@ change below is source-breaking.
   string (`target.updatedAtRaw`), not an `Instant`; an assigned `null` is still "none" and the key
   is omitted.
 
-### Fixed
+#### Fixed
 
 - **An unknown open-enum value on an unstated member is refused at `plan`** (§27.6.2 item 4,
-  contract 1.63 item (ab), C162-07). A profile read with a `termination_action` or `service_type`
+  contract 1.62 item (ab), §34.6, C162-07). A profile read with a `termination_action` or `service_type`
   this SDK does not know, in a manifest that changes another member and does not state the unknown
   one, now fails `plan` (and `apply`, which plans first) with a `NetworkError` naming the member,
   with no non-`GET` request; before, `apply` reached the `PUT` step and the serializer refused it
   there. A manifest that states the member resolves it, and an unchanged profile is `NoChange`.
 
-### Tests
+#### Tests
 
 - **No session cookie and no `X-CSRF-Token` on `/oauth2/*`** (§6.1 rule 11, §12.1 rule 3, §14.6
   contract 1.63): this SDK already withholds them; the new test signs in with a cookie login that
@@ -58,7 +217,7 @@ change below is source-breaking.
   introspect/revoke, and asserts neither header, with the control that the next `POST` management
   request carries both.
 
-### Notes
+#### Notes
 
 - `DeviceAuthorizationRequest.client_id` is no longer required in `openapi.json`; this SDK models no
   such request type (the device operations take parameter objects), so nothing changes.

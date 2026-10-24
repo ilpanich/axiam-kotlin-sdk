@@ -10,6 +10,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -105,9 +107,41 @@ class SessionState(
      * (contract 1.62): no session or adopted credential is attached to such a
      * request. Anchored to the base path, so `/api/v1/auth/federation/oauth2/...`
      * is not one.
+     *
+     * This is the conventional layout only; the endpoints the server actually
+     * advertises are matched by [isOauth2Request] (C163-19).
      */
     fun isOauth2Path(encodedPath: String): Boolean =
         encodedPath.startsWith(baseUri.rawPath.orEmpty().trimEnd('/') + "/oauth2/")
+
+    /** Origin + path of every endpoint the discovery document advertised, see [registerOauth2Endpoints]. */
+    private val discoveredOauth2Endpoints = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    /**
+     * Records the endpoints of a discovery document as `/oauth2/…` requests
+     * (C163-19): the document, not the conventional `/oauth2/` layout, says
+     * where the token, device-authorization, PAR, revocation, introspection
+     * and JWKS endpoints are, and a deployment may serve them elsewhere on the
+     * same host. A string that is not an absolute URL is ignored.
+     */
+    fun registerOauth2Endpoints(endpoints: Collection<String?>) {
+        for (endpoint in endpoints) {
+            val url = endpoint?.toHttpUrlOrNull() ?: continue
+            discoveredOauth2Endpoints += endpointKey(url)
+        }
+    }
+
+    /**
+     * `true` when [url] is an `/oauth2/…` request (CONTRACT.md §12.1 rule 3):
+     * under this session's `/oauth2/` prefix on its own host, or exactly an
+     * endpoint its discovery document advertised ([registerOauth2Endpoints]).
+     */
+    fun isOauth2Request(url: HttpUrl): Boolean =
+        (isBaseHost(url.host) && isOauth2Path(url.encodedPath)) ||
+            endpointKey(url) in discoveredOauth2Endpoints
+
+    private fun endpointKey(url: HttpUrl): String =
+        "${url.scheme}://${url.host.lowercase()}:${url.port}${url.encodedPath.trimEnd('/')}"
 
     fun csrfToken(): String? = csrf.get()
     fun setCsrfToken(token: String) = csrf.set(token)

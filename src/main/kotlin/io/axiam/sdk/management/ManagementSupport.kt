@@ -139,18 +139,29 @@ internal object ManagementSupport {
     }
 
     /**
-     * Response timestamps whose OWN string a model keeps beside the parsed value
-     * (CONTRACT.md §32.2, contract 1.62, item (g)): the model's serial name ->
-     * (the wire member, the synthetic member the model declares for its text).
+     * Response members whose OWN string a model keeps beside the decoded value: the
+     * model's serial name -> (the wire member, the synthetic member the model declares
+     * for its text), one pair per member.
      *
-     * `expected_updated_at` is compared as an instant but is sent as the string
-     * the response carried, and a helper that renders the parsed `Instant` again
-     * is not conformant. `scripts/gen_management.py` declares the same pairs in
-     * `RAW_TIMESTAMP_MEMBERS`; `Contract162ModelsTest` fails if the two disagree.
+     * Timestamps (CONTRACT.md §32.2, contract 1.62, item (g)): `expected_updated_at` is
+     * compared as an instant but is sent as the string the response carried, and a
+     * helper that renders the parsed `Instant` again is not conformant.
+     *
+     * Open enumerations (C163-10, contract 1.64): `termination_action` and
+     * `service_type` of a network reply profile decode a value this SDK does not know to
+     * `UNKNOWN`, which has no text; the raw member keeps it so that the manifest's refusal
+     * at `plan` (§27.6.2 item 4) can quote it. Never sent.
+     *
+     * `scripts/gen_management.py` declares the same pairs in `RAW_TIMESTAMP_MEMBERS` and
+     * `RAW_VALUE_MEMBERS`; `Contract164ModelsTest` fails if the two disagree.
      */
-    internal val RAW_TIMESTAMPS: Map<String, Pair<String, String>> = mapOf(
-        "io.axiam.sdk.management.models.SsfStream" to ("updated_at" to "updated_at_raw"),
-        "io.axiam.sdk.management.models.ScimTargetResponse" to ("updated_at" to "updated_at_raw"),
+    internal val RAW_STRINGS: Map<String, List<Pair<String, String>>> = mapOf(
+        "io.axiam.sdk.management.models.SsfStream" to listOf("updated_at" to "updated_at_raw"),
+        "io.axiam.sdk.management.models.ScimTargetResponse" to listOf("updated_at" to "updated_at_raw"),
+        "io.axiam.sdk.management.models.NetworkReplyProfile" to listOf(
+            "termination_action" to "termination_action_raw",
+            "service_type" to "service_type_raw",
+        ),
     )
 
     /** Converts a response node into a model, or throws a [NetworkError]. */
@@ -159,22 +170,24 @@ internal object ManagementSupport {
             "$operation: the server returned no body where one was expected",
         )
         return try {
-            ManagementTransport.READER.decodeFromJsonElement(deserializer, keepRawTimestamps(deserializer, element))
+            ManagementTransport.READER.decodeFromJsonElement(deserializer, keepRawStrings(deserializer, element))
         } catch (e: Exception) {
             throw NetworkError("$operation: the server's response did not match: ${e.message}", e)
         }
     }
 
     /**
-     * Copies the response's own timestamp string into the model's raw member
-     * ([RAW_TIMESTAMPS]), before the typed one is parsed from the same text.
+     * Copies the response's own string for each member of [RAW_STRINGS] into the model's
+     * raw member, before the typed one is parsed from the same text.
      */
     @OptIn(ExperimentalSerializationApi::class)
-    private fun keepRawTimestamps(deserializer: DeserializationStrategy<*>, element: JsonElement): JsonElement {
-        val (wire, rawWire) = RAW_TIMESTAMPS[deserializer.descriptor.serialName] ?: return element
+    private fun keepRawStrings(deserializer: DeserializationStrategy<*>, element: JsonElement): JsonElement {
+        val pairs = RAW_STRINGS[deserializer.descriptor.serialName] ?: return element
         val obj = element as? JsonObject ?: return element
-        val text = (obj[wire] as? JsonPrimitive)?.takeIf { it.isString } ?: return element
-        return JsonObject(obj + (rawWire to text))
+        val raw = pairs.mapNotNull { (wire, rawWire) ->
+            (obj[wire] as? JsonPrimitive)?.takeIf { it.isString }?.let { rawWire to it }
+        }
+        return if (raw.isEmpty()) element else JsonObject(obj + raw)
     }
 
     /** Converts a bare-array response into a list of models (§27.4 rule 4). */

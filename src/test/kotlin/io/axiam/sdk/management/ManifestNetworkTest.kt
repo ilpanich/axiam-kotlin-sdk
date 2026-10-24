@@ -1,6 +1,7 @@
 package io.axiam.sdk.management
 
 import io.axiam.sdk.errors.NetworkError
+import io.axiam.sdk.errors.ValidationError
 import io.axiam.sdk.management.ManagementManifest.NetworkPolicySpec
 import io.axiam.sdk.management.ManagementManifest.NetworkProfileSpec
 import io.axiam.sdk.management.ManagementManifest.NetworkSegmentSpec
@@ -370,7 +371,7 @@ class ManifestNetworkTest : ManagementTestBase() {
         assertEquals(JsonPrimitive(7200), replaceLab.last().json()["profile"]!!.jsonObject["session_timeout_secs"], "never lowered to the cap")
     }
 
-    // -- §27.6.2 item 4, contract 1.63 (ab): an unknown open-enum value on an unstated member --------
+    // -- §27.6.2 item 4, contract 1.62 (ab), §34.6: an unknown open-enum value on an unstated member --------
 
     private suspend fun unknownProfileMount(action: String, service: String): Route {
         mountEmptyTenant()
@@ -384,20 +385,33 @@ class ManifestNetworkTest : ManagementTestBase() {
         val put = unknownProfileMount(action = "future", service = "null")
         // The manifest changes the timeout, and does not state termination_action.
         val m = manifest(profiles = listOf(NetworkProfileSpec("lab", 900)))
-        val e = assertThrows(NetworkError::class.java) { runBlocking { client.management().manifest().plan(m) } }
+        val e = assertThrows(ValidationError::class.java) { runBlocking { client.management().manifest().plan(m) } }
         assertTrue(e.message!!.contains("termination_action"), e.message)
+        assertTrue(e.message!!.contains("\"future\""), "C163-10: the raw value is quoted: ${e.message}")
+        assertEquals(listOf("termination_action"), e.fields.map { it.field })
         assertEquals(0, put.calls())
         val log = requestLog().filter { it != "POST /api/v1/auth/login" }
         assertTrue(log.all { it.startsWith("GET ") }, "no non-GET request was sent: $log")
     }
 
     @Test
+    fun `the quoted raw value is JSON-escaped and capped (C164-21)`() = runTest {
+        unknownProfileMount(action = "a\\\"b\\nc", service = "null")
+        val m = manifest(profiles = listOf(NetworkProfileSpec("lab", 900)))
+        val e = assertThrows(ValidationError::class.java) { runBlocking { client.management().manifest().plan(m) } }
+        assertTrue(e.message!!.contains("\"a\\\"b\\nc\""), "escaped and quoted: ${e.message}")
+        assertFalse(e.message!!.contains('\n'), "no raw newline reaches the message")
+    }
+
+    @Test
     fun `an unknown service_type on an unstated member is refused at plan, and apply is refused the same way`() = runTest {
         val put = unknownProfileMount(action = "radius_request", service = "\"future\"")
         val m = manifest(profiles = listOf(NetworkProfileSpec("lab", 900)))
-        val e = assertThrows(NetworkError::class.java) { runBlocking { client.management().manifest().plan(m) } }
+        val e = assertThrows(ValidationError::class.java) { runBlocking { client.management().manifest().plan(m) } }
         assertTrue(e.message!!.contains("service_type"), e.message)
-        assertThrows(NetworkError::class.java) { runBlocking { client.management().manifest().apply(m) } }
+        assertTrue(e.message!!.contains("\"future\""), "C163-10: the raw value is quoted: ${e.message}")
+        assertEquals(listOf("service_type"), e.fields.map { it.field })
+        assertThrows(ValidationError::class.java) { runBlocking { client.management().manifest().apply(m) } }
         assertEquals(0, put.calls())
         val log = requestLog().filter { it != "POST /api/v1/auth/login" }
         assertTrue(log.all { it.startsWith("GET ") }, "no non-GET request was sent: $log")
@@ -419,6 +433,31 @@ class ManifestNetworkTest : ManagementTestBase() {
         // Nothing differs (the unknown is unstated and the rest agrees): NoChange, no write.
         val same = manifest(profiles = listOf(NetworkProfileSpec("lab", 1800)))
         assertTrue(client.management().manifest().plan(same).isConverged)
+    }
+
+    @Test
+    fun `stating the unknown service_type resolves it, and a stated null service_type too (C163-09)`() = runTest {
+        val put = unknownProfileMount(action = "radius_request", service = "\"future\"")
+        val stated = manifest(
+            profiles = listOf(
+                NetworkProfileSpec(
+                    "lab", 900,
+                    serviceType = JsonNullable.Value(RadiusServiceType.FRAMED_USER),
+                ),
+            ),
+        )
+        val plan = client.management().manifest().plan(stated)
+        assertEquals(ManagementPlan.Change.UPDATE, plan.actions.last().change)
+        client.management().manifest().apply(stated)
+        assertEquals(1, put.calls())
+        val sent = put.last().json()["profile"]!!.jsonObject
+        assertEquals(JsonPrimitive("framed_user"), sent["service_type"], "the stated value, never the unknown one")
+
+        // "None" is stated too: it replaces the unknown value and is left out of the body.
+        val none = manifest(profiles = listOf(NetworkProfileSpec("lab", 900, serviceType = JsonNullable.Null)))
+        client.management().manifest().apply(none)
+        assertEquals(2, put.calls())
+        assertFalse(put.last().json()["profile"]!!.jsonObject.containsKey("service_type"), "none: the key is left out, never the unknown value")
     }
 
     // -- refusals before any request -----------------------------------------------------------

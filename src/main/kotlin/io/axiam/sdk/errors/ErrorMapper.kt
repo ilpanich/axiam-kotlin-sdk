@@ -4,6 +4,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.Response
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * Central HTTP-status → error-type mapper (CONTRACT.md §2). The single source
@@ -32,6 +34,8 @@ object ErrorMapper {
         "content-type", "content-length", "date", "server", "retry-after",
         "x-request-id", "x-tenant-id",
     )
+    /** The longest `Retry-After` a retry will wait out as its floor; §16.1 sets no clamp, a hostile value must not park the caller. */
+    private val MAX_RETRY_AFTER = 60.seconds
     private const val REDACTED_HEADER = "[REDACTED]"
     private const val MAX_AUTHZ_BODY_PEEK_BYTES = 8192L
 
@@ -43,7 +47,12 @@ object ErrorMapper {
         when (status) {
             401 -> AuthError(message)
             403, 409 -> authzErrorFromBody(message, response)
-            else -> NetworkError.withSummary(message, sanitize(response))
+            else -> NetworkError.withSummary(
+                message,
+                sanitize(response),
+                // §16.1 (C164-37): a 429's or 5xx's Retry-After is the floor of the retry's wait.
+                response?.let(::retryAfterOf)?.coerceAtMost(MAX_RETRY_AFTER),
+            )
         }
 
     /**
@@ -85,6 +94,23 @@ object ErrorMapper {
         } catch (_: Exception) {
             null
         }
+
+    /**
+     * The response's `Retry-After` (RFC 9110 §10.2.3) as a [kotlin.time.Duration]:
+     * delta-seconds or an HTTP-date, `null` when absent, unparseable or negative.
+     */
+    internal fun retryAfterOf(response: Response): kotlin.time.Duration? {
+        val raw = response.header("Retry-After")?.trim().orEmpty()
+        if (raw.isEmpty()) return null
+        raw.toLongOrNull()?.let { return if (it >= 0) it.seconds else null }
+        val at = try {
+            java.time.ZonedDateTime.parse(raw, java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME)
+        } catch (_: java.time.format.DateTimeParseException) {
+            return null
+        }
+        val ms = at.toInstant().toEpochMilli() - System.currentTimeMillis()
+        return if (ms > 0) ms.milliseconds else kotlin.time.Duration.ZERO
+    }
 
     private fun authzErrorFromBody(message: String, response: Response?): AuthzError {
         if (response == null || response.body == null) {

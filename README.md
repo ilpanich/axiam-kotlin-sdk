@@ -31,7 +31,7 @@ Source: [ilpanich/axiam-kotlin-sdk](https://github.com/ilpanich/axiam-kotlin-sdk
 
 ## Contract conformance
 
-This SDK conforms to **contract 1.63**: CONTRACT.md §1–§7 (§1.1's `getUserInfo` and §1.1.1's
+This SDK conforms to **contract 1.64**: CONTRACT.md §1–§7 (§1.1's `getUserInfo` and §1.1.1's
 `validateToken`/`introspectToken` declined — gRPC-only, and this SDK ships no gRPC transport; see
 [Scope of this SDK (v1)](#scope-of-this-sdk-v1) below), §9–§13 and §12.7, §14, §15, §17, §19,
 §20, §21, §22, §23, §24, §25, §26, §27, §28 (including §6.1 mTLS), and §28.12, §29, §30, §31, §32,
@@ -39,13 +39,30 @@ This SDK conforms to **contract 1.63**: CONTRACT.md §1–§7 (§1.1's `getUserI
 1.38 shape: all **thirteen** operations, including the four public "Sign in with X" entry points,
 as `suspend` functions on the same `AxiamClient`.
 
+**Contract 1.64 — the 1.1.2 release (§34.8).** The claim above holds at 1.64 with these:
+
+- **§14.2 rule 9 — a `429 rate_limit_exceeded` on a poll is waited out.** `deviceLogin` waits the
+  `Retry-After` as a minimum (capped at the `expires_in` deadline), counts it as one interval, does
+  not raise the interval for it, and polls again; a single `devicePoll` still raises it as an
+  `OAuthProtocolError` (`error == "rate_limit_exceeded"`). The **status decides**: any `429` on a poll
+  is that wait, a `429` whose body says `slow_down` included; only the `400 slow_down` raises the
+  interval. A `5xx` is a transport failure whatever its body, and (like a transport failure) is
+  §16-retried inside the poll (three attempts in total, never a `429`), bounded by the grant's deadline. See [Device authorization grant](#device-authorization-grant-14).
+- **§27.6.2 item 4 — the refusal names the member and the value.** An unknown `termination_action`
+  or `service_type` read from the server, on a member the manifest does not state, is refused at
+  `plan` as a `ValidationError` whose `fields` name the member and whose message quotes the value
+  (`NetworkReplyProfile.terminationActionRaw` / `serviceTypeRaw` keep the server's text).
+- **§12.1 rule 3 — the `/oauth2/*` exclusion follows the endpoints discovery advertises**, not only
+  the base URL's `/oauth2/` prefix.
+
 **Contract 1.63 — the 1.1.1 release.** The claim above holds at 1.63 with these:
 
 - **§31.3 rule 4 — SCIM `expected_updated_at` is the server's own string.**
   `ScimTargetResponse.updatedAtRaw` keeps the spelling the response carried and `toInput()` sends it;
   `ScimTargetInput.expectedUpdatedAt` is now a `String?` (**source-breaking**, see the change log).
 - **§27.6.2 item 4 — an unknown `termination_action` / `service_type` read from the server, on a
-  member the manifest does not state, is refused at `plan`** with no write.
+  member the manifest does not state, is refused at `plan`** with no write (a `ValidationError`
+  since 1.64).
 - **§6.1 rule 11, §12.1 rule 3 — no session cookie and no `X-CSRF-Token` on `/oauth2/*`:** already
   so; a test now guards it.
 
@@ -104,7 +121,8 @@ surface); the claim above holds at 1.60 with these:
 - **§32.2 (§34.2 P12.2 (b))** — an unseen event-type URI round-trips through `ssf.updateStream`
   unchanged; **(a), B5** — every local refusal of a value is a `ValidationError`.
 - **§31.3 rule 4** — `ScimTargetInput.expectedUpdatedAt`, sent exactly as set; a read's
-  `toInput()` carries its `updatedAt`, so an overtaken replacement is a `409`.
+  `toInput()` carries its `updatedAtRaw` (since 1.63; `updatedAt` rendered for a value built by
+  hand), so an overtaken replacement is a `409`.
 - **§27.15** — `windowMinutes` on the `notificationRules` models, passed through and never
   clamped; `allowSha1Signatures` and `idpMetadataSigningCertPem` on the three federation
   configuration models (`allowSha1Signatures` absent from a response reads `false`); the ten
@@ -223,7 +241,7 @@ default tenant.
 
 ```kotlin
 dependencies {
-    implementation("io.github.ilpanich:axiam-sdk-kotlin:1.1.1")
+    implementation("io.github.ilpanich:axiam-sdk-kotlin:1.1.2")
     // Optional — only if you use the Ktor route guard / §11 helpers:
     implementation("io.ktor:ktor-server-core:2.3.12")
 }
@@ -235,7 +253,7 @@ dependencies {
 <dependency>
   <groupId>io.github.ilpanich</groupId>
   <artifactId>axiam-sdk-kotlin</artifactId>
-  <version>1.1.1</version>
+  <version>1.1.2</version>
 </dependency>
 ```
 
@@ -842,6 +860,11 @@ polling rules are where implementations go wrong:
 - **Polling stops at `expiresIn`**, even if the server has not yet said `expired_token`.
 - **A `5xx` mid-poll is not terminal.** A server restart must not lose a grant the user has already
   approved.
+- **A `429 rate_limit_exceeded` is waited out (§14.2 rule 9, contract 1.64).** `deviceLogin` waits
+  the `Retry-After` as a minimum (never below the interval, capped at the `expiresIn` deadline),
+  counts the wait as one interval, does **not** raise the interval for it, and polls again. Only the
+  `400 slow_down` raises it. A hand-rolled loop over `devicePoll` sees the `429` as an
+  `OAuthProtocolError` with `error == "rate_limit_exceeded"` and decides for itself.
 
 `deviceCode` is `Sensitive`; `userCode` deliberately is not — it exists to be read aloud, and
 wrapping it would defeat the one thing it is for. The inter-poll wait is `delay`, so cancelling the
@@ -2491,7 +2514,14 @@ Targets JVM 17. CI runs on JDK 17 via `gradle/actions/setup-gradle`.
 Read-only authorization checks — `checkAccess` (both overloads), `can`, `batchCheck` — retry
 transient failures under the contract's normative table: **3 attempts** (1 initial + 2
 retries), 200 ms base, 5 s cap, **full jitter** (uniform over `[0, backoff]`), and
-`Retry-After` honored as a **floor**.
+`Retry-After` honored as a **floor** (a `429` or `5xx` answer's header, clamped at 60 s).
+
+One transport detail the attempt cap does not cover: OkHttp 4.12 recovers an **idempotent read** on a
+stale pooled connection by itself. The RFC 7592 `readClientRegistration` is such a `GET`, so over a
+connection that drops it can reach the server **once more in total** (OkHttp replays it once on a stale
+pooled connection): at most 4 sends with retry on, 2 with `retryDisabled()`. Every write is a one-shot body and is sent exactly once per attempt: a
+management write, the registration `PUT` and `DELETE`, `cibaInitiate`, and the `ssf.poll` / device / CIBA
+polls (three §16 attempts in total, no OkHttp replay on top).
 
 This SDK had no §16 policy before — only §9.3's refresh-then-retry-once, which is a different
 mechanism. §11.2 rule 5 had been requiring one since it was written.

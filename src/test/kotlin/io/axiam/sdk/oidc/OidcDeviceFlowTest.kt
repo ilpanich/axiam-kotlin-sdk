@@ -1,5 +1,6 @@
 package io.axiam.sdk.oidc
 
+import io.axiam.sdk.Sensitive
 import io.axiam.sdk.errors.AuthError
 import io.axiam.sdk.errors.OAuthProtocolError
 import kotlinx.coroutines.runBlocking
@@ -198,6 +199,429 @@ class OidcDeviceFlowTest {
         assertEquals("device-access-token", tokens.accessToken.expose())
     }
 
+    // -----------------------------------------------------------------------
+    // Contract 1.64, §14.2 rule 9 / §14.6: a 429 on a poll is waited out
+    // -----------------------------------------------------------------------
+
+    /** Records every wait instead of sleeping, so the schedule is asserted exactly (§14.6). */
+    private class RecordingClock(private val requestSeconds: Long = 0) : CibaClock {
+        val start: java.time.Instant = java.time.Instant.now()
+        /** The loop's waits, in whole seconds: a wait of a second or more (the interval, a Retry-After). */
+        val sleeps = mutableListOf<Long>()
+
+        /** The sub-second waits: the §16 backoff inside a poll, slept on this clock too (C164-48). */
+        val shortWaitsMillis = mutableListOf<Long>()
+
+        /** Time that passed outside any wait, e.g. inside the user-code callback (C164-28). */
+        var extraSeconds = 0L
+
+        /** Sub-second time passed outside any wait, e.g. a slow answer (C164-36). */
+        var extraMillis = 0L
+
+        /** Time spent in requests also passes (C164-05): every wait is followed by one poll of [requestSeconds]. */
+        override fun now(): java.time.Instant =
+            start.plusSeconds(sleeps.sum() + sleeps.size * requestSeconds + extraSeconds).plusMillis(extraMillis + shortWaitsMillis.sum())
+        override suspend fun sleep(duration: java.time.Duration) {
+            if (duration.toMillis() >= 1000) sleeps += duration.seconds else shortWaitsMillis += duration.toMillis()
+        }
+    }
+
+    private fun rateLimited(retryAfter: String) = MockResponse()
+        .setResponseCode(429)
+        .addHeader("Content-Type", "application/json")
+        .addHeader("Retry-After", retryAfter)
+        // The server's own body (§14.6, contract 1.64 amended): no error_description.
+        .setBody("""{"error":"rate_limit_exceeded"}""")
+
+    private fun login(
+        clock: RecordingClock,
+        client: io.axiam.sdk.AxiamClient = deviceClient(),
+        onUserCode: suspend (DeviceAuthorization) -> Unit = { },
+    ): OidcTokenSet = runBlocking {
+        client.deviceLogin(
+            DeviceLoginParams(tenantId = tenantId, onUserCode = onUserCode).also { it.clock = clock },
+        )
+    }
+
+    @Test
+    fun `a 429 with Retry-After is waited out, the loop polls again and completes, and the interval is unchanged`() {
+        mountAuthorization(expiresIn = 600, interval = 5)
+        val polls = AtomicInteger(0)
+        scriptToken(
+            { polls.incrementAndGet(); rateLimited("30") },
+            { polls.incrementAndGet(); oauthError("authorization_pending") },
+            { polls.incrementAndGet(); tokenSuccess() },
+        )
+        val clock = RecordingClock()
+
+        val tokens = login(clock)
+
+        assertEquals("device-access-token", tokens.accessToken.expose())
+        assertEquals(3, polls.get(), "the 429 is answered by another poll, not by raising")
+        assertEquals(
+            listOf(5L, 30L, 5L),
+            clock.sleeps,
+            "the 429 waited the Retry-After (a minimum, standing for that interval), and the poll " +
+                "after it is scheduled at the interval held before — not five seconds longer",
+        )
+    }
+
+    @Test
+    fun `a Retry-After shorter than the interval does not shorten the wait`() {
+        mountAuthorization(expiresIn = 600, interval = 5)
+        scriptToken({ rateLimited("1") }, { tokenSuccess() })
+        val clock = RecordingClock()
+
+        login(clock)
+
+        assertEquals(listOf(5L, 5L), clock.sleeps, "a Retry-After is a minimum, never below the interval")
+    }
+
+    @Test
+    fun `slow_down still raises the interval after a 429 and only the 400 does`() {
+        mountAuthorization(expiresIn = 600, interval = 5)
+        scriptToken({ rateLimited("20") }, { oauthError("slow_down") }, { tokenSuccess() })
+        val clock = RecordingClock()
+
+        login(clock)
+
+        assertEquals(listOf(5L, 20L, 10L), clock.sleeps)
+    }
+
+    @Test
+    fun `a Retry-After past the expires_in deadline ends in expired_token and sends nothing after it`() {
+        mountAuthorization(expiresIn = 20, interval = 5)
+        val polls = AtomicInteger(0)
+        scriptToken({ polls.incrementAndGet(); rateLimited("3600") })
+        val clock = RecordingClock()
+
+        val error = assertThrows(OAuthProtocolError::class.java) { login(clock) }
+
+        assertTrue(error.isExpiredToken, "rule 4: the typed expired_token outcome")
+        assertEquals(1, polls.get(), "nothing is sent after the deadline")
+        assertEquals(listOf(5L), clock.sleeps, "raised at once, without serving the wait")
+    }
+
+    @Test
+    fun `a 429 whose body says slow_down is the rate-limit wait, and does not raise the interval (C164-04)`() {
+        mountAuthorization(expiresIn = 600, interval = 5)
+        scriptToken(
+            { MockResponse().setResponseCode(429).addHeader("Retry-After", "1").setBody(OidcTestKit.oauth2ErrorJson("slow_down", "x")) },
+            { MockResponse().setResponseCode(429).addHeader("Retry-After", "1").setBody(OidcTestKit.oauth2ErrorJson("slow_down", "x")) },
+            { tokenSuccess() },
+        )
+        val clock = RecordingClock()
+
+        login(clock)
+
+        assertEquals(listOf(5L, 5L, 5L), clock.sleeps, "the status decides: only the 400 raises the interval")
+    }
+
+    @Test
+    fun `a bodiless 429 honours Retry-After as a floor (C164-17)`() {
+        mountAuthorization(expiresIn = 600, interval = 5)
+        scriptToken({ MockResponse().setResponseCode(429).addHeader("Retry-After", "30") }, { tokenSuccess() })
+        val clock = RecordingClock()
+
+        login(clock)
+
+        assertEquals(listOf(5L, 30L), clock.sleeps)
+    }
+
+    @Test
+    fun `the deadline is an instant on the clock, so request time counts against it (C164-05)`() {
+        // expires_in 20, interval 5, each poll's round trip takes 4 s: the polls leave at 5 and 14;
+        // a third would leave at 23, past the deadline, and is not sent.
+        mountAuthorization(expiresIn = 20, interval = 5)
+        val polls = AtomicInteger(0)
+        dispatcher.on("/oauth2/token") { polls.incrementAndGet(); oauthError("authorization_pending") }
+        val clock = RecordingClock(requestSeconds = 4)
+
+        val error = assertThrows(OAuthProtocolError::class.java) { login(clock) }
+
+        assertTrue(error.isExpiredToken)
+        assertEquals(2, polls.get(), "no poll once now + interval reaches the deadline")
+    }
+
+    @Test
+    fun `the deadline is taken before the user-code callback, whose time counts (C164-28)`() {
+        // The callback takes 25 s of a 30 s grant at interval 5: the first poll would leave at 30.
+        mountAuthorization(expiresIn = 30, interval = 5)
+        val polls = AtomicInteger(0)
+        dispatcher.on("/oauth2/token") { polls.incrementAndGet(); oauthError("authorization_pending") }
+        val clock = RecordingClock()
+
+        val error = assertThrows(OAuthProtocolError::class.java) {
+            login(clock, onUserCode = { clock.extraSeconds += 25 })
+        }
+
+        assertTrue(error.isExpiredToken)
+        assertTrue(polls.get() <= 1, "at most one poll, not five: ${polls.get()}")
+    }
+
+    // §14.6 contract 1.64 amended (C164-35, C164-25): the poll is §16-retried inside the attempt.
+
+    private fun serverError() = MockResponse().setResponseCode(500)
+        .addHeader("Content-Type", "application/json")
+        .setBody("""{"error":"server_error","error_description":"db"}""")
+
+    @Test
+    fun `a single devicePoll retries two 500s inside the poll and returns the tokens (three requests)`(): Unit = runBlocking {
+        val requests = AtomicInteger(0)
+        scriptToken(
+            { requests.incrementAndGet(); serverError() },
+            { requests.incrementAndGet(); serverError() },
+            { requests.incrementAndGet(); tokenSuccess() },
+        )
+
+        val tokens = deviceClient().devicePoll(DevicePollParams(Sensitive.of("dc"), tenantId = tenantId))
+
+        assertEquals("device-access-token", tokens.accessToken.expose())
+        assertEquals(3, requests.get(), "the attempt cap of §16.1 is three in total")
+    }
+
+    @Test
+    fun `deviceLogin completes within one interval when the poll retries two 500s`() {
+        mountAuthorization(expiresIn = 600, interval = 5)
+        val requests = AtomicInteger(0)
+        scriptToken(
+            { requests.incrementAndGet(); serverError() },
+            { requests.incrementAndGet(); serverError() },
+            { requests.incrementAndGet(); tokenSuccess() },
+        )
+        val clock = RecordingClock()
+
+        login(clock)
+
+        assertEquals(3, requests.get())
+        assertEquals(listOf(5L), clock.sleeps, "one interval: the retries happened inside the poll")
+    }
+
+    @Test
+    fun `a third 500 exhausts the cap, devicePoll surfaces it and deviceLogin takes its next interval`() {
+        mountAuthorization(expiresIn = 600, interval = 5)
+        val requests = AtomicInteger(0)
+        scriptToken(
+            { requests.incrementAndGet(); serverError() },
+            { requests.incrementAndGet(); serverError() },
+            { requests.incrementAndGet(); serverError() },
+            { requests.incrementAndGet(); tokenSuccess() },
+        )
+        val clock = RecordingClock()
+
+        login(clock)
+
+        assertEquals(4, requests.get())
+        assertEquals(listOf(5L, 5L), clock.sleeps, "rule 6: the exhausted poll costs one interval, not the flow")
+    }
+
+    /**
+     * A client whose resolver puts a refusing address first: `localhost` -> [127.0.0.2, 127.0.0.1] with the mock
+     * on 127.0.0.1 only. A poll must still reach the server (OkHttp falls back to the next address within the
+     * call), which a client built with `retryOnConnectionFailure(false)` does not (C164-44).
+     */
+    private fun dualStackClient(): io.axiam.sdk.AxiamClient {
+        val dns = object : okhttp3.Dns {
+            override fun lookup(hostname: String): List<java.net.InetAddress> =
+                if (hostname == "localhost") {
+                    listOf(java.net.InetAddress.getByName("127.0.0.2"), java.net.InetAddress.getByName("127.0.0.1"))
+                } else {
+                    okhttp3.Dns.SYSTEM.lookup(hostname)
+                }
+        }
+        return io.axiam.sdk.AxiamClient.builder("http://localhost:${server.port}", tenantId)
+            .oidcClientId(OidcTestKit.CLIENT_ID)
+            .httpClient(okhttp3.OkHttpClient.Builder().dns(dns).build())
+            .build()
+    }
+
+    private fun transportFailure() = MockResponse().setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.DISCONNECT_AFTER_REQUEST)
+
+    @Test
+    fun `a transport failure is retried inside the poll, twice, then tokens (C164-38)`(): Unit = runBlocking {
+        val requests = AtomicInteger(0)
+        scriptToken(
+            { requests.incrementAndGet(); transportFailure() },
+            { requests.incrementAndGet(); transportFailure() },
+            { requests.incrementAndGet(); tokenSuccess() },
+        )
+
+        val tokens = deviceClient().devicePoll(DevicePollParams(Sensitive.of("dc"), tenantId = tenantId))
+
+        assertEquals("device-access-token", tokens.accessToken.expose())
+        assertEquals(3, requests.get())
+    }
+
+    @Test
+    fun `three transport failures exhaust the cap at exactly three requests, OkHttp's own resend included (C164-38, C164-39)`(): Unit = runBlocking {
+        val requests = AtomicInteger(0)
+        scriptToken({ requests.incrementAndGet(); transportFailure() })
+
+        assertThrows(io.axiam.sdk.errors.NetworkError::class.java) {
+            runBlocking { deviceClient().devicePoll(DevicePollParams(Sensitive.of("dc"), tenantId = tenantId)) }
+        }
+
+        assertEquals(3, requests.get(), "§16.1: three attempts in total; OkHttp's silent resend would make it four")
+    }
+
+    @Test
+    fun `with retry disabled a transport failure makes one request`(): Unit = runBlocking {
+        val requests = AtomicInteger(0)
+        scriptToken({ requests.incrementAndGet(); transportFailure() })
+        val client = io.axiam.sdk.AxiamClient.builder(server.url("/").toString(), tenantId)
+            .oidcClientId(OidcTestKit.CLIENT_ID).retryDisabled().build()
+
+        assertThrows(io.axiam.sdk.errors.NetworkError::class.java) {
+            runBlocking { client.devicePoll(DevicePollParams(Sensitive.of("dc"), tenantId = tenantId)) }
+        }
+
+        assertEquals(1, requests.get())
+    }
+
+    @Test
+    fun `a 503 with a long Retry-After sends nothing at or after the deadline (C164-36, C164-37)`() {
+        mountAuthorization(expiresIn = 30, interval = 5)
+        val clock = RecordingClock()
+        val sentAt = java.util.Collections.synchronizedList(mutableListOf<Long>())
+        dispatcher.on("/oauth2/token") {
+            sentAt += java.time.Duration.between(clock.start, clock.now()).seconds
+            MockResponse().setResponseCode(503).addHeader("Retry-After", "120")
+                .setBody("""{"error":"temporarily_unavailable"}""")
+        }
+        val started = System.nanoTime()
+
+        val error = assertThrows(OAuthProtocolError::class.java) { login(clock) }
+
+        assertTrue(error.isExpiredToken)
+        assertTrue(sentAt.all { it < 30 }, "nothing at or after the deadline: $sentAt")
+        // The exhausted poll's 120 s Retry-After is the floor of the next wait, past the deadline: expired at once.
+        assertEquals(1, sentAt.size, "one request, the 120 s floor never waited")
+        assertTrue((System.nanoTime() - started) < 20_000_000_000L, "the Retry-After was not slept")
+    }
+
+    @Test
+    fun `a poll answered 500 just before the deadline is not retried (C164-36)`() {
+        mountAuthorization(expiresIn = 6, interval = 5)
+        val clock = RecordingClock()
+        val requests = AtomicInteger(0)
+        dispatcher.on("/oauth2/token") {
+            requests.incrementAndGet()
+            clock.extraMillis += 950 // the answer arrives at 5.95 s of a 6 s grant
+            serverError()
+        }
+        val client = io.axiam.sdk.AxiamClient.builder(server.url("/").toString(), tenantId)
+            .oidcClientId(OidcTestKit.CLIENT_ID).jitterSource { 1.0 }.build()
+
+        val error = assertThrows(OAuthProtocolError::class.java) { login(clock, client) }
+
+        assertTrue(error.isExpiredToken)
+        assertEquals(1, requests.get(), "the 200 ms backoff would end at 6.15 s, past the deadline: no retry is sent")
+    }
+
+    @Test
+    fun `a host whose first address refuses still reaches the server, with the pool empty (C164-44)`(): Unit = runBlocking {
+        val requests = AtomicInteger(0)
+        scriptToken({ requests.incrementAndGet(); tokenSuccess() })
+        val client = dualStackClient()
+        val configuration = client.oidcDiscover()
+        client.okHttpClient().connectionPool.evictAll() // a pooled connection would hide the failure
+
+        val tokens = client.devicePoll(DevicePollParams(Sensitive.of("dc"), tenantId = tenantId, configuration = configuration))
+
+        assertEquals("device-access-token", tokens.accessToken.expose())
+        assertEquals(1, requests.get(), "one token request at the server, in one attempt")
+    }
+
+    @Test
+    fun `a drop after the request was sent is not replayed even with route fallback (C164-39, C164-44)`(): Unit = runBlocking {
+        val requests = AtomicInteger(0)
+        scriptToken({ requests.incrementAndGet(); transportFailure() })
+        val client = dualStackClient()
+        // The discovery connection stays pooled: a drop on a REUSED connection is what OkHttp replays
+        // for a plain body (a fresh one is not replayed either way) (C164-54).
+        val configuration = client.oidcDiscover()
+
+        assertThrows(io.axiam.sdk.errors.NetworkError::class.java) {
+            runBlocking { client.devicePoll(DevicePollParams(Sensitive.of("dc"), tenantId = tenantId, configuration = configuration)) }
+        }
+
+        assertEquals(3, requests.get(), "three attempts in total, no OkHttp replay on top")
+    }
+
+    @Test
+    fun `the in-poll waits sleep on the injected clock, and a 5xx Retry-After outliving the retry stays the floor (C164-48)`() {
+        mountAuthorization(expiresIn = 600, interval = 5)
+        val requests = AtomicInteger(0)
+        scriptToken(
+            { requests.incrementAndGet(); MockResponse().setResponseCode(503).addHeader("Retry-After", "20") },
+            { requests.incrementAndGet(); MockResponse().setResponseCode(503).addHeader("Retry-After", "20") },
+            { requests.incrementAndGet(); MockResponse().setResponseCode(503).addHeader("Retry-After", "20") },
+            { requests.incrementAndGet(); tokenSuccess() },
+        )
+        val clock = RecordingClock()
+
+        login(clock)
+
+        assertEquals(4, requests.get())
+        // 5 s interval, two in-poll waits floored at the 20 s Retry-After, then the exhausted poll's
+        // Retry-After as the floor of the next wait (20 s), not the plain interval.
+        assertEquals(listOf(5L, 20L, 20L, 20L), clock.sleeps)
+    }
+
+    @Test
+    fun `a retry whose wait ends exactly at the deadline is not sent (C164-54)`() {
+        mountAuthorization(expiresIn = 6, interval = 5)
+        val requests = AtomicInteger(0)
+        // The poll leaves at 5 s of a 6 s grant; the 1 s floor ends exactly at 6 s.
+        scriptToken({ requests.incrementAndGet(); MockResponse().setResponseCode(503).addHeader("Retry-After", "1") })
+        val clock = RecordingClock()
+
+        val error = assertThrows(OAuthProtocolError::class.java) { login(clock) }
+
+        assertTrue(error.isExpiredToken)
+        assertEquals(1, requests.get())
+    }
+
+    @Test
+    fun `a 429 is not retried inside the poll`(): Unit = runBlocking {
+        val requests = AtomicInteger(0)
+        scriptToken({ requests.incrementAndGet(); rateLimited("1") })
+
+        assertThrows(OAuthProtocolError::class.java) {
+            runBlocking { deviceClient().devicePoll(DevicePollParams(Sensitive.of("dc"), tenantId = tenantId)) }
+        }
+
+        assertEquals(1, requests.get(), "the wait is the loop's (rule 9)")
+    }
+
+    @Test
+    fun `with retry disabled a 5xx makes one request per poll`(): Unit = runBlocking {
+        val requests = AtomicInteger(0)
+        scriptToken({ requests.incrementAndGet(); serverError() }, { requests.incrementAndGet(); tokenSuccess() })
+        val client = io.axiam.sdk.AxiamClient.builder(server.url("/").toString(), tenantId)
+            .oidcClientId(OidcTestKit.CLIENT_ID).retryDisabled().build()
+
+        assertThrows(io.axiam.sdk.errors.NetworkError::class.java) {
+            runBlocking { client.devicePoll(DevicePollParams(Sensitive.of("dc"), tenantId = tenantId)) }
+        }
+
+        assertEquals(1, requests.get())
+    }
+
+    @Test
+    fun `a single devicePoll raises the 429 as an OAuthProtocolError carrying its Retry-After`(): Unit = runBlocking {
+        scriptToken({ rateLimited("7") })
+
+        val error = assertThrows(OAuthProtocolError::class.java) {
+            runBlocking {
+                deviceClient().devicePoll(DevicePollParams(deviceCode = Sensitive.of("dc"), tenantId = tenantId))
+            }
+        }
+
+        assertEquals("rate_limit_exceeded", error.error)
+        assertEquals(kotlin.time.Duration.parse("7s"), error.retryAfter)
+    }
+
     @Test
     fun `access_denied, expired_token and invalid_grant are terminal and distinct`(): Unit = runBlocking {
         // §14.2 rule 3: "a human said no" and "nobody answered" are the only
@@ -244,6 +668,25 @@ class OidcDeviceFlowTest {
                 "caller's branch does not care which side noticed first",
         )
         assertEquals(1, polls.get(), "no poll may be sent past the deadline")
+    }
+
+    @Test
+    fun `a 500 server_error with its body mid-poll is a transport failure, not terminal (rule 6)`(): Unit = runBlocking {
+        // The body AXIAM's token endpoint sends on an internal failure: rule 5 would dispatch its
+        // `error` at any other status; the status is read first.
+        mountAuthorization(expiresIn = 60)
+        scriptToken(
+            { oauthError("authorization_pending") },
+            {
+                MockResponse().setResponseCode(500).addHeader("Content-Type", "application/json")
+                    .setBody(OidcTestKit.oauth2ErrorJson("server_error", "internal error"))
+            },
+            { tokenSuccess() },
+        )
+
+        val tokens = deviceClient().deviceLogin(DeviceLoginParams(tenantId = tenantId, onUserCode = { }))
+
+        assertEquals("device-access-token", tokens.accessToken.expose())
     }
 
     @Test
