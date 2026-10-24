@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Contract 1.64 (accompanying the AXIAM 1.1.2 release): `CONTRACT.md` re-vendored byte for byte from
 `ilpanich/axiam` `b3f8687` (1.64 as amended twice on 2026-10-23, sha256 `a221f1bf…de39`), `openapi.json`,
-`management-registry.json` and `proto/` from `fb92ec4` (`proto/` and `opaque-test-vectors.json` are unchanged; the §27 surface regenerates to 202
+`management-registry.json` and `proto/` from `356a6da` (platform PR #793 merge) (`proto/` and `opaque-test-vectors.json` are unchanged; the §27 surface regenerates to 202
 operations across 29 namespaces, none added), and the README states conformance at contract 1.64.
 Closes ilpanich/axiam-kotlin-sdk#79. This is a **patch** release: nothing below removes or retypes
 a public member. The refusal that changes type is now a `ValidationError`, which is a
