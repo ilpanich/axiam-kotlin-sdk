@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Dependencies updated within their current major versions.** These are runtime dependencies,
+  so a consumer resolves them transitively: `kotlinx-coroutines-core` 1.9.0 → 1.10.2,
+  `kotlinx-serialization-json` 1.7.3 → 1.8.1, `nimbus-jose-jwt` 9.40 → 9.48 and `tink`
+  1.15.0 → 1.24.0. The optional `compileOnly` integrations move as well: Ktor 2.3.12 → 2.3.13
+  (the README's install snippet follows) and `amqp-client` 5.25.0 → 5.37.0. JNA stays at 5.19.1,
+  which is already the latest. The kotlinx versions are the newest ones built against Kotlin 2.1.
+  `kotlinx-coroutines` 1.11 is built with Kotlin 2.2.20, and `kotlinx-serialization` 1.9 and later
+  is built with 2.2 or newer, so either one would raise the Kotlin floor below. They wait for a
+  deliberate floor raise.
+- **The newest CI leg is now JDK 27 and Kotlin 2.4.21** (it was JDK 25 and Kotlin 2.4.10).
+  `SupportedVersions.NEWEST_TESTED_JVM` is now `27` and `NEWEST_TESTED_KOTLIN` is now `"2.4.21"`.
+  **The floors are unchanged:** the SDK still emits JVM 17 bytecode and is still published from
+  Kotlin 2.1.0, so no consumer is cut off.
+- **Build tooling:** the Gradle wrapper moves from 8.10.2 to 9.8.2, Kover from 0.9.9 to 0.9.11,
+  the Sigstore signing plugin from 2.2.0 to 2.4.0 and the JUnit BOM from 5.11.3 to 5.14.4.
+  Gradle still runs on JDK 17 in CI, and the tests still fork on the leg's JDK. The build
+  scripts no longer use the Kotlin DSL property-delegate forms (`by tasks.registering`,
+  `by sourceSets.creating`, `by settings`), which Gradle 9 deprecates for removal in Gradle 10.
+  Task names are unchanged.
+
 ## [1.1.2] - 2026-10-23
 
 Contract 1.64 (accompanying the AXIAM 1.1.2 release): `CONTRACT.md` re-vendored byte for byte from

@@ -41,9 +41,9 @@ public object SupportedVersions {
      * The newest JVM feature version this SDK has a green build against.
      *
      * Mirrors the upper CI leg, where the JVM 17 bytecode is executed on a
-     * JDK 25 runtime.
+     * JDK 27 runtime.
      */
-    public const val NEWEST_TESTED_JVM: Int = 25
+    public const val NEWEST_TESTED_JVM: Int = 27
 
     /**
      * The Kotlin compiler version this SDK is published with, and therefore the
@@ -60,5 +60,5 @@ public object SupportedVersions {
      * Mirrors the upper CI leg. This is the forward-compatibility claim: a
      * consumer on this Kotlin can build against the published artifact.
      */
-    public const val NEWEST_TESTED_KOTLIN: String = "2.4.10"
+    public const val NEWEST_TESTED_KOTLIN: String = "2.4.21"
 }
