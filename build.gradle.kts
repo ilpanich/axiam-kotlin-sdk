@@ -5,7 +5,7 @@ plugins {
     kotlin("jvm")
     kotlin("plugin.serialization")
     id("org.jetbrains.dokka") version "1.9.20"
-    id("org.jetbrains.kotlinx.kover") version "0.9.9"
+    id("org.jetbrains.kotlinx.kover") version "0.9.11"
     `maven-publish`
     signing
     // H-1 (second half): Sigstore keyless signing of the published artifacts.
@@ -14,7 +14,7 @@ plugins {
     // signature is only meaningful when the identity behind it is the release
     // workflow's OIDC claim. See the conditional apply below the `signing`
     // block for where it is switched on.
-    id("dev.sigstore.sign") version "2.2.0" apply false
+    id("dev.sigstore.sign") version "2.4.0" apply false
 }
 
 group = providers.gradleProperty("group").get()
@@ -24,21 +24,21 @@ repositories {
     mavenCentral()
 }
 
-val ktorVersion = "2.3.12"
-val rabbitMqVersion = "5.25.0"
+val ktorVersion = "2.3.13"
+val rabbitMqVersion = "5.37.0"
 val jnaVersion = "5.19.1"
 
 dependencies {
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     // JavaNetCookieJar (CookieManager-backed CookieJar adapter) — §4 cookie jar.
     implementation("com.squareup.okhttp3:okhttp-urlconnection:4.12.0")
     // JWKS fetch/cache + EdDSA (Ed25519) verification — §9 local-verify companion.
-    implementation("com.nimbusds:nimbus-jose-jwt:9.40")
+    implementation("com.nimbusds:nimbus-jose-jwt:9.48")
     // nimbus delegates Ed25519 sign/verify to Tink — required at runtime for the
     // EdDSA JWKS verification path (mirrors the Java SDK's tink dependency).
-    implementation("com.google.crypto.tink:tink:1.15.0")
+    implementation("com.google.crypto.tink:tink:1.24.0")
 
     // NOTE: org.bouncycastle:bcprov-jdk18on used to sit here, for the §23 SRP
     // client's Argon2id. It is gone with SRP: CONTRACT §23.1 forbids an SDK
@@ -78,10 +78,10 @@ dependencies {
     // it arrives without widening every other consumer's classpath.
     compileOnly("com.rabbitmq:amqp-client:$rabbitMqVersion")
 
-    testImplementation(platform("org.junit:junit-bom:5.11.3"))
+    testImplementation(platform("org.junit:junit-bom:5.14.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     // In-memory test PKI (HeldCertificate / HandshakeCertificates) for the mTLS
     // test — no private key material is ever committed.
@@ -117,9 +117,11 @@ tasks.withType<KotlinCompile>().configureEach {
 
 // The JVM that EXECUTES the tests, chosen independently of the JVM running
 // Gradle. These are not the same question, and conflating them is what broke
-// the first attempt at a JDK 25 CI leg: Gradle 8.10.2 cannot itself run on
-// Java 25 (it fails with a bare, unrecognised "25.0.4"), so pointing
-// setup-java at 25 killed the build before a single test ran.
+// the first attempt at a JDK 25 CI leg: Gradle 8.10.2, the wrapper at the time,
+// could not itself run on Java 25 (it failed with a bare, unrecognised
+// "25.0.4"), so pointing setup-java at 25 killed the build before a single
+// test ran. Gradle 9.8 runs on 27, but Gradle still stays on JDK 17 in CI so
+// that a newer JDK can never become a silent requirement of the build.
 //
 // What the SDK actually claims is that its JVM 17 bytecode RUNS on a modern
 // JVM — which is a statement about the test launcher, not about Gradle's own
@@ -170,7 +172,7 @@ tasks.test {
 // public API. `./gradlew compileExamplesKotlin` (also wired into `check`)
 // keeps them honest; `runLoginMfaExample` / `runRestAuthzExample` run them.
 // These sources are excluded from the published jar and Dokka.
-val examples: SourceSet by sourceSets.creating
+val examples: SourceSet = sourceSets.create("examples")
 
 configurations["examplesImplementation"].extendsFrom(configurations["implementation"])
 configurations["examplesRuntimeOnly"].extendsFrom(configurations["runtimeOnly"])
@@ -196,28 +198,28 @@ tasks.named("check") {
     dependsOn("compileExamplesKotlin")
 }
 
-val runLoginMfaExample by tasks.registering(JavaExec::class) {
+val runLoginMfaExample = tasks.register<JavaExec>("runLoginMfaExample") {
     group = "examples"
     description = "Run examples/login-mfa/LoginMfaExample.kt"
     classpath = examples.runtimeClasspath
     mainClass.set("io.axiam.sdk.examples.loginmfa.LoginMfaExample")
 }
 
-val runOpaqueLoginExample by tasks.registering(JavaExec::class) {
+val runOpaqueLoginExample = tasks.register<JavaExec>("runOpaqueLoginExample") {
     group = "examples"
     description = "Run examples/opaque-login/OpaqueLoginExample.kt"
     classpath = examples.runtimeClasspath
     mainClass.set("io.axiam.sdk.examples.opaquelogin.OpaqueLoginExample")
 }
 
-val runRestAuthzExample by tasks.registering(JavaExec::class) {
+val runRestAuthzExample = tasks.register<JavaExec>("runRestAuthzExample") {
     group = "examples"
     description = "Run examples/rest-authz/RestAuthzExample.kt"
     classpath = examples.runtimeClasspath
     mainClass.set("io.axiam.sdk.examples.restauthz.RestAuthzExample")
 }
 
-val runVersionCompatibilityExample by tasks.registering(JavaExec::class) {
+val runVersionCompatibilityExample = tasks.register<JavaExec>("runVersionCompatibilityExample") {
     group = "examples"
     description = "Run examples/version-compatibility/VersionCompatibilityExample.kt"
     classpath = examples.runtimeClasspath
@@ -226,7 +228,7 @@ val runVersionCompatibilityExample by tasks.registering(JavaExec::class) {
     )
 }
 
-val runOidcLoginExample by tasks.registering(JavaExec::class) {
+val runOidcLoginExample = tasks.register<JavaExec>("runOidcLoginExample") {
     group = "examples"
     description = "Run examples/oidc-login/OidcLoginExample.kt"
     classpath = examples.runtimeClasspath
@@ -234,35 +236,35 @@ val runOidcLoginExample by tasks.registering(JavaExec::class) {
     standardInput = System.`in`
 }
 
-val runUmaResourceServerExample by tasks.registering(JavaExec::class) {
+val runUmaResourceServerExample = tasks.register<JavaExec>("runUmaResourceServerExample") {
     group = "examples"
     description = "Run examples/uma-resource-server/UmaResourceServerExample.kt"
     classpath = examples.runtimeClasspath
     mainClass.set("io.axiam.sdk.examples.umaresourceserver.UmaResourceServerExample")
 }
 
-val runReactorExample by tasks.registering(JavaExec::class) {
+val runReactorExample = tasks.register<JavaExec>("runReactorExample") {
     group = "examples"
     description = "Run examples/reactor/ReactorExample.kt (needs a reachable amqps:// broker)"
     classpath = examples.runtimeClasspath
     mainClass.set("io.axiam.sdk.examples.reactor.ReactorExample")
 }
 
-val runManagementBasicsExample by tasks.registering(JavaExec::class) {
+val runManagementBasicsExample = tasks.register<JavaExec>("runManagementBasicsExample") {
     group = "examples"
     description = "Run examples/management-basics/ManagementBasicsExample.kt"
     classpath = examples.runtimeClasspath
     mainClass.set("io.axiam.sdk.examples.managementbasics.ManagementBasicsExample")
 }
 
-val runManagementManifestExample by tasks.registering(JavaExec::class) {
+val runManagementManifestExample = tasks.register<JavaExec>("runManagementManifestExample") {
     group = "examples"
     description = "Run examples/management-manifest/ManagementManifestExample.kt"
     classpath = examples.runtimeClasspath
     mainClass.set("io.axiam.sdk.examples.managementmanifest.ManagementManifestExample")
 }
 
-val runDeviceMtlsProvisioningExample by tasks.registering(JavaExec::class) {
+val runDeviceMtlsProvisioningExample = tasks.register<JavaExec>("runDeviceMtlsProvisioningExample") {
     group = "examples"
     description = "Run examples/device-mtls-provisioning/DeviceMtlsProvisioningExample.kt"
     classpath = examples.runtimeClasspath
@@ -271,28 +273,28 @@ val runDeviceMtlsProvisioningExample by tasks.registering(JavaExec::class) {
     )
 }
 
-val runWebauthnPasskeysExample by tasks.registering(JavaExec::class) {
+val runWebauthnPasskeysExample = tasks.register<JavaExec>("runWebauthnPasskeysExample") {
     group = "examples"
     description = "Run examples/webauthn-passkeys/WebauthnPasskeysExample.kt"
     classpath = examples.runtimeClasspath
     mainClass.set("io.axiam.sdk.examples.webauthnpasskeys.WebauthnPasskeysExample")
 }
 
-val runAccountLifecycleExample by tasks.registering(JavaExec::class) {
+val runAccountLifecycleExample = tasks.register<JavaExec>("runAccountLifecycleExample") {
     group = "examples"
     description = "Run examples/account-lifecycle/AccountLifecycleExample.kt"
     classpath = examples.runtimeClasspath
     mainClass.set("io.axiam.sdk.examples.accountlifecycle.AccountLifecycleExample")
 }
 
-val runParLoginExample by tasks.registering(JavaExec::class) {
+val runParLoginExample = tasks.register<JavaExec>("runParLoginExample") {
     group = "examples"
     description = "Run examples/par-login/ParLoginExample.kt"
     classpath = examples.runtimeClasspath
     mainClass.set("io.axiam.sdk.examples.parlogin.ParLoginExample")
 }
 
-val runUmaClientExample by tasks.registering(JavaExec::class) {
+val runUmaClientExample = tasks.register<JavaExec>("runUmaClientExample") {
     group = "examples"
     description = "Run examples/uma-client/UmaClientExample.kt"
     classpath = examples.runtimeClasspath
@@ -300,13 +302,13 @@ val runUmaClientExample by tasks.registering(JavaExec::class) {
 }
 
 // Dokka -> javadoc jar (javadoc.io serves this verbatim).
-val dokkaJavadocJar by tasks.registering(Jar::class) {
+val dokkaJavadocJar = tasks.register<Jar>("dokkaJavadocJar") {
     dependsOn(tasks.dokkaJavadoc)
     from(tasks.dokkaJavadoc.flatMap { it.outputDirectory })
     archiveClassifier.set("javadoc")
 }
 
-val sourcesJar by tasks.registering(Jar::class) {
+val sourcesJar = tasks.register<Jar>("sourcesJar") {
     from(kotlin.sourceSets["main"].kotlin)
     archiveClassifier.set("sources")
 }

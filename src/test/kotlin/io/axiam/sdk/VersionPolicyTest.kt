@@ -26,7 +26,7 @@ import java.io.File
  *
  * Both floors enforce themselves downward and neither enforces itself upward.
  * An old JVM refuses to load the class files; an old Kotlin compiler refuses to
- * read the metadata. But JVM 17 bytecode loads on JDK 25 whether or not anybody
+ * read the metadata. But JVM 17 bytecode loads on JDK 27 whether or not anybody
  * ran it there, and 2.1-compiled metadata is read by a 2.4 compiler whether or
  * not anybody ever compiled against it. The upper half of both claims is
  * exactly what the newest CI leg exists to prove.
