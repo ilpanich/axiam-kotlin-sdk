@@ -5,7 +5,7 @@ plugins {
     kotlin("jvm")
     kotlin("plugin.serialization")
     id("org.jetbrains.dokka") version "1.9.20"
-    id("org.jetbrains.kotlinx.kover") version "0.9.9"
+    id("org.jetbrains.kotlinx.kover") version "0.9.11"
     `maven-publish`
     signing
     // H-1 (second half): Sigstore keyless signing of the published artifacts.
@@ -14,7 +14,7 @@ plugins {
     // signature is only meaningful when the identity behind it is the release
     // workflow's OIDC claim. See the conditional apply below the `signing`
     // block for where it is switched on.
-    id("dev.sigstore.sign") version "2.2.0" apply false
+    id("dev.sigstore.sign") version "2.4.0" apply false
 }
 
 group = providers.gradleProperty("group").get()
@@ -24,21 +24,21 @@ repositories {
     mavenCentral()
 }
 
-val ktorVersion = "2.3.12"
-val rabbitMqVersion = "5.25.0"
+val ktorVersion = "2.3.13"
+val rabbitMqVersion = "5.37.0"
 val jnaVersion = "5.19.1"
 
 dependencies {
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     // JavaNetCookieJar (CookieManager-backed CookieJar adapter) — §4 cookie jar.
     implementation("com.squareup.okhttp3:okhttp-urlconnection:4.12.0")
     // JWKS fetch/cache + EdDSA (Ed25519) verification — §9 local-verify companion.
-    implementation("com.nimbusds:nimbus-jose-jwt:9.40")
+    implementation("com.nimbusds:nimbus-jose-jwt:9.48")
     // nimbus delegates Ed25519 sign/verify to Tink — required at runtime for the
     // EdDSA JWKS verification path (mirrors the Java SDK's tink dependency).
-    implementation("com.google.crypto.tink:tink:1.15.0")
+    implementation("com.google.crypto.tink:tink:1.24.0")
 
     // NOTE: org.bouncycastle:bcprov-jdk18on used to sit here, for the §23 SRP
     // client's Argon2id. It is gone with SRP: CONTRACT §23.1 forbids an SDK
@@ -78,10 +78,10 @@ dependencies {
     // it arrives without widening every other consumer's classpath.
     compileOnly("com.rabbitmq:amqp-client:$rabbitMqVersion")
 
-    testImplementation(platform("org.junit:junit-bom:5.11.3"))
+    testImplementation(platform("org.junit:junit-bom:5.14.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     // In-memory test PKI (HeldCertificate / HandshakeCertificates) for the mTLS
     // test — no private key material is ever committed.
