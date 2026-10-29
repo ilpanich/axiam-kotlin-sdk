@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.3] - 2026-10-29
+
 ### Changed
 
 - **Dependencies updated within their current major versions.** These are runtime dependencies,
@@ -28,6 +30,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   scripts no longer use the Kotlin DSL property-delegate forms (`by tasks.registering`,
   `by sourceSets.creating`, `by settings`), which Gradle 9 deprecates for removal in Gradle 10.
   Task names are unchanged.
+
+- Newest leg is JDK 27 and Kotlin 2.4.21; floors unchanged
+
+- Gradle wrapper 8.10.2 -> 9.8.2
+
+- Update libraries and build plugins within their majors
 
 ## [1.1.2] - 2026-10-23
 
