@@ -135,4 +135,25 @@ class IdpHintTest {
         }
         assertEquals(before, server.requestCount)
     }
+
+    private fun pushedHints(request: okhttp3.mockwebserver.RecordedRequest): List<String> =
+        request.body.readUtf8().split("&").map {
+            URLDecoder.decode(it.substringBefore('='), StandardCharsets.UTF_8) to
+                URLDecoder.decode(it.substringAfter('='), StandardCharsets.UTF_8)
+        }.filter { it.first == "axiam_idp_hint" }.map { it.second }
+
+    @Test
+    fun par_idp_hint_from_begin_url_pushed(): Unit = runBlocking {
+        val begun = begin("corp-okta")
+        val pushed = client.oidcPar(OidcParParams(begun, redirect, configuration = configuration, tenantId = tenantId))
+        assertEquals(listOf("corp-okta"), pushedHints(server.takeRequest()))
+        assertTrue(pushed.url.toHttpUrl().queryParameter("axiam_idp_hint") == null, "never on the redirect")
+    }
+
+    @Test
+    fun par_idp_hint_argument_wins(): Unit = runBlocking {
+        val begun = begin("from-begin")
+        client.oidcPar(OidcParParams(begun, redirect, configuration = configuration, tenantId = tenantId, idpHint = "from-argument"))
+        assertEquals(listOf("from-argument"), pushedHints(server.takeRequest()))
+    }
 }

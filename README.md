@@ -50,6 +50,12 @@ as `suspend` functions on the same `AxiamClient`.
   `oidcRefresh` is an `OAuthProtocolError`, the single-flight guard keeps one burst to one wire call, and a
   test confirms both against a mocked `400 invalid_grant`. Refreshing the same token from two places
   (two clients, or two processes sharing a token store) defeats the guard and is a defect.
+- **Server floor (D-N33).** The federation-config admin calls (`federation.create_config`, `get_config`,
+  `list_configs`, `update_config`) of this 1.2-line SDK need an AXIAM server **1.2.0 or later**:
+  `FederationConfigResponse.nativeLogin` is required from 1.2.0, and a response from an older server
+  fails to decode.
+- **`oidcPar` and the hint:** when `OidcParParams.idpHint` is `null`, the hint `oidcBegin` put on the
+  begin URL is pushed; the argument wins when both are set.
 - **Regenerated §27 members:** `default_idp` on the OAuth2 client types and the federation `native_login`
   block, and `oauth2.refresh_reuse_response` on the settings types.
 

@@ -410,6 +410,10 @@ internal class OidcSupport(
      */
     suspend fun oidcPar(params: OidcParParams): PushedAuthorizationRequest {
         params.idpHint?.let { checkIdpHint(it) }
+        // §26.2 rule 8 (D-N36): the argument wins; when it is unset, the hint `oidcBegin`
+        // already put on the begin URL is pushed rather than silently dropped.
+        val idpHint = params.idpHint
+            ?: params.request.url.toHttpUrlOrNull()?.queryParameter(IDP_HINT_PARAM)?.takeIf { it.isNotEmpty() }
         val configuration = params.configuration ?: oidcDiscover()
         val clientId = requireClientId()
         val endpoint = preferredEndpoint(
@@ -448,7 +452,7 @@ internal class OidcSupport(
             "dpop_jkt" to params.dpopJkt,
             // §26.2 rule 8 (contract 1.65): the hint rides the pushed body, exactly once,
             // and is absent when unset. It is never added to the redirect URL below.
-            IDP_HINT_PARAM to params.idpHint,
+            IDP_HINT_PARAM to idpHint,
             "client_secret" to oidcClientSecret?.expose(),
         )
 

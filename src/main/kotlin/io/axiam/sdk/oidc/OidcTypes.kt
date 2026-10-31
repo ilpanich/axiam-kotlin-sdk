@@ -1061,6 +1061,10 @@ data class OidcParParams(
      * form body as `axiam_idp_hint` exactly once and never placed on the
      * redirect URL, which stays `client_id` + `request_uri`. Same validation as
      * [OidcBeginParams.idpHint]: emptiness and 256 bytes only.
+     *
+     * When `null`, the `axiam_idp_hint` that [request]'s URL already carries (set
+     * through [OidcBeginParams.idpHint]) is pushed instead; when both are set,
+     * this argument wins and exactly one value is pushed (§26.2 rule 8, D-N36).
      */
     val idpHint: String? = null,
 )

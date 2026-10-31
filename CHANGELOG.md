@@ -26,6 +26,13 @@ Contract 1.65 (the platform's 1.2.0 release). The release number is the maintain
 
 ### Changed
 
+- **Server floor (D-N33).** The federation-config admin calls (`federation.create_config`, `get_config`,
+  `list_configs`, `update_config`) of this 1.2-line SDK need an AXIAM server **1.2.0 or later**:
+  `FederationConfigResponse.nativeLogin` is required from 1.2.0, and a response from an older server
+  fails to decode (the member has no default).
+- **`oidcPar` pushes the begin URL's hint (CONTRACT §26.2 rule 8, D-N36).** When `OidcParParams.idpHint`
+  is `null`, the `axiam_idp_hint` that `oidcBegin` put on `request.url` is pushed in the body; when both
+  are set the argument wins and one value is pushed. The redirect URL still carries neither.
 - Re-vendored `CONTRACT.md` (1.65), `openapi.json` (1.2.0), `management-registry.json` and `proto/`
   from AXIAM `76d35d9`, and regenerated the §27 layer. New members: `default_idp` on
   `CreateOAuth2ClientRequest`, `UpdateOAuth2ClientRequest`, `OAuth2ClientResponse`; `native_login` on the
@@ -36,6 +43,20 @@ Contract 1.65 (the platform's 1.2.0 release). The release number is the maintain
   the server by default (`oauth2.refresh_reuse_response = revoke_session`, 1.2.0). `invalid_grant` on
   `oidcRefresh` therefore means the session is over; do not retry it, and do not refresh one token from two
   places. No SDK request or response changed.
+
+### Source compatibility
+
+The regenerated management data classes gained constructor parameters **in alphabetical position**, not
+at the end. Positional construction, `copy` and `componentN` destructuring of these classes break, and
+the change is **binary-incompatible** for code compiled against 1.1.x: use named arguments and rebuild.
+
+- `CreateFederationConfigRequest`: `nativeLogin` before `protocol`.
+- `FederationConfigResponse`: `nativeLogin` before `pkceRequired`, **with no default** (required).
+- `UpdateFederationConfigRequest`: `nativeLogin` before `provider`.
+- `CreateOAuth2ClientRequest`, `UpdateOAuth2ClientRequest`: `defaultIdp` before `dpopBoundAccessTokens`.
+- `OAuth2ClientResponse`: `defaultIdp` before `dpopBoundAccessTokens`.
+- `SecuritySettings`: `oauth2` before `oidc`.
+- `SetOrgSettings`, `TenantSettingsOverride`: `refreshReuseResponse` before `refreshTokenLifetimeSecs`.
 
 ## [1.1.3] - 2026-10-29
 
