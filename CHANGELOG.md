@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Contract 1.65 (the platform's 1.2.0 release). The release number is the maintainer's.
+
+### Added
+
+- **Native sign-in with a provider ID token (CONTRACT §37).** `AxiamClient.loginWithProviderIdToken(ProviderIdTokenLoginParams)`
+  (`suspend`) posts `grant_type=urn:axiam:params:oauth:grant-type:provider-id-token` to the token endpoint
+  and returns an `OidcTokenSet`. Empty `provider`, `idToken` or `nonce` and a slug-only client are refused
+  before any wire call; the raw nonce is sent unchanged; no `openid` is added; it is never retried; the
+  provider token and the nonce are `Sensitive` and are neither logged nor kept; the result is not adopted
+  as the client's credential. `AxiamClient.nativeNonce(): ProviderNonce` (`raw` is `Sensitive`, `hashed`
+  is lower-case hex SHA-256) is the optional §37.4 companion. All thirteen §37.9 tests are ported.
+- **`idpHint` (CONTRACT §12.1, §26.2 rule 8).** `OidcBeginParams.idpHint` emits `axiam_idp_hint` once;
+  `OidcParParams.idpHint` pushes it in the PAR body and never on the redirect URL. An empty value or one
+  over 256 bytes throws `ValidationError` with no URL built or request sent. There is no `kc_idp_hint`.
+- A confirmation test for the §9 paragraph: against a mocked `400 invalid_grant`, a burst of eight
+  `oidcRefresh` callers makes one wire call and all receive that one error.
+
+### Changed
+
+- Re-vendored `CONTRACT.md` (1.65), `openapi.json` (1.2.0), `management-registry.json` and `proto/`
+  from AXIAM `76d35d9`, and regenerated the §27 layer. New members: `default_idp` on
+  `CreateOAuth2ClientRequest`, `UpdateOAuth2ClientRequest`, `OAuth2ClientResponse`; `native_login` on the
+  federation config requests and response (`NativeLoginTrustRequest`, `NativeLoginTrustResponse`);
+  `OAuth2Policy` / `RefreshReuseResponse` and `oauth2` on the settings types; `TokenRequest.provider`,
+  `id_token`, `nonce`; `PushedAuthorizationRequest.axiam_idp_hint`.
+- **Server behaviour to know about:** a replayed (already-rotated) refresh token now ends the session on
+  the server by default (`oauth2.refresh_reuse_response = revoke_session`, 1.2.0). `invalid_grant` on
+  `oidcRefresh` therefore means the session is over; do not retry it, and do not refresh one token from two
+  places. No SDK request or response changed.
+
 ## [1.1.3] - 2026-10-29
 
 ### Changed

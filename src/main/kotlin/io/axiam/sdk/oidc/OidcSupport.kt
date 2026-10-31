@@ -6,6 +6,7 @@ import io.axiam.sdk.errors.AxiamException
 import io.axiam.sdk.errors.ErrorMapper
 import io.axiam.sdk.errors.NetworkError
 import io.axiam.sdk.errors.OAuthProtocolError
+import io.axiam.sdk.errors.ValidationError
 import io.axiam.sdk.internal.OneShotBody
 import io.axiam.sdk.internal.AuthHeaderInterceptor
 import io.axiam.sdk.internal.JwksVerifier
@@ -361,6 +362,8 @@ internal class OidcSupport(
      */
     fun oidcBegin(params: OidcBeginParams): AuthorizationRequest {
         val clientId = requireClientId()
+        // §12.1 `idp_hint` rule 2: refuse before anything is generated or built.
+        params.idpHint?.let { checkIdpHint(it) }
         val state = OidcPkce.randomUrlSafeToken()
         val nonce = OidcPkce.randomUrlSafeToken()
         val codeVerifier = OidcPkce.generateCodeVerifier()
@@ -382,6 +385,9 @@ internal class OidcSupport(
         query["nonce"] = nonce
         query["code_challenge"] = codeChallenge
         query["code_challenge_method"] = OidcPkce.CODE_CHALLENGE_METHOD_S256
+        // §12.1 `idp_hint` rule 3: the input is the single source. Assigning the key
+        // replaces any caller-supplied `axiam_idp_hint` extra, so it is emitted once.
+        params.idpHint?.let { query[IDP_HINT_PARAM] = it }
 
         val url = appendQuery(params.configuration.authorization_endpoint, query)
         return AuthorizationRequest(url = url, state = state, nonce = nonce, codeVerifier = codeVerifier)
@@ -403,6 +409,7 @@ internal class OidcSupport(
      *   never synthesise the URL from the issuer.
      */
     suspend fun oidcPar(params: OidcParParams): PushedAuthorizationRequest {
+        params.idpHint?.let { checkIdpHint(it) }
         val configuration = params.configuration ?: oidcDiscover()
         val clientId = requireClientId()
         val endpoint = preferredEndpoint(
@@ -439,6 +446,9 @@ internal class OidcSupport(
             // null: `buildForm` drops null values, and an empty `dpop_jkt` is
             // not the same request as no `dpop_jkt`.
             "dpop_jkt" to params.dpopJkt,
+            // §26.2 rule 8 (contract 1.65): the hint rides the pushed body, exactly once,
+            // and is absent when unset. It is never added to the redirect URL below.
+            IDP_HINT_PARAM to params.idpHint,
             "client_secret" to oidcClientSecret?.expose(),
         )
 
@@ -625,6 +635,105 @@ internal class OidcSupport(
             clockSkewSec = clockSkewSec,
         )
         return toTokenSet(json, configuration, expectations)
+    }
+
+    // -- 5b. loginWithProviderIdToken: §37 native sign-in (contract 1.65) ------
+
+    /**
+     * `POST /oauth2/token` with `grant_type=urn:axiam:params:oauth:grant-type:provider-id-token`
+     * (CONTRACT.md §37) — exchange the ID token a provider's native SDK produced for the
+     * client's ordinary token set.
+     *
+     * Posture, all normative in §37.2:
+     *  - the form carries exactly `grant_type`, `client_id`, `provider`, `id_token`, `nonce`,
+     *    `scope`/`resource` only when given, and the client's `client_secret` only when it has one;
+     *    `tenant_id` is a query parameter;
+     *  - the three inputs are checked for emptiness BEFORE any wire call (including discovery),
+     *    and so is the tenant (§12.3 rule 4); nothing else about them is validated;
+     *  - the raw nonce is sent byte for byte; no `openid` or other scope is added;
+     *  - NEVER retried: the provider token is single-use across the deployment. Not through
+     *    the §16 retry layer, not through the §9 refresh guard, and `invalid_grant` is neither
+     *    refined nor parsed;
+     *  - any failure is built from the RESPONSE only, so neither the ID token nor the raw nonce
+     *    can reach an exception message; the SDK logs nothing and keeps neither value;
+     *  - the result is NOT adopted as the client's own credential (the posture of
+     *    [loginClientCredentials] and [deviceLogin] in this SDK).
+     */
+    suspend fun loginWithProviderIdToken(params: ProviderIdTokenLoginParams): OidcTokenSet {
+        // §37.2 rule 4, in this order, all before any wire call: client id, the three
+        // inputs, the tenant. Messages name the argument and never quote it.
+        val clientId = requireClientId()
+        if (params.provider.isEmpty()) {
+            throw ValidationError("loginWithProviderIdToken: provider must not be empty (CONTRACT.md §37.2 rule 4)")
+        }
+        val idToken = params.idToken.expose()
+        if (idToken.isEmpty()) {
+            throw ValidationError("loginWithProviderIdToken: idToken must not be empty (CONTRACT.md §37.2 rule 4)")
+        }
+        val nonce = params.nonce.expose()
+        if (nonce.isEmpty()) {
+            throw ValidationError("loginWithProviderIdToken: nonce must not be empty (CONTRACT.md §37.2 rule 4)")
+        }
+        val tenantId = resolveTenantId(params.tenantId)
+
+        val configuration = params.configuration ?: oidcDiscover()
+        val form = buildForm(
+            "grant_type" to PROVIDER_ID_TOKEN_GRANT_TYPE,
+            "client_id" to clientId,
+            "provider" to params.provider,
+            "id_token" to idToken,
+            "nonce" to nonce,
+            "scope" to params.scopes?.takeIf { it.isNotEmpty() }?.joinToString(" "),
+            "resource" to params.resource,
+            "client_secret" to oidcClientSecret?.expose(),
+        )
+        val url = endpointUrl(
+            preferredEndpoint(configuration, { it.token_endpoint }, configuration.token_endpoint)!!,
+            tenantId,
+        )
+        // Sent at most once (§37.2 rule 10): a one-shot body keeps OkHttp from silently
+        // replaying a request that was already written — the provider token is spent by then.
+        val request = Request.Builder().url(url).post(OneShotBody(form)).build()
+        val response = executeRequest(request)
+        val json = response.use {
+            if (!it.isSuccessful) throw mapProviderIdTokenError(it)
+            parseJsonObject(it)
+        }
+        // §12.4 under the SAME rules as oidcExchange, with the RAW nonce as the expected nonce:
+        // the AXIAM ID token carries the request's nonce as sent. When no `openid` was granted
+        // there is no id_token and nothing to check.
+        val expectations = OidcIdToken.Expectations(
+            issuer = configuration.issuer,
+            clientId = clientId,
+            nonce = nonce,
+            hasNonce = true,
+            clockSkewSec = clockSkewSec,
+        )
+        return toTokenSet(json, configuration, expectations)
+    }
+
+    /**
+     * §37.3: a well-formed `OAuth2ErrorResponse` is an [OAuthProtocolError] at ANY status
+     * (a `500` with a body included); a response without one is [NetworkError] for a `5xx`
+     * and falls through to [ErrorMapper] otherwise. Built from the response alone — the request
+     * is never embedded — and `invalid_grant` is surfaced as received.
+     */
+    private fun mapProviderIdTokenError(response: Response): AxiamException {
+        val mapped = ErrorMapper.fromOAuth2ResponseAtAnyStatus("provider ID token sign-in failed", response)
+        if (mapped is OAuthProtocolError && response.code == 429) {
+            mapped.retryAfter = ErrorMapper.retryAfterOf(response)
+        }
+        return mapped
+    }
+
+    /** §12.1 `idp_hint` rule 2: emptiness and 256 UTF-8 bytes, nothing else. Never quotes the value. */
+    private fun checkIdpHint(hint: String) {
+        if (hint.isEmpty()) {
+            throw ValidationError("idpHint must not be empty; leave it null to send no hint (CONTRACT.md §12.1)")
+        }
+        if (hint.toByteArray(Charsets.UTF_8).size > MAX_IDP_HINT_BYTES) {
+            throw ValidationError("idpHint must not exceed $MAX_IDP_HINT_BYTES bytes (CONTRACT.md §12.1)")
+        }
     }
 
     // -- 6. introspect ---------------------------------------------------------
@@ -2384,6 +2493,15 @@ internal class OidcSupport(
 
         private const val OPENID_SCOPE = "openid"
         private const val MAX_OAUTH2_ERROR_BODY_BYTES = 8192L
+
+        /** The grant URN of the native sign-in operation (CONTRACT.md §37.1). */
+        const val PROVIDER_ID_TOKEN_GRANT_TYPE: String = "urn:axiam:params:oauth:grant-type:provider-id-token"
+
+        /** The ninth `oidcBegin` query parameter and the PAR body field (§12.1, §26.2 rule 8). */
+        private const val IDP_HINT_PARAM = "axiam_idp_hint"
+
+        /** §12.1 `idp_hint` rule 2: the longest hint accepted, in UTF-8 bytes. */
+        private const val MAX_IDP_HINT_BYTES = 256
 
         /** The eight query parameters [oidcBegin] owns (§12.1 rule 5). */
         private val RESERVED_AUTHORIZE_PARAMS = setOf(

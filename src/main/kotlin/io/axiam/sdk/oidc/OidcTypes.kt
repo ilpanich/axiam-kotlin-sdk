@@ -243,6 +243,17 @@ data class OidcBeginParams(
      * attempting to override one of those eight throws.
      */
     val extraParams: Map<String, String> = emptyMap(),
+    /**
+     * Contract 1.65 (§12.1 `idp_hint`): the provider to send the browser to
+     * directly, emitted as the query parameter `axiam_idp_hint` exactly once.
+     * A provider UUID, a `provider_slug` or a branded kind name; passed on
+     * untouched — never trimmed, case-folded or looked up. Only emptiness and
+     * length (256 UTF-8 bytes) are checked, and a failure throws
+     * [io.axiam.sdk.errors.ValidationError] with no URL built. When set it is
+     * the single source: an `axiam_idp_hint` entry in [extraParams] is dropped.
+     * Unset (the default) emits nothing. There is no `kc_idp_hint` alias.
+     */
+    val idpHint: String? = null,
 )
 
 /**
@@ -1045,6 +1056,13 @@ data class OidcParParams(
      * parameter is not sent at all.
      */
     val dpopJkt: String? = null,
+    /**
+     * Contract 1.65 (§26.2 rule 8): the `idp_hint` of `oidcBegin`, pushed in the
+     * form body as `axiam_idp_hint` exactly once and never placed on the
+     * redirect URL, which stays `client_id` + `request_uri`. Same validation as
+     * [OidcBeginParams.idpHint]: emptiness and 256 bytes only.
+     */
+    val idpHint: String? = null,
 )
 
 /**
@@ -1079,3 +1097,82 @@ data class PushedAuthorizationRequest(
     val nonce: String,
     val codeVerifier: Sensitive<String>,
 )
+
+/**
+ * Arguments to `loginWithProviderIdToken` (CONTRACT.md §37, contract 1.65): native
+ * sign-in with the ID token a Google, Apple or Facebook (Limited Login) SDK
+ * produced on the device.
+ *
+ * [idToken] and [nonce] are credentials (§37.6, §37.2 rule 12): wrapped in
+ * [Sensitive], never logged, never kept after the call returns. Hold the raw
+ * nonce only for the length of the attempt.
+ */
+data class ProviderIdTokenLoginParams(
+    /**
+     * The provider's UUID or its `provider_slug` — nothing else. A provider *kind* name
+     * (`google`, `apple`, …) is not accepted here unless the operator also chose it as the
+     * slug. Sent exactly as given: not trimmed, not case-folded, not resolved (§37.2 rule 2).
+     */
+    val provider: String,
+    /** The provider's ID token, as the provider's SDK returned it. Single-use across the deployment. */
+    val idToken: Sensitive<String>,
+    /**
+     * The RAW nonce — the preimage whose lower-case hex SHA-256 the provider's SDK was given
+     * (see [ProviderNonce]). Sent byte for byte: never hashed, never replaced by the token's claim.
+     */
+    val nonce: Sensitive<String>,
+    /**
+     * Scopes to request, space-joined onto the wire. `null` or empty sends no `scope` at all
+     * and the SDK adds none — in particular not `openid`, so the response carries no ID token
+     * unless the caller asks for `openid` (§37.2 rule 7).
+     */
+    val scopes: List<String>? = null,
+    /** An RFC 8707 `resource` indicator, or `null` to send none. */
+    val resource: String? = null,
+    /** Tenant UUID for the token endpoint's `tenant_id` query parameter (§12.3 rule 4). */
+    val tenantId: String? = null,
+    /** A pre-fetched discovery document; fetched (and cached) via `oidcDiscover` when omitted. */
+    val configuration: OidcConfiguration? = null,
+) {
+    companion object {
+        /** Convenience overload accepting a bare [idToken] and [nonce], wrapped on entry (§15.5 posture). */
+        fun of(
+            provider: String,
+            idToken: String,
+            nonce: String,
+            scopes: List<String>? = null,
+            resource: String? = null,
+            tenantId: String? = null,
+            configuration: OidcConfiguration? = null,
+        ): ProviderIdTokenLoginParams = ProviderIdTokenLoginParams(
+            provider, Sensitive.of(idToken), Sensitive.of(nonce), scopes, resource, tenantId, configuration,
+        )
+    }
+}
+
+/**
+ * The pair `nativeNonce` returns (CONTRACT.md §37.4): [raw] is what the app keeps and later
+ * hands to `loginWithProviderIdToken`; [hashed] is what it gives the provider's SDK as *its*
+ * nonce. [raw] is [Sensitive] (it is the preimage that makes holding the provider's token
+ * insufficient to spend it); [hashed] is not a secret.
+ *
+ * @property raw at least 32 CSPRNG bytes, base64url without padding
+ * @property hashed lower-case hexadecimal SHA-256 of [raw]'s UTF-8 bytes (64 characters)
+ */
+data class ProviderNonce(
+    val raw: Sensitive<String>,
+    val hashed: String,
+) {
+    companion object {
+        /** `SHA-256(value)` over its UTF-8 bytes as 64 lower-case hex characters (§37.4 rule 2). */
+        internal fun hashOf(value: String): String =
+            java.security.MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
+                .joinToString("") { String.format("%02x", it.toInt() and 0xFF) }
+
+        /** A fresh pair; stores nothing (§37.4 rule 4). */
+        internal fun generate(): ProviderNonce {
+            val raw = OidcPkce.randomUrlSafeToken()
+            return ProviderNonce(Sensitive.of(raw), hashOf(raw))
+        }
+    }
+}

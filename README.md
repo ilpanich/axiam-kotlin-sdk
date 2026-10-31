@@ -31,13 +31,27 @@ Source: [ilpanich/axiam-kotlin-sdk](https://github.com/ilpanich/axiam-kotlin-sdk
 
 ## Contract conformance
 
-This SDK conforms to **contract 1.64**: CONTRACT.md §1–§7 (§1.1's `getUserInfo` and §1.1.1's
+This SDK conforms to **contract 1.65**: CONTRACT.md §1–§7 (§1.1's `getUserInfo` and §1.1.1's
 `validateToken`/`introspectToken` declined — gRPC-only, and this SDK ships no gRPC transport; see
 [Scope of this SDK (v1)](#scope-of-this-sdk-v1) below), §9–§13 and §12.7, §14, §15, §17, §19,
 §20, §21, §22, §23, §24, §25, §26, §27, §28 (including §6.1 mTLS), and §28.12, §29, §30, §31, §32,
-§33 and §36, with §32.7 and §33.2 signed. Manifest pruning: not offered in any namespace (§27.10). §12 is implemented in full at its
+§33, §36 and §37, with §32.7 and §33.2 signed. Manifest pruning: not offered in any namespace (§27.10). §12 is implemented in full at its
 1.38 shape: all **thirteen** operations, including the four public "Sign in with X" entry points,
 as `suspend` functions on the same `AxiamClient`.
+
+**Contract 1.65 — native sign-in and `idp_hint` (§34.9).** The claim above holds at 1.65 with these:
+
+- **§37 — native sign-in with a provider ID token.** `loginWithProviderIdToken` and the
+  `nativeNonce()` companion (see [Native sign-in](#native-sign-in-with-a-provider-id-token-37) below).
+- **§12.1 / §26.2 rule 8 — `idpHint`** on `OidcBeginParams` (emitted as `axiam_idp_hint`) and on
+  `OidcParParams` (pushed in the body, never on the redirect). See [Choosing the provider](#choosing-the-provider-idphint-121-262-rule-8).
+- **§9 — a replayed refresh token now ends the session** on the server by default
+  (`oauth2.refresh_reuse_response = revoke_session`). Nothing changes in this SDK: `invalid_grant` on
+  `oidcRefresh` is an `OAuthProtocolError`, the single-flight guard keeps one burst to one wire call, and a
+  test confirms both against a mocked `400 invalid_grant`. Refreshing the same token from two places
+  (two clients, or two processes sharing a token store) defeats the guard and is a defect.
+- **Regenerated §27 members:** `default_idp` on the OAuth2 client types and the federation `native_login`
+  block, and `oauth2.refresh_reuse_response` on the settings types.
 
 **Contract 1.64 — the 1.1.2 release (§34.8).** The claim above holds at 1.64 with these:
 
@@ -184,8 +198,8 @@ rather than folded into the range because they landed after this SDK already sta
 would turn a statement that was true when written into a different claim without anyone editing it.
 
 `CONTRACT.md`, `openapi.json`, `management-registry.json` and `proto/` are vendored byte for byte
-from `axiam` (contract 1.63) at `d919ba0cc` (`proto/` unchanged since 1.62; spec digest
-`sha256:443c9d39…8098`), and the §27 surface is generated from them. See
+from `axiam` (contract 1.65) at `76d35d9` (`proto/` unchanged since 1.62; spec digest
+`sha256:d8ba5eff…56eb`), and the §27 surface is generated from them. See
 [MCP resource-server helpers](#mcp-resource-server-helpers-ioaxiamsdkmcp-28-opt-in) below for §28.
 
 **§27 is the Management API** — all 202 operations across 29 namespaces, with the §27.6 declarative
@@ -710,6 +724,50 @@ val client = AxiamClient.builder(baseUrl, tenantId = "22222222-2222-2222-2222-22
     .oidcClientSecret("secret")   // omit for a public client
     .build()
 ```
+
+### Native sign-in with a provider ID token (§37)
+
+For an Android or JVM-desktop app holding the ID token that Google, Apple or Facebook Limited Login's
+native SDK produced. One `POST /oauth2/token` with
+`grant_type=urn:axiam:params:oauth:grant-type:provider-id-token`; a public client (no secret) is the
+normal caller.
+
+```kotlin
+val nonce = client.nativeNonce()                    // pure local computation, nothing is stored
+val providerIdToken = googleSdk.signIn(nonce = nonce.hashed)   // give the provider the HASH
+
+val tokens = client.loginWithProviderIdToken(
+    ProviderIdTokenLoginParams(
+        provider = "corp-google",                   // a provider UUID or its slug, not "google"
+        idToken = Sensitive.of(providerIdToken),
+        nonce = nonce.raw,                          // the RAW value, sent byte for byte
+        scopes = listOf("openid"),                  // omit for no scopes (and no ID token)
+    ),
+)
+```
+
+- `provider` is a UUID or the operator's `provider_slug`; a kind name is not accepted unless it is also the slug.
+- The call is **never retried**, by the SDK or a wrapper: the provider token is single-use across the
+  deployment. `invalid_grant` is one generic answer (`OAuthProtocolError`) that is surfaced as received and
+  never refined; recover with a **fresh** provider token and a **fresh** `nativeNonce()`.
+- No scope is added: without `openid` the response has no ID token. With it, the ID token is validated
+  under §12.4 against the raw nonce.
+- Neither the provider ID token nor the raw nonce is logged or kept; hold the raw nonce only for the
+  length of the attempt. The result is not adopted as the client's own credential.
+
+### Choosing the provider (`idpHint`, §12.1, §26.2 rule 8)
+
+```kotlin
+val request = client.oidcBegin(OidcBeginParams(config, redirectUri, idpHint = "corp-okta"))
+// ...authorization URL carries axiam_idp_hint=corp-okta, once.
+
+val pushed = client.oidcPar(OidcParParams(request, redirectUri, idpHint = "corp-okta"))
+// ...the hint is in the pushed body; the redirect URL stays client_id + request_uri.
+```
+
+The value is a provider UUID, slug or branded kind name, passed on untouched (only an empty value or one over
+256 bytes is refused, with a `ValidationError`). The server ignores a hint it cannot resolve. There is no
+`kc_idp_hint`.
 
 ### The caller owns all login state (§12.3 rule 1)
 
