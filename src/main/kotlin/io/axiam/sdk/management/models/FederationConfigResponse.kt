@@ -44,6 +44,7 @@ import kotlinx.serialization.json.JsonElement
  * @property mintsClientSecret Whether AXIAM mints this provider's client secret itself, per
  *     exchange, rather than sending a stored one. True only for an Apple config with both
  *     identifiers set.
+ * @property nativeLogin Native sign-in trust (G-A).
  * @property pkceRequired Whether PKCE is sent on the authorization request. Always true for
  *     the OAuth2 variant regardless of the stored flag.
  * @property protocol the server's protocol field
@@ -79,6 +80,7 @@ data class FederationConfigResponse(
     @SerialName("idp_metadata_signing_cert_pem") val idpMetadataSigningCertPem: String? = null,
     @SerialName("metadata_url") val metadataUrl: String? = null,
     @SerialName("mints_client_secret") val mintsClientSecret: Boolean,
+    @SerialName("native_login") val nativeLogin: NativeLoginTrustResponse,
     @SerialName("pkce_required") val pkceRequired: Boolean,
     @SerialName("protocol") val protocol: String,
     @SerialName("provider") val provider: String,

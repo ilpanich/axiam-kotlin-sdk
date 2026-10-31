@@ -58,6 +58,7 @@ import kotlinx.serialization.json.JsonElement
  *     omitted leaves it. -- NULL IS NOT ABSENT (§27.4 rule 5): `JsonNullable.Absent` (the default)
  *     is not sent and was not received, `JsonNullable.Null` is an explicit `null`,
  *     `JsonNullable.Value(x)` carries x.
+ * @property nativeLogin the server's native_login field
  * @property provider the server's provider field
  * @property providerSlug Operator-chosen identifier for a `generic_*` kind. Explicit `null`
  *     clears it. -- NULL IS NOT ABSENT (§27.4 rule 5): `JsonNullable.Absent` (the default) is not
@@ -90,6 +91,7 @@ data class UpdateFederationConfigRequest(
     @SerialName("idp_metadata_signing_cert_pem") val idpMetadataSigningCertPem: JsonNullable<String> = JsonNullable.Absent,
     @SerialName("idp_signing_cert_pem") val idpSigningCertPem: JsonNullable<String> = JsonNullable.Absent,
     @SerialName("metadata_url") val metadataUrl: JsonNullable<String> = JsonNullable.Absent,
+    @SerialName("native_login") val nativeLogin: NativeLoginTrustRequest? = null,
     @SerialName("provider") val provider: String? = null,
     @SerialName("provider_slug") val providerSlug: JsonNullable<String> = JsonNullable.Absent,
     @SerialName("require_pkce") val requirePkce: Boolean? = null,

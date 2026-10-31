@@ -34,11 +34,15 @@ class Contract160ModelsTest : ManagementTestBase() {
             "events":["login_failed"],"id":"$EXAMPLE_ID","name":"n","recipient_emails":["ops@example.com"],
             "tenant_id":"$TENANT_ID","updated_at":"2026-10-05T00:00:00Z","window_minutes":$window}"""
 
-    /** A pre-1.0.0 server's response: neither `allow_sha1_signatures` nor `idp_metadata_signing_cert_pem`. */
+    /**
+     * A pre-1.0.0 server's response: neither `allow_sha1_signatures` nor `idp_metadata_signing_cert_pem`.
+     * It carries `native_login` (contract 1.65), which `openapi.json` 1.2.0 marks required.
+     */
     private val olderConfig =
         """{"allow_tenant_inheritance":false,"allowed_algorithms":[],"allowed_issuer_tenants":[],
             "attribute_map":null,"client_id":"rp","created_at":"2026-10-05T00:00:00Z","effective_scopes":[],
             "enabled":true,"has_bundled_mark":false,"id":"$EXAMPLE_ID","mints_client_secret":false,
+            "native_login":{"client_ids":[],"enabled":false,"max_token_age_secs":300},
             "pkce_required":true,"protocol":"Saml","provider":"idp","provider_kind":"saml","scopes":[],
             "tenant_id":"$TENANT_ID","updated_at":"2026-10-05T00:00:00Z",
             "token_exchange":{"accepted_audiences":[],"enabled":false,"max_token_age_secs":300,

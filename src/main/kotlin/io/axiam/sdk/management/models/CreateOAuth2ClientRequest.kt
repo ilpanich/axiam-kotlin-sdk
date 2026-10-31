@@ -3,6 +3,8 @@
 // `python3 scripts/gen_management.py`; CI verifies the committed output is current.
 package io.axiam.sdk.management.models
 
+import io.axiam.sdk.management.UuidSerializer
+import java.util.UUID
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -51,6 +53,13 @@ import kotlinx.serialization.Serializable
  *     today. Accepted and stored, but **nothing reads it yet**: the login hop it gates is a later
  *     wave. Unlike `authn_request_params` it is permitted on a `fapi2` client, because it relaxes
  *     nothing — it decides only how an anonymous browser is answered.
+ * @property defaultIdp G-B (#817) — the federation provider (a federation config `id`) this
+ *     client's sign-in page starts with when an authorization request carries no `axiam_idp_hint`;
+ *     a hint that names a provider overrides it. Must name a provider this tenant can sign in with
+ *     — its own enabled configs, or the organization's enabled ones it inherits — or the
+ *     registration is refused with `400`. If that provider is later disabled or deleted the
+ *     default is ignored at the authorization endpoint (the provider chooser is shown), never an
+ *     error. Omit for none.
  * @property dpopBoundAccessTokens RFC 9449 §5.2 — issue DPoP-bound (sender-constrained) access
  *     tokens to this client. Independent of both the authentication method and
  *     `tls_client_certificate_bound_access_tokens`; a client may ask for both constraints, and a
@@ -111,6 +120,7 @@ data class CreateOAuth2ClientRequest(
     @SerialName("backchannel_token_delivery_mode") val backchannelTokenDeliveryMode: String? = null,
     @SerialName("backchannel_user_code_parameter") val backchannelUserCodeParameter: Boolean? = null,
     @SerialName("browser_sso") val browserSso: Boolean? = null,
+    @SerialName("default_idp") val defaultIdp: @Serializable(with = UuidSerializer::class) UUID? = null,
     @SerialName("dpop_bound_access_tokens") val dpopBoundAccessTokens: Boolean? = null,
     @SerialName("dpop_require_nonce") val dpopRequireNonce: Boolean? = null,
     @SerialName("grant_types") val grantTypes: List<String>,

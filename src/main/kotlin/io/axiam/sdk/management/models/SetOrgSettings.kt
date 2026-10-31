@@ -45,6 +45,11 @@ import kotlinx.serialization.Serializable
  * @property opaqueMode the server's opaque_mode field
  * @property opaqueSuite the server's opaque_suite field
  * @property passwordHistoryCount the server's password_history_count field
+ * @property refreshReuseResponse G-C (#818) — defaulted to `revoke_session` (D-N2): an API
+ *     client written before the field lands on the new default. `refuse` restores the 1.1.x
+ *     behaviour. Because it is defaulted, a `PUT` from a client written before 1.2.0 (which omits
+ *     it) sets an organization on `refuse` back to `revoke_session` — the stricter direction
+ *     (F4-W1-06).
  * @property refreshTokenLifetimeSecs the server's refresh_token_lifetime_secs field
  * @property requireDigits the server's require_digits field
  * @property requireLowercase the server's require_lowercase field
@@ -88,6 +93,7 @@ data class SetOrgSettings(
     @SerialName("opaque_mode") val opaqueMode: String? = null,
     @SerialName("opaque_suite") val opaqueSuite: String? = null,
     @SerialName("password_history_count") val passwordHistoryCount: Int,
+    @SerialName("refresh_reuse_response") val refreshReuseResponse: RefreshReuseResponse? = null,
     @SerialName("refresh_token_lifetime_secs") val refreshTokenLifetimeSecs: Long,
     @SerialName("require_digits") val requireDigits: Boolean,
     @SerialName("require_lowercase") val requireLowercase: Boolean,

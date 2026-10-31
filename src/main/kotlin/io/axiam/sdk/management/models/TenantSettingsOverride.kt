@@ -44,6 +44,7 @@ import kotlinx.serialization.Serializable
  * @property opaqueMode the server's opaque_mode field
  * @property opaqueSuite the server's opaque_suite field
  * @property passwordHistoryCount the server's password_history_count field
+ * @property refreshReuseResponse the server's refresh_reuse_response field
  * @property refreshTokenLifetimeSecs the server's refresh_token_lifetime_secs field
  * @property requireDigits the server's require_digits field
  * @property requireLowercase the server's require_lowercase field
@@ -88,6 +89,7 @@ data class TenantSettingsOverride(
     @SerialName("opaque_mode") val opaqueMode: String? = null,
     @SerialName("opaque_suite") val opaqueSuite: String? = null,
     @SerialName("password_history_count") val passwordHistoryCount: Int? = null,
+    @SerialName("refresh_reuse_response") val refreshReuseResponse: RefreshReuseResponse? = null,
     @SerialName("refresh_token_lifetime_secs") val refreshTokenLifetimeSecs: Long? = null,
     @SerialName("require_digits") val requireDigits: Boolean? = null,
     @SerialName("require_lowercase") val requireLowercase: Boolean? = null,
