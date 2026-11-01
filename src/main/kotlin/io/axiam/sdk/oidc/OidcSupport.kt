@@ -698,7 +698,7 @@ internal class OidcSupport(
         // Sent at most once (§37.2 rule 10): a one-shot body keeps OkHttp from silently
         // replaying a request that was already written — the provider token is spent by then.
         val request = Request.Builder().url(url).post(OneShotBody(form)).build()
-        val response = executeRequest(request)
+        val response = executeOAuth2Post(request)
         val json = response.use {
             if (!it.isSuccessful) throw mapProviderIdTokenError(it)
             parseJsonObject(it)
@@ -803,7 +803,7 @@ internal class OidcSupport(
             params.tenantId,
         )
         val request = Request.Builder().url(url).post(form).build()
-        val response = executeRequest(request)
+        val response = executeOAuth2Post(request)
         response.use {
             if (!it.isSuccessful) throw mapOAuth2ErrorResponse(it, "revoke request failed")
         }
@@ -1491,7 +1491,7 @@ internal class OidcSupport(
         ) { _ ->
             trace.lastStatus = null
             val request = Request.Builder().url(url).post(form).build()
-            val response = executeRequest(request)
+            val response = executeOAuth2Post(request, trace)
             response.use {
                 trace.lastStatus = it.code
                 if (it.code >= 500) {
@@ -1770,7 +1770,7 @@ internal class OidcSupport(
         // One POST, no retry wrapper. See the rule-6 note above — this is the
         // §16 exception, and it is load-bearing rather than stylistic.
         val request = Request.Builder().url(url).post(form).build()
-        val response = executeRequest(request)
+        val response = executeOAuth2Post(request)
         response.use {
             if (!it.isSuccessful) throw mapUmaGrantError(it, "uma ticket exchange request failed")
             val json = parseJsonObject(it)
@@ -2070,7 +2070,7 @@ internal class OidcSupport(
         val builder = Request.Builder().url(url).post(if (devicePoll) OneShotBody(form) else form)
         if (withoutSession) builder.header(AuthHeaderInterceptor.NO_SESSION_CREDENTIALS_HEADER, "1")
         val request = builder.build()
-        val response = executeRequest(request)
+        val response = executeOAuth2Post(request, trace)
         response.use {
             trace?.lastStatus = it.code
             if (!it.isSuccessful) throw mapOAuth2ErrorResponse(it, fallbackMessage, devicePoll)
@@ -2108,6 +2108,31 @@ internal class OidcSupport(
      * break this rule — see `OidcIntrospectRevokeTest` for the regression
      * test that would catch it.
      */
+    /**
+     * The `/oauth2/` transport (§12.1 rule 3, contract 1.65): [httpClient]'s
+     * configuration with redirects switched off, so a `307`/`308` cannot replay a
+     * form body carrying `refresh_token`/`client_secret` to another host.
+     */
+    private val oauth2Client: OkHttpClient by lazy {
+        httpClient.newBuilder().followRedirects(false).followSslRedirects(false).build()
+    }
+
+    /**
+     * POSTs to an `/oauth2/` endpoint without following a redirect. A `3xx` is a
+     * [NetworkError] whatever its body (C165-25) and its `Location` is not echoed;
+     * [trace] records the status so the §16 loop does not retry it.
+     */
+    private suspend fun executeOAuth2Post(request: Request, trace: PollTrace? = null): Response {
+        val response = executeRequest(request, oauth2Client)
+        if (response.code in 300..399) {
+            val code = response.code
+            response.close()
+            trace?.lastStatus = code
+            throw NetworkError("oauth2 endpoint answered with a redirect (HTTP $code), which is not followed")
+        }
+        return response
+    }
+
     private suspend fun executeRequest(
         request: Request,
         client: OkHttpClient = httpClient,
