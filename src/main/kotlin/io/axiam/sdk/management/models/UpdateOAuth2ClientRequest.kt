@@ -3,6 +3,8 @@
 // `python3 scripts/gen_management.py`; CI verifies the committed output is current.
 package io.axiam.sdk.management.models
 
+import io.axiam.sdk.management.UuidSerializer
+import java.util.UUID
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -26,6 +28,9 @@ import kotlinx.serialization.Serializable
  * @property backchannelTokenDeliveryMode G-7 — see the create DTO. `""` clears.
  * @property backchannelUserCodeParameter G-7 — `true` refused, as on create.
  * @property browserSso X7.3 — see &#91;`CreateOAuth2ClientRequest::browser_sso`&#93;.
+ * @property defaultIdp G-B (#817) — see &#91;`CreateOAuth2ClientRequest::default_idp`&#93;.
+ *     Omitted leaves it; `null` clears it; an id is held to the create rule (`400` unless it names
+ *     a provider this tenant can sign in with).
  * @property dpopBoundAccessTokens the server's dpop_bound_access_tokens field
  * @property dpopRequireNonce the server's dpop_require_nonce field
  * @property grantTypes the server's grant_types field
@@ -60,6 +65,7 @@ data class UpdateOAuth2ClientRequest(
     @SerialName("backchannel_token_delivery_mode") val backchannelTokenDeliveryMode: String? = null,
     @SerialName("backchannel_user_code_parameter") val backchannelUserCodeParameter: Boolean? = null,
     @SerialName("browser_sso") val browserSso: Boolean? = null,
+    @SerialName("default_idp") val defaultIdp: @Serializable(with = UuidSerializer::class) UUID? = null,
     @SerialName("dpop_bound_access_tokens") val dpopBoundAccessTokens: Boolean? = null,
     @SerialName("dpop_require_nonce") val dpopRequireNonce: Boolean? = null,
     @SerialName("grant_types") val grantTypes: List<String>? = null,

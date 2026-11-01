@@ -27,6 +27,8 @@ import io.axiam.sdk.oidc.LogoutUrlParams
 import io.axiam.sdk.oidc.IntrospectionResult
 import io.axiam.sdk.oidc.LoginClientCredentialsParams
 import io.axiam.sdk.oidc.OidcBeginParams
+import io.axiam.sdk.oidc.ProviderIdTokenLoginParams
+import io.axiam.sdk.oidc.ProviderNonce
 import io.axiam.sdk.oidc.OidcConfiguration
 import io.axiam.sdk.oidc.OidcExchangeParams
 import io.axiam.sdk.oidc.OidcRefreshParams
@@ -1563,6 +1565,29 @@ class AxiamClient private constructor(
      */
     suspend fun loginClientCredentials(params: LoginClientCredentialsParams = LoginClientCredentialsParams()): OidcTokenSet =
         oidcSupport.loginClientCredentials(params)
+
+    /**
+     * Native sign-in with a provider ID token (CONTRACT.md §37, contract 1.65): one
+     * `POST /oauth2/token` with `grant_type=urn:axiam:params:oauth:grant-type:provider-id-token`.
+     *
+     * For an app that holds the ID token a Google, Apple or Facebook (Limited Login) SDK
+     * produced. A public client (no `oidcClientSecret`) is the normal caller and is not
+     * refused. **Never retried** — the provider token is single-use across the whole
+     * deployment — and `invalid_grant` is one generic answer that is surfaced as received,
+     * never refined: obtain a fresh provider token with a fresh nonce ([nativeNonce]) and
+     * try again. Neither the provider token nor the raw nonce is logged or kept. The result
+     * is not adopted as this client's own credential. See [ProviderIdTokenLoginParams].
+     */
+    suspend fun loginWithProviderIdToken(params: ProviderIdTokenLoginParams): OidcTokenSet =
+        oidcSupport.loginWithProviderIdToken(params)
+
+    /**
+     * A fresh `{raw, hashed}` nonce pair for [loginWithProviderIdToken] (CONTRACT.md §37.4):
+     * give the provider's SDK `hashed`, keep `raw` (only for the length of the attempt) and pass
+     * it as the `nonce`. PURE LOCAL COMPUTATION — no network I/O, hence not `suspend` — and
+     * stores nothing.
+     */
+    fun nativeNonce(): ProviderNonce = ProviderNonce.generate()
 
     /** `POST /oauth2/introspect` (RFC 7662, §12.1). Requires confidential-client credentials. */
     suspend fun introspect(params: IntrospectParams): IntrospectionResult = oidcSupport.introspect(params)

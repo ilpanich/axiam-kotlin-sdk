@@ -20,6 +20,8 @@ import kotlinx.serialization.Serializable
  * @property lockout the server's lockout field
  * @property mfa the server's mfa field
  * @property notification the server's notification field
+ * @property oauth2 G-C (#818) — `oauth2.refresh_reuse_response`. Defaulted so a document
+ *     written before the field reads as the default.
  * @property oidc the server's oidc field
  * @property opaque the server's opaque field
  * @property password the server's password field
@@ -39,6 +41,7 @@ data class SecuritySettings(
     @SerialName("lockout") val lockout: LockoutPolicy,
     @SerialName("mfa") val mfa: MfaPolicy,
     @SerialName("notification") val notification: NotificationPolicy,
+    @SerialName("oauth2") val oauth2: OAuth2Policy? = null,
     @SerialName("oidc") val oidc: OidcPolicy,
     @SerialName("opaque") val opaque: OpaquePolicy,
     @SerialName("password") val password: PasswordPolicy,

@@ -44,6 +44,7 @@ import kotlinx.serialization.json.JsonElement
  * @property idpSigningCertPem PEM-encoded X.509 certificate for verifying SAML assertions or
  *     OIDC signatures (CQ-B40/REQ-14 AC-5). Required for SAML configs.
  * @property metadataUrl OIDC discovery URL or SAML metadata URL.
+ * @property nativeLogin the server's native_login field
  * @property protocol Federation protocol: "OidcConnect" or "Saml".
  * @property provider Display name for the identity provider (e.g., "Google", "Okta").
  * @property providerKind Which provider this is: `google`, `github`, `facebook`, `apple`,
@@ -75,6 +76,7 @@ data class CreateFederationConfigRequest(
     @SerialName("idp_metadata_signing_cert_pem") val idpMetadataSigningCertPem: String? = null,
     @SerialName("idp_signing_cert_pem") val idpSigningCertPem: String? = null,
     @SerialName("metadata_url") val metadataUrl: String? = null,
+    @SerialName("native_login") val nativeLogin: NativeLoginTrustRequest? = null,
     @SerialName("protocol") val protocol: String,
     @SerialName("provider") val provider: String,
     @SerialName("provider_kind") val providerKind: String? = null,

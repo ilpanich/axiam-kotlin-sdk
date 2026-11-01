@@ -7,6 +7,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Contract 1.65 (the platform's 1.2.0 release). The release number is the maintainer's.
+
+### Added
+
+- **Native sign-in with a provider ID token (CONTRACT §37).** `AxiamClient.loginWithProviderIdToken(ProviderIdTokenLoginParams)`
+  (`suspend`) posts `grant_type=urn:axiam:params:oauth:grant-type:provider-id-token` to the token endpoint
+  and returns an `OidcTokenSet`. Empty `provider`, `idToken` or `nonce` and a slug-only client are refused
+  before any wire call; the raw nonce is sent unchanged; no `openid` is added; it is never retried; the
+  provider token and the nonce are `Sensitive` and are neither logged nor kept; the result is not adopted
+  as the client's credential. `AxiamClient.nativeNonce(): ProviderNonce` (`raw` is `Sensitive`, `hashed`
+  is lower-case hex SHA-256) is the optional §37.4 companion. All thirteen §37.9 tests are ported.
+- **`idpHint` (CONTRACT §12.1, §26.2 rule 8).** `OidcBeginParams.idpHint` emits `axiam_idp_hint` once;
+  `OidcParParams.idpHint` pushes it in the PAR body and never on the redirect URL. An empty value or one
+  over 256 bytes throws `ValidationError` with no URL built or request sent. There is no `kc_idp_hint`.
+- A confirmation test for the §9 paragraph: against a mocked `400 invalid_grant`, a burst of eight
+  `oidcRefresh` callers makes one wire call and all receive that one error.
+
+### Fixed
+
+- **`/oauth2/*` form POSTs no longer follow redirects (CONTRACT §12.1 rule 3, C165-23).** Every
+  `/oauth2/*` POST other than native sign-in (`oidcRefresh`, `oidcExchange`, client credentials, PAR,
+  introspect, revoke, token exchange, the UMA ticket, device authorization, `cibaInitiate` and the device
+  and CIBA polls)
+  rode the shared OkHttp client, which re-sent the form body, `refresh_token` and `client_secret`
+  included, to the host of a `307`/`308` and followed `301`-`303` as a `GET`. They now use a derived
+  client with `followRedirects(false)` and `followSslRedirects(false)`, and a `3xx` is a `NetworkError`
+  without the `Location`.
+- **A `3xx` with an `error` body is a `NetworkError`, not an `OAuthProtocolError` (C165-25).** The status
+  is checked before the body.
+
+### Changed
+
+- **Server floor (D-N33).** The federation-config admin calls (`federation.create_config`, `get_config`,
+  `list_configs`, `update_config`) of this 1.2-line SDK need an AXIAM server **1.2.0 or later**:
+  `FederationConfigResponse.nativeLogin` is required from 1.2.0, and a response from an older server
+  fails to decode (the member has no default).
+- **`oidcPar` pushes the begin URL's hint (CONTRACT §26.2 rule 8, D-N36).** When `OidcParParams.idpHint`
+  is `null`, the `axiam_idp_hint` that `oidcBegin` put on `request.url` is pushed in the body; when both
+  are set the argument wins and one value is pushed. The redirect URL still carries neither.
+- Re-vendored `CONTRACT.md` (1.65), `openapi.json` (1.2.0), `management-registry.json` and `proto/`
+  from AXIAM `76d35d9`, and regenerated the §27 layer. New members: `default_idp` on
+  `CreateOAuth2ClientRequest`, `UpdateOAuth2ClientRequest`, `OAuth2ClientResponse`; `native_login` on the
+  federation config requests and response (`NativeLoginTrustRequest`, `NativeLoginTrustResponse`);
+  `OAuth2Policy` / `RefreshReuseResponse` and `oauth2` on the settings types; `TokenRequest.provider`,
+  `id_token`, `nonce`; `PushedAuthorizationRequest.axiam_idp_hint`.
+- **Server behaviour to know about:** a replayed (already-rotated) refresh token now ends the session on
+  the server by default (`oauth2.refresh_reuse_response = revoke_session`, 1.2.0). `invalid_grant` on
+  `oidcRefresh` therefore means the session is over; do not retry it, and do not refresh one token from two
+  places. No SDK request or response changed.
+
+### Source compatibility
+
+The regenerated management data classes gained constructor parameters **in alphabetical position**, not
+at the end. Positional construction, `copy` and `componentN` destructuring of these classes break, and
+the change is **binary-incompatible** for code compiled against 1.1.x: use named arguments and rebuild.
+
+- `CreateFederationConfigRequest`: `nativeLogin` before `protocol`.
+- `FederationConfigResponse`: `nativeLogin` before `pkceRequired`, **with no default** (required).
+- `UpdateFederationConfigRequest`: `nativeLogin` before `provider`.
+- `CreateOAuth2ClientRequest`, `UpdateOAuth2ClientRequest`: `defaultIdp` before `dpopBoundAccessTokens`.
+- `OAuth2ClientResponse`: `defaultIdp` before `dpopBoundAccessTokens`.
+- `SecuritySettings`: `oauth2` before `oidc`.
+- `SetOrgSettings`, `TenantSettingsOverride`: `refreshReuseResponse` before `refreshTokenLifetimeSecs`.
+
 ## [1.1.3] - 2026-10-29
 
 ### Changed

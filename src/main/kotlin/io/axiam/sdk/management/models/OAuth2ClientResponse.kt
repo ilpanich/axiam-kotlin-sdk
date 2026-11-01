@@ -25,6 +25,9 @@ import kotlinx.serialization.Serializable
  * @property browserSso X7.3 — echoed for the same reason.
  * @property clientId the server's client_id field
  * @property createdAt the server's created_at field
+ * @property defaultIdp G-B (#817) — the provider this client's sign-in page starts with when a
+ *     request carries no hint; absent for none. Echoed as stored: a value whose provider has since
+ *     been disabled is shown, and ignored at the authorization endpoint.
  * @property dpopBoundAccessTokens the server's dpop_bound_access_tokens field
  * @property dpopRequireNonce the server's dpop_require_nonce field
  * @property grantTypes the server's grant_types field
@@ -73,6 +76,7 @@ data class OAuth2ClientResponse(
     @SerialName("browser_sso") val browserSso: Boolean,
     @SerialName("client_id") val clientId: String,
     @SerialName("created_at") val createdAt: @Serializable(with = InstantSerializer::class) Instant,
+    @SerialName("default_idp") val defaultIdp: @Serializable(with = UuidSerializer::class) UUID? = null,
     @SerialName("dpop_bound_access_tokens") val dpopBoundAccessTokens: Boolean,
     @SerialName("dpop_require_nonce") val dpopRequireNonce: Boolean,
     @SerialName("grant_types") val grantTypes: List<String>,

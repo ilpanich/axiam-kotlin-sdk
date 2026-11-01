@@ -12,9 +12,12 @@ import io.axiam.sdk.management.models.ClientProfile
 import io.axiam.sdk.management.models.DirectoryKind
 import io.axiam.sdk.management.models.EmailConfigOverride
 import io.axiam.sdk.management.models.FailurePolicy
+import io.axiam.sdk.management.models.NativeLoginTrustRequest
+import io.axiam.sdk.management.models.OAuth2Policy
 import io.axiam.sdk.management.models.ParseSamlSpMetadata
 import io.axiam.sdk.management.models.ProviderConfigSmtp
 import io.axiam.sdk.management.models.ReactorMode
+import io.axiam.sdk.management.models.RefreshReuseResponse
 import io.axiam.sdk.management.models.RetryPolicy
 import io.axiam.sdk.management.models.TenantSettingsOverride
 import io.axiam.sdk.management.models.TenantStatus
@@ -173,6 +176,50 @@ class ManagementSparseBodiesGeneratedTest {
         assertKeys(EmailConfigOverride(), EmailConfigOverride.serializer())
     }
 
+    /** §27.4 rule 5 for NativeLoginTrustRequest: each property sets exactly its own key. */
+    @Test
+    fun `nativeLoginTrustRequest sends only what was set`() {
+        assertKeys(
+            NativeLoginTrustRequest(clientIds = emptyList()),
+            NativeLoginTrustRequest.serializer(), "client_ids",
+        )
+        assertKeys(
+            NativeLoginTrustRequest(enabled = true),
+            NativeLoginTrustRequest.serializer(), "enabled",
+        )
+        assertKeys(
+            NativeLoginTrustRequest(maxTokenAgeSecs = 1L),
+            NativeLoginTrustRequest.serializer(), "max_token_age_secs",
+        )
+        assertKeys(
+            NativeLoginTrustRequest(
+                clientIds = emptyList(),
+                enabled = true,
+                maxTokenAgeSecs = 1L,
+            ),
+            NativeLoginTrustRequest.serializer(),
+            "client_ids", "enabled", "max_token_age_secs",
+        )
+        assertKeys(NativeLoginTrustRequest(), NativeLoginTrustRequest.serializer())
+    }
+
+    /** §27.4 rule 5 for OAuth2Policy: each property sets exactly its own key. */
+    @Test
+    fun `oAuth2Policy sends only what was set`() {
+        assertKeys(
+            OAuth2Policy(refreshReuseResponse = RefreshReuseResponse.REVOKE_SESSION),
+            OAuth2Policy.serializer(), "refresh_reuse_response",
+        )
+        assertKeys(
+            OAuth2Policy(
+                refreshReuseResponse = RefreshReuseResponse.REVOKE_SESSION,
+            ),
+            OAuth2Policy.serializer(),
+            "refresh_reuse_response",
+        )
+        assertKeys(OAuth2Policy(), OAuth2Policy.serializer())
+    }
+
     /** §27.4 rule 5 for ParseSamlSpMetadata: each property sets exactly its own key. */
     @Test
     fun `parseSamlSpMetadata sends only what was set`() {
@@ -307,6 +354,10 @@ class ManagementSparseBodiesGeneratedTest {
             TenantSettingsOverride.serializer(), "password_history_count",
         )
         assertKeys(
+            TenantSettingsOverride(refreshReuseResponse = RefreshReuseResponse.REVOKE_SESSION),
+            TenantSettingsOverride.serializer(), "refresh_reuse_response",
+        )
+        assertKeys(
             TenantSettingsOverride(refreshTokenLifetimeSecs = 1L),
             TenantSettingsOverride.serializer(), "refresh_token_lifetime_secs",
         )
@@ -375,6 +426,7 @@ class ManagementSparseBodiesGeneratedTest {
                 opaqueMode = "example",
                 opaqueSuite = "example",
                 passwordHistoryCount = 1,
+                refreshReuseResponse = RefreshReuseResponse.REVOKE_SESSION,
                 refreshTokenLifetimeSecs = 1L,
                 requireDigits = true,
                 requireLowercase = true,
@@ -395,10 +447,10 @@ class ManagementSparseBodiesGeneratedTest {
             "hibp_check_enabled", "lockout_backoff_multiplier", "lockout_duration_secs",
             "max_cert_validity_days", "max_failed_login_attempts", "max_lockout_duration_secs",
             "mfa_challenge_lifetime_secs", "mfa_enforced", "min_length", "opaque_ksf",
-            "opaque_mode", "opaque_suite", "password_history_count", "refresh_token_lifetime_secs",
-            "require_digits", "require_lowercase", "require_symbols", "require_uppercase",
-            "saml_idp_enabled", "sensitive_scopes_enabled", "server_cert_allowed_names",
-            "ssf_enabled", "webauthn_user_verification",
+            "opaque_mode", "opaque_suite", "password_history_count", "refresh_reuse_response",
+            "refresh_token_lifetime_secs", "require_digits", "require_lowercase",
+            "require_symbols", "require_uppercase", "saml_idp_enabled", "sensitive_scopes_enabled",
+            "server_cert_allowed_names", "ssf_enabled", "webauthn_user_verification",
         )
         assertKeys(TenantSettingsOverride(), TenantSettingsOverride.serializer())
     }
@@ -612,6 +664,10 @@ class ManagementSparseBodiesGeneratedTest {
             UpdateFederationConfigRequest.serializer(), "metadata_url",
         )
         assertKeys(
+            UpdateFederationConfigRequest(nativeLogin = NativeLoginTrustRequest()),
+            UpdateFederationConfigRequest.serializer(), "native_login",
+        )
+        assertKeys(
             UpdateFederationConfigRequest(provider = "example"),
             UpdateFederationConfigRequest.serializer(), "provider",
         )
@@ -656,6 +712,7 @@ class ManagementSparseBodiesGeneratedTest {
                 idpMetadataSigningCertPem = JsonNullable.Value("example"),
                 idpSigningCertPem = JsonNullable.Value("example"),
                 metadataUrl = JsonNullable.Value("example"),
+                nativeLogin = NativeLoginTrustRequest(),
                 provider = "example",
                 providerSlug = JsonNullable.Value("example"),
                 requirePkce = true,
@@ -669,8 +726,8 @@ class ManagementSparseBodiesGeneratedTest {
             "allowed_issuer_tenants", "apple_key_id", "apple_team_id", "attribute_map",
             "authorization_endpoint", "button_icon", "client_id", "client_secret",
             "enabled", "idp_metadata_signing_cert_pem", "idp_signing_cert_pem",
-            "metadata_url", "provider", "provider_slug", "require_pkce", "scopes",
-            "token_endpoint", "token_exchange", "userinfo_endpoint",
+            "metadata_url", "native_login", "provider", "provider_slug", "require_pkce",
+            "scopes", "token_endpoint", "token_exchange", "userinfo_endpoint",
         )
         assertKeys(UpdateFederationConfigRequest(), UpdateFederationConfigRequest.serializer())
         assertExplicitNull(UpdateFederationConfigRequest(appleKeyId = JsonNullable.Null), UpdateFederationConfigRequest.serializer(), "apple_key_id")
@@ -791,6 +848,10 @@ class ManagementSparseBodiesGeneratedTest {
             UpdateOAuth2ClientRequest.serializer(), "browser_sso",
         )
         assertKeys(
+            UpdateOAuth2ClientRequest(defaultIdp = EXAMPLE_ID),
+            UpdateOAuth2ClientRequest.serializer(), "default_idp",
+        )
+        assertKeys(
             UpdateOAuth2ClientRequest(dpopBoundAccessTokens = true),
             UpdateOAuth2ClientRequest.serializer(), "dpop_bound_access_tokens",
         )
@@ -868,6 +929,7 @@ class ManagementSparseBodiesGeneratedTest {
                 backchannelTokenDeliveryMode = "example",
                 backchannelUserCodeParameter = true,
                 browserSso = true,
+                defaultIdp = EXAMPLE_ID,
                 dpopBoundAccessTokens = true,
                 dpopRequireNonce = true,
                 grantTypes = emptyList(),
@@ -890,7 +952,7 @@ class ManagementSparseBodiesGeneratedTest {
             "allowed_resources", "authn_request_params", "backchannel_authentication_request_signing_alg",
             "backchannel_client_notification_endpoint", "backchannel_logout_uri",
             "backchannel_token_delivery_mode", "backchannel_user_code_parameter",
-            "browser_sso", "dpop_bound_access_tokens", "dpop_require_nonce",
+            "browser_sso", "default_idp", "dpop_bound_access_tokens", "dpop_require_nonce",
             "grant_types", "jwks", "jwks_uri", "name", "post_logout_redirect_uris",
             "profile", "redirect_uris", "require_par", "scopes", "self_signed_tls_client_auth_thumbprints",
             "tls_client_auth_san_dns", "tls_client_auth_san_uri", "tls_client_auth_subject_dn",
@@ -1220,7 +1282,7 @@ class ManagementSparseBodiesGeneratedTest {
     fun `every sparse body is covered`() {
         val cases = ManagementSparseBodiesGeneratedTest::class.java
             .declaredMethods.count { it.name.endsWith("sends only what was set") }
-        assertEquals(21, cases,
+        assertEquals(23, cases,
             "one case per sparse body the schema closure declares")
     }
 
