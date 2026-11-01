@@ -101,7 +101,9 @@ class OAuth2NoRedirectTest {
         val e = assertThrows(NetworkError::class.java) {
             runBlocking { client.oidcRefresh(OidcRefreshParams.of("rt", tenantId = tenantId)) }
         }
-        assertFalse(e is OAuthProtocolError)
+        // A runtime check: the two types are unrelated, so a compile-time `is` is rejected
+        // by Kotlin 2.4 (IMPOSSIBLE_IS_CHECK_ERROR); the mapping is what is being asserted.
+        assertFalse(OAuthProtocolError::class.java.isInstance(e))
         assertNothingLeaked(e, "rt", "s3cret")
         assertTrue(server.requestCount >= 1)
     }
