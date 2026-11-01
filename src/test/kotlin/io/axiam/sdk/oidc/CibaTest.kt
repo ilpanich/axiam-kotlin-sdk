@@ -804,4 +804,48 @@ class CibaTest {
         val hint = random()
         Redaction.assertNoFragment(CibaUserHint.IdTokenHint(hint).toString(), hint, "id_token_hint")
     }
+
+    // -- §12.1 rule 3 (contract 1.65, C165-29): bc-authorize follows no redirect ---------
+
+    private fun redirectBcAuthorize(other: MockWebServer, code: Int, body: String = "") {
+        val target = other.url("/oauth2/bc-authorize").toString()
+        bcAnswer = { MockResponse().setResponseCode(code).addHeader("Location", target).setBody(body) }
+    }
+
+    private fun assertNothingFollowed(other: MockWebServer, e: Throwable) {
+        assertEquals(null, other.takeRequest(300, java.util.concurrent.TimeUnit.MILLISECONDS), "the second host must see no request")
+        assertEquals(0, other.requestCount)
+        val text = generateSequence(e) { it.cause }.joinToString(" | ") { it.toString() }
+        assertFalse(text.contains(secret), "the error must not carry the client secret")
+        assertFalse(text.contains(other.hostName + ":" + other.port), "the Location is not echoed")
+    }
+
+    @Test
+    fun `cibaInitiate answered 302 is a NetworkError and the second host sees nothing`() = runBlocking {
+        val other = MockWebServer().also { it.start() }
+        try {
+            other.enqueue(json(200, """{"auth_req_id":"${random()}","expires_in":120}"""))
+            val client = client()
+            redirectBcAuthorize(other, 302)
+            val e = assertThrows<NetworkError> { runBlocking { client.cibaInitiate(params(client)) } }
+            assertNothingFollowed(other, e)
+        } finally {
+            other.shutdown()
+        }
+    }
+
+    @Test
+    fun `cibaInitiate answered 307 with an error body is a NetworkError, not an OAuthProtocolError`() = runBlocking {
+        val other = MockWebServer().also { it.start() }
+        try {
+            val client = client()
+            redirectBcAuthorize(other, 307, oauthError("invalid_binding_message"))
+            val e = assertThrows<NetworkError> { runBlocking { client.cibaInitiate(params(client)) } }
+            // Unrelated types: a runtime check, since a compile-time `is` is rejected by Kotlin 2.4.
+            assertFalse(OAuthProtocolError::class.java.isInstance(e))
+            assertNothingFollowed(other, e)
+        } finally {
+            other.shutdown()
+        }
+    }
 }

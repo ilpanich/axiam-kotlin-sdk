@@ -28,7 +28,8 @@ Contract 1.65 (the platform's 1.2.0 release). The release number is the maintain
 
 - **`/oauth2/*` form POSTs no longer follow redirects (CONTRACT §12.1 rule 3, C165-23).** Every
   `/oauth2/*` POST other than native sign-in (`oidcRefresh`, `oidcExchange`, client credentials, PAR,
-  introspect, revoke, token exchange, the UMA ticket, device authorization and the device and CIBA polls)
+  introspect, revoke, token exchange, the UMA ticket, device authorization, `cibaInitiate` and the device
+  and CIBA polls)
   rode the shared OkHttp client, which re-sent the form body, `refresh_token` and `client_secret`
   included, to the host of a `307`/`308` and followed `301`-`303` as a `GET`. They now use a derived
   client with `followRedirects(false)` and `followSslRedirects(false)`, and a `3xx` is a `NetworkError`
