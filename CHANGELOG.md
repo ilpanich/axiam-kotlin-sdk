@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-11-04
+
 Contract 1.65 (the platform's 1.2.0 release) and contract 1.66 (§34.10). The release number is the maintainer's.
 
 ### Added
@@ -34,6 +36,8 @@ Contract 1.65 (the platform's 1.2.0 release) and contract 1.66 (§34.10). The re
 - A confirmation test for the §9 paragraph: against a mocked `400 invalid_grant`, a burst of eight
   `oidcRefresh` callers makes one wire call and all receive that one error.
 
+- Native sign-in with a provider ID token and idp_hint (contract 1.65 §37)
+
 ### Fixed
 
 - **`/oauth2/*` form POSTs no longer follow redirects (CONTRACT §12.1 rule 3, C165-23).** Every
@@ -46,6 +50,12 @@ Contract 1.65 (the platform's 1.2.0 release) and contract 1.66 (§34.10). The re
   without the `Location`.
 - **A `3xx` with an `error` body is a `NetworkError`, not an `OAuthProtocolError` (C165-25).** The status
   is checked before the body.
+
+- Contract 1.65 review sweep 2 (C165-29, C165-31)
+
+- Contract 1.65 review sweep 2 (C165-23, C165-25)
+
+- Contract 1.65 review findings (C165-04, C165-08, C165-11)
 
 ### Changed
 
@@ -66,6 +76,18 @@ Contract 1.65 (the platform's 1.2.0 release) and contract 1.66 (§34.10). The re
   the server by default (`oauth2.refresh_reuse_response = revoke_session`, 1.2.0). `invalid_grant` on
   `oidcRefresh` therefore means the session is over; do not retry it, and do not refresh one token from two
   places. No SDK request or response changed.
+
+- re-vendor CONTRACT.md 1.66 as amended at ilpanich/axiam 5f9d079
+
+- re-sync contract 1.66 and openapi.json; confirm the federated sign-in cookie binding (§12.1 rule 12b)
+
+- re-vendor openapi.json and the management registry (logout/reset-mfa 500, D-N44)
+
+- re-vendor openapi.json and the management registry (end_session 500, D-N42)
+
+- Runtime type check in the 3xx-with-error-body test (Kotlin 2.4)
+
+- re-vendor contract 1.65, openapi 1.2.0 and the management registry
 
 ### Source compatibility
 
