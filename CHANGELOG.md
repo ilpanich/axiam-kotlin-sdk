@@ -12,7 +12,7 @@ Contract 1.65 (the platform's 1.2.0 release) and contract 1.66 (§34.10). The re
 ### Added
 
 - **Contract 1.66 re-sync** (`CONTRACT.md`, `openapi.json` 1.2.0 and `management-registry.json` re-vendored
-  byte for byte from `axiam` `a916544`; `proto/` unchanged; spec digest `sha256:09419a6e…4656e`). **No API
+  byte for byte from `axiam` `5f9d079`; `proto/` unchanged; spec digest `sha256:09419a6e…4656e`). **No API
   change**: the regenerated management surface is identical. A federated sign-in is now bound to the client
   that started it (§12.1 rule 12b): the start and the completion of one sign-in must go through the same
   `AxiamClient` (one §4 cookie jar). The optional `reauthenticate` start input (rule 12c) is not exposed.
