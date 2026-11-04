@@ -31,13 +31,20 @@ Source: [ilpanich/axiam-kotlin-sdk](https://github.com/ilpanich/axiam-kotlin-sdk
 
 ## Contract conformance
 
-This SDK conforms to **contract 1.65**: CONTRACT.md §1–§7 (§1.1's `getUserInfo` and §1.1.1's
+This SDK conforms to **contract 1.66**: CONTRACT.md §1–§7 (§1.1's `getUserInfo` and §1.1.1's
 `validateToken`/`introspectToken` declined — gRPC-only, and this SDK ships no gRPC transport; see
 [Scope of this SDK (v1)](#scope-of-this-sdk-v1) below), §9–§13 and §12.7, §14, §15, §17, §19,
 §20, §21, §22, §23, §24, §25, §26, §27, §28 (including §6.1 mTLS), and §28.12, §29, §30, §31, §32,
 §33, §36 and §37, with §32.7 and §33.2 signed. Manifest pruning: not offered in any namespace (§27.10). §12 is implemented in full at its
 1.38 shape: all **thirteen** operations, including the four public "Sign in with X" entry points,
 as `suspend` functions on the same `AxiamClient`.
+
+**Contract 1.66 — federated sign-in bound to its client (§34.10).** No operation is added and no API
+changes. §12.1 rule 12b: `ssoStart`, `ssoStartOauth2` and the SAML login answer with the
+`__Host-axiam_fed_bind` cookie, and `ssoComplete`, `ssoCompleteOauth2` and `ssoCompleteHandoff` refuse
+with `401` unless it is presented, so start and complete one sign-in through the **same** `AxiamClient`
+(one §4 cookie jar); a test confirms the jar carries it. The optional `reauthenticate` start input
+(rule 12c) is not exposed.
 
 **Contract 1.65 — native sign-in and `idp_hint` (§34.9).** The claim above holds at 1.65 with these:
 
@@ -204,8 +211,8 @@ rather than folded into the range because they landed after this SDK already sta
 would turn a statement that was true when written into a different claim without anyone editing it.
 
 `CONTRACT.md`, `openapi.json`, `management-registry.json` and `proto/` are vendored byte for byte
-from `axiam` (contract 1.65) at `76d35d9` (`proto/` unchanged since 1.62; spec digest
-`sha256:d8ba5eff…56eb`), and the §27 surface is generated from them. See
+from `axiam` (contract 1.66) at `5f9d079` (`proto/` unchanged since 1.62; spec digest
+`sha256:09419a6e…4656e`), and the §27 surface is generated from them. See
 [MCP resource-server helpers](#mcp-resource-server-helpers-ioaxiamsdkmcp-28-opt-in) below for §28.
 
 **§27 is the Management API** — all 202 operations across 29 namespaces, with the §27.6 declarative

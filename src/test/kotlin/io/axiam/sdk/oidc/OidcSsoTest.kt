@@ -154,6 +154,44 @@ class OidcSsoTest {
         assertEquals("Bearer some.jwt.value", discoveryRequest.getHeader("Authorization"))
     }
 
+    /**
+     * CONTRACT.md §12.1 rule 12b (contract 1.66): the browser-binding cookie an `ssoStart`
+     * response sets is presented on the following `ssoComplete` from the SAME client (one §4
+     * jar), and never on a second client's.
+     */
+    @Test
+    fun `the ssoStart binding cookie is presented on ssoComplete from the same client only`(): Unit = runBlocking {
+        val binding = "A".repeat(43) // 43 chars, unpadded base64url
+        val client = AxiamClient.builder(server.url("/").toString(), "acme-tenant").orgSlug("acme-org").build()
+        val other = AxiamClient.builder(server.url("/").toString(), "acme-tenant").orgSlug("acme-org").build()
+        dispatcher.on("/api/v1/auth/federation/oidc/start") {
+            okhttp3.mockwebserver.MockResponse()
+                .setResponseCode(200)
+                .addHeader("Content-Type", "application/json")
+                .addHeader("Set-Cookie", "axiam_fed_bind=$binding; Path=/; HttpOnly; SameSite=Strict")
+                .setBody("""{"authorize_url": "https://idp.example.com/auth", "state": "s-1", "expires_in_secs": 600}""")
+        }
+        dispatcher.onJson(
+            "/api/v1/auth/federation/oidc/callback",
+            200,
+            """{"user_id": "u-1", "session_id": "sess-1", "expires_in": 900, "redirect_uri": "https://app.example.com/home"}""",
+        )
+
+        client.ssoStart(SsoStartParams(federationConfigId = "fed-1", redirectUri = "https://app.example.com/sso-cb"))
+        client.ssoComplete(SsoCompleteParams(state = "s-1", code = "the-code"))
+        other.ssoComplete(SsoCompleteParams(state = "s-1", code = "the-code"))
+
+        findRequest("/api/v1/auth/federation/oidc/start")
+        val sameClient = findRequest("/api/v1/auth/federation/oidc/callback").getHeader("Cookie")
+        assertTrue(sameClient != null && sameClient.contains("axiam_fed_bind=$binding")) {
+            "the completion from the starting client must present the binding cookie, got: $sameClient"
+        }
+        val secondClient = findRequest("/api/v1/auth/federation/oidc/callback").getHeader("Cookie")
+        assertTrue(secondClient == null || !secondClient.contains("axiam_fed_bind")) {
+            "a second client must not present another client's binding cookie, got: $secondClient"
+        }
+    }
+
     @Test
     fun `ssoComplete maps a non-200 via the generic taxonomy`(): Unit = runBlocking {
         val client = AxiamClient.builder(server.url("/").toString(), "22222222-2222-2222-2222-222222222222").build()
