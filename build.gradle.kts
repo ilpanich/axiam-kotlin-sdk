@@ -35,7 +35,7 @@ dependencies {
     // JavaNetCookieJar (CookieManager-backed CookieJar adapter) — §4 cookie jar.
     implementation("com.squareup.okhttp3:okhttp-urlconnection:4.12.0")
     // JWKS fetch/cache + EdDSA (Ed25519) verification — §9 local-verify companion.
-    implementation("com.nimbusds:nimbus-jose-jwt:9.48")
+    implementation("com.nimbusds:nimbus-jose-jwt:10.0.2")
     // nimbus delegates Ed25519 sign/verify to Tink — required at runtime for the
     // EdDSA JWKS verification path (mirrors the Java SDK's tink dependency).
     implementation("com.google.crypto.tink:tink:1.24.0")
