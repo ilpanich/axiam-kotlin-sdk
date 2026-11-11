@@ -26,10 +26,10 @@ repositories {
     mavenCentral()
 }
 
-// Held at 3.2.x, the last Ktor line built with Kotlin 2.1: 3.3 needs
-// kotlin-stdlib 2.2 and 3.4+ is built with Kotlin 2.3, whose metadata the
-// published Kotlin 2.1.0 compiler (the CI floor leg) cannot read at all.
-// Move it together with kotlinVersion in gradle.properties.
+// Ktor's kotlin-stdlib must not outrun the published Kotlin (kotlinVersion in
+// gradle.properties): VersionPolicyTest and the floor CI leg reject it. 3.3.x
+// is the newest line within the 2.2 floor (3.4+ is built with Kotlin 2.3); it
+// stays at 3.2.4, chosen under the earlier 2.1 floor, until bumped on its own.
 val ktorVersion = "3.2.4"
 val rabbitMqVersion = "5.37.0"
 val jnaVersion = "5.19.1"
@@ -39,12 +39,12 @@ val jnaVersion = "5.19.1"
 val okhttpVersion = "5.5.1"
 
 dependencies {
-    // kotlinx-coroutines and kotlinx-serialization are held at the last
-    // releases built with Kotlin 2.1 (coroutines 1.11 needs kotlin-stdlib 2.2,
-    // serialization 1.9 needs 2.2 and 1.12 needs 2.4). A newer kotlin-stdlib on
-    // the classpath silently raises the Kotlin floor this SDK publishes against
-    // (kotlinVersion in gradle.properties), which the floor CI leg and
-    // VersionPolicyTest reject. Move them together with kotlinVersion.
+    // kotlinx-coroutines and kotlinx-serialization must not pull a kotlin-stdlib
+    // newer than the published Kotlin (kotlinVersion in gradle.properties): it
+    // silently raises the floor, and VersionPolicyTest and the floor CI leg
+    // reject it. Within the 2.2 floor that allows coroutines 1.11 and
+    // serialization 1.9 (1.10+ needs 2.3); both stay at the versions chosen
+    // under the earlier 2.1 floor until bumped on their own.
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
     implementation("com.squareup.okhttp3:okhttp:$okhttpVersion")
