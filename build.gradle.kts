@@ -24,7 +24,11 @@ repositories {
     mavenCentral()
 }
 
-val ktorVersion = "3.6.1"
+// Held at 3.2.x, the last Ktor line built with Kotlin 2.1: 3.3 needs
+// kotlin-stdlib 2.2 and 3.4+ is built with Kotlin 2.3, whose metadata the
+// published Kotlin 2.1.0 compiler (the CI floor leg) cannot read at all.
+// Move it together with kotlinVersion in gradle.properties.
+val ktorVersion = "3.2.4"
 val rabbitMqVersion = "5.37.0"
 val jnaVersion = "5.19.1"
 
