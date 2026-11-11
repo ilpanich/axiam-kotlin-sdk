@@ -35,13 +35,19 @@ val rabbitMqVersion = "5.37.0"
 val jnaVersion = "5.19.1"
 
 dependencies {
+    // kotlinx-coroutines and kotlinx-serialization are held at the last
+    // releases built with Kotlin 2.1 (coroutines 1.11 needs kotlin-stdlib 2.2,
+    // serialization 1.9 needs 2.2 and 1.12 needs 2.4). A newer kotlin-stdlib on
+    // the classpath silently raises the Kotlin floor this SDK publishes against
+    // (kotlinVersion in gradle.properties), which the floor CI leg and
+    // VersionPolicyTest reject. Move them together with kotlinVersion.
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     // JavaNetCookieJar (CookieManager-backed CookieJar adapter) — §4 cookie jar.
     implementation("com.squareup.okhttp3:okhttp-urlconnection:4.12.0")
     // JWKS fetch/cache + EdDSA (Ed25519) verification — §9 local-verify companion.
-    implementation("com.nimbusds:nimbus-jose-jwt:10.0.2")
+    implementation("com.nimbusds:nimbus-jose-jwt:10.10")
     // nimbus delegates Ed25519 sign/verify to Tink — required at runtime for the
     // EdDSA JWKS verification path (mirrors the Java SDK's tink dependency).
     implementation("com.google.crypto.tink:tink:1.24.0")
