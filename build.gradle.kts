@@ -27,13 +27,17 @@ repositories {
 val ktorVersion = "2.3.13"
 val rabbitMqVersion = "5.37.0"
 val jnaVersion = "5.19.1"
+// OkHttp's artifacts must move in lockstep: okhttp-urlconnection,
+// mockwebserver and okhttp-tls 5.x link against okhttp 5.x internals and fail
+// with ClassNotFoundException at runtime when paired with okhttp 4.x.
+val okhttpVersion = "5.5.1"
 
 dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.squareup.okhttp3:okhttp:$okhttpVersion")
     // JavaNetCookieJar (CookieManager-backed CookieJar adapter) — §4 cookie jar.
-    implementation("com.squareup.okhttp3:okhttp-urlconnection:5.5.1")
+    implementation("com.squareup.okhttp3:okhttp-urlconnection:$okhttpVersion")
     // JWKS fetch/cache + EdDSA (Ed25519) verification — §9 local-verify companion.
     implementation("com.nimbusds:nimbus-jose-jwt:10.0.2")
     // nimbus delegates Ed25519 sign/verify to Tink — required at runtime for the
@@ -82,10 +86,10 @@ dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
-    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    testImplementation("com.squareup.okhttp3:mockwebserver:$okhttpVersion")
     // In-memory test PKI (HeldCertificate / HandshakeCertificates) for the mTLS
     // test — no private key material is ever committed.
-    testImplementation("com.squareup.okhttp3:okhttp-tls:4.12.0")
+    testImplementation("com.squareup.okhttp3:okhttp-tls:$okhttpVersion")
     testImplementation("com.rabbitmq:amqp-client:$rabbitMqVersion")
     // The OPAQUE tests implement the C ABI in plain Kotlin, which needs JNA's
     // Pointer/Memory types even though no shared library is loaded.

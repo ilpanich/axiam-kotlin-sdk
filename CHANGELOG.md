@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Minimum Kotlin raised from 2.1.0 to 2.2.21.** The SDK is now published with Kotlin 2.2.21, so
+  consumers need a Kotlin 2.2+ compiler. Required by OkHttp 5, whose every release depends on
+  `kotlin-stdlib` 2.2.
+- **OkHttp 4.12.0 → 5.5.1** (`okhttp`, `okhttp-urlconnection`, and the test-only `mockwebserver` and
+  `okhttp-tls`), moved together as one family.
+- **The sessionless transport turns OkHttp's connection-failure retry off** (C164-55). With it on, OkHttp 5
+  replays the RFC 7592 `readClientRegistration` `GET` more than once over a dropping connection (5 sends
+  against §16's 3). OkHttp 5's fast fallback reaches the next resolved address without that flag, so
+  C164-50's dual-stack delivery is unchanged; the read is now 3 sends with retry on and 1 with
+  `retryDisabled()`, inside the bounds `DualStackWritesTest` pins.
+
 ## [1.3.0] - 2026-11-08
 
 ### Changed
