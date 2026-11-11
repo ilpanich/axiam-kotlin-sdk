@@ -24,7 +24,7 @@ repositories {
     mavenCentral()
 }
 
-val ktorVersion = "2.3.13"
+val ktorVersion = "3.6.1"
 val rabbitMqVersion = "5.37.0"
 val jnaVersion = "5.19.1"
 
