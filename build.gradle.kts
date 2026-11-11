@@ -4,7 +4,9 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 plugins {
     kotlin("jvm")
     kotlin("plugin.serialization")
-    id("org.jetbrains.dokka") version "1.9.20"
+    id("org.jetbrains.dokka") version "2.3.0"
+    // Dokka 2 (V2 mode) ships the javadoc format as its own plugin.
+    id("org.jetbrains.dokka-javadoc") version "2.3.0"
     id("org.jetbrains.kotlinx.kover") version "0.9.11"
     `maven-publish`
     signing
@@ -303,8 +305,7 @@ val runUmaClientExample = tasks.register<JavaExec>("runUmaClientExample") {
 
 // Dokka -> javadoc jar (javadoc.io serves this verbatim).
 val dokkaJavadocJar = tasks.register<Jar>("dokkaJavadocJar") {
-    dependsOn(tasks.dokkaJavadoc)
-    from(tasks.dokkaJavadoc.flatMap { it.outputDirectory })
+    from(tasks.dokkaGeneratePublicationJavadoc.flatMap { it.outputDirectory })
     archiveClassifier.set("javadoc")
 }
 
