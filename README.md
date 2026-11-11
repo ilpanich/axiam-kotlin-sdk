@@ -268,7 +268,7 @@ default tenant.
 
 ```kotlin
 dependencies {
-    implementation("io.github.ilpanich:axiam-sdk-kotlin:1.3.0")
+    implementation("io.github.ilpanich:axiam-sdk-kotlin:1.3.1")
     // Optional — only if you use the Ktor route guard / §11 helpers:
     implementation("io.ktor:ktor-server-core:3.2.4")
 }
@@ -280,7 +280,7 @@ dependencies {
 <dependency>
   <groupId>io.github.ilpanich</groupId>
   <artifactId>axiam-sdk-kotlin</artifactId>
-  <version>1.3.0</version>
+  <version>1.3.1</version>
 </dependency>
 ```
 
@@ -1683,8 +1683,8 @@ unchanged:
 ```kotlin
 // build.gradle.kts — the SDK is an ordinary JVM dependency
 implementation("io.github.ilpanich:axiam-kotlin-sdk:<version>")
-implementation("androidx.credentials:credentials:1.3.0")
-implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
+implementation("androidx.credentials:credentials:1.3.1")
+implementation("androidx.credentials:credentials-play-services-auth:1.3.1")
 
 // Enrolment
 val challenge = client.webauthnRegisterStart()

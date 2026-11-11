@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-11-11
+
 ### Changed
 
 - **Minimum Kotlin raised from 2.1.0 to 2.2.21.** The SDK is now published with Kotlin 2.2.21, so
@@ -19,6 +21,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   against §16's 3). OkHttp 5's fast fallback reaches the next resolved address without that flag, so
   C164-50's dual-stack delivery is unchanged; the read is now 3 sends with retry on and 1 with
   `retryDisabled()`, inside the bounds `DualStackWritesTest` pins.
+
+- Raise the Kotlin floor to 2.2.21 and move OkHttp to 5.5.1 as one family
+
+- Hold kotlinx-coroutines and kotlinx-serialization at Kotlin 2.1 builds
+
+- Migrate to Dokka 2 (V2 mode) task API
+
+- Hold Ktor at 3.2.4, the last line built with Kotlin 2.1
+
+- Bump com.squareup.okhttp3:okhttp-urlconnection
+
+- Bump org.jetbrains.dokka from 1.9.20 to 2.3.0
+
+- Bump ktorVersion from 2.3.13 to 3.6.1
+
+- Bump com.squareup.okhttp3:mockwebserver
+
+- Bump the minor-patch group with 6 updates
+
+- Bump actions/setup-python from 5.6.0 to 7.1.0
+
+- Bump gradle/actions/setup-gradle from 4.4.3 to 6.4.1
+
+- Bump actions/setup-java from 4.9.1 to 6.2.0
+
+- Bump actions/checkout from 4.4.0 to 7.0.1
+
+- Configure Dependabot ecosystems and least-privilege workflow tokens
+
+- Bump com.nimbusds:nimbus-jose-jwt
 
 ## [1.3.0] - 2026-11-08
 
