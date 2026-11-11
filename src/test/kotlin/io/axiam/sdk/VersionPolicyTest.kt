@@ -27,7 +27,7 @@ import java.io.File
  * Both floors enforce themselves downward and neither enforces itself upward.
  * An old JVM refuses to load the class files; an old Kotlin compiler refuses to
  * read the metadata. But JVM 17 bytecode loads on JDK 27 whether or not anybody
- * ran it there, and 2.1-compiled metadata is read by a 2.4 compiler whether or
+ * ran it there, and 2.2-compiled metadata is read by a 2.4 compiler whether or
  * not anybody ever compiled against it. The upper half of both claims is
  * exactly what the newest CI leg exists to prove.
  */
@@ -37,13 +37,13 @@ class VersionPolicyTest {
         /** `jvmTarget.set(JvmTarget.JVM_17)` in build.gradle.kts. */
         val JVM_TARGET = Regex("""JvmTarget\.JVM_(\d+)""")
 
-        /** `kotlinVersion=2.1.0` in gradle.properties. */
+        /** `kotlinVersion=2.2.21` in gradle.properties. */
         val KOTLIN_VERSION = Regex("""(?m)^kotlinVersion=(.+)$""")
 
         /** `java: '17'` inside the CI matrix's include: entries. */
         val CI_JAVA = Regex("""(?m)^\s*java:\s*'([^']+)'\s*$""")
 
-        /** `kotlin: '2.1.0'` inside the CI matrix's include: entries. */
+        /** `kotlin: '2.2.21'` inside the CI matrix's include: entries. */
         val CI_KOTLIN = Regex("""(?m)^\s*kotlin:\s*'([^']+)'\s*$""")
     }
 
