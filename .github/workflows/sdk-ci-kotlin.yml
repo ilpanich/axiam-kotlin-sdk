@@ -29,20 +29,20 @@ jobs:
         # its floor, and everything at its newest. A failure on `newest` is
         # worth bisecting by hand precisely because it should be rare.
         #
-        # The Kotlin axis matters in a way the JVM one does not: 2.1.0 is what
+        # The Kotlin axis matters in a way the JVM one does not: 2.2.21 is what
         # is PUBLISHED, and Kotlin metadata is forward-compatible, so a consumer
-        # on 2.4 must be able to read a 2.1-compiled library. Bumping the
+        # on 2.4 must be able to read a 2.2-compiled library. Bumping the
         # published compiler would instead RAISE the floor for every consumer
-        # still on 2.1-2.3, so it stays at 2.1.0 and the newest leg proves the
+        # still on 2.2-2.3, so it stays at 2.2.21 and the newest leg proves the
         # forward direction. This is the same shape as the JVM axis: build at
         # the floor, prove it runs at the newest.
         #
         # VersionPolicyTest fails if these legs and the build's own declared
         # versions ever stop agreeing.
         include:
-          - name: floor — JDK 17, Kotlin 2.1.0
+          - name: floor — JDK 17, Kotlin 2.2.21
             java: '17'
-            kotlin: '2.1.0'
+            kotlin: '2.2.21'
           - name: newest — JDK 27, Kotlin 2.4.21
             java: '27'
             kotlin: '2.4.21'
@@ -81,7 +81,7 @@ jobs:
       # The coverage floor is a property of the source, not of the toolchain, so
       # it is verified once — on the floor leg, which is what gets published.
       - name: Coverage verification (>= 98% line, enforced floor)
-        if: matrix.kotlin == '2.1.0'
+        if: matrix.kotlin == '2.2.21'
         run: >
           ./gradlew koverVerify --no-daemon
           -PkotlinVersion=${{ matrix.kotlin }}

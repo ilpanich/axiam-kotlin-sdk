@@ -24,10 +24,13 @@ import okhttp3.OkHttpClient
  *  - any `401` [Authenticator];
  *  - redirect following, for both schemes;
  *
- * OkHttp's own retry on a connection failure stays ON (C164-50): switching it off would also
- * switch off the fallback to the next resolved address on OkHttp 4. The writes this serves must be
- * sent at most once, so their bodies are [OneShotBody]s (never replayed once sent), and the reads
- * that may be retried are retried by §16's policy, where a retry is counted and reported.
+ * OkHttp's own retry on a connection failure is OFF: every retry of a sessionless call is §16's,
+ * where it is counted and reported, and OkHttp 5 no longer replays the idempotent RFC 7592 read
+ * on top of it (C164-55 — with the flag on, OkHttp 5 recovers that `GET` more than once). On OkHttp 5
+ * the flag no longer gates the fallback to the next resolved address — fast fallback races the
+ * routes while connecting, before anything is sent — so C164-50's dual-stack delivery holds with it
+ * off. The writes keep their [OneShotBody]s regardless, so they stay at most once even if a caller's
+ * client turns OkHttp's retry back on elsewhere.
  *
  * Internal plumbing: module-visible only.
  */
@@ -48,6 +51,7 @@ internal object Sessionless {
             .authenticator(Authenticator.NONE)
             .followRedirects(false)
             .followSslRedirects(false)
+            .retryOnConnectionFailure(false)
             .build()
     }
 }

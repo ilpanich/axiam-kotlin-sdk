@@ -27,7 +27,7 @@ Source: [ilpanich/axiam-kotlin-sdk](https://github.com/ilpanich/axiam-kotlin-sdk
   applies.
 - **API docs:** [javadoc.io](https://javadoc.io/doc/io.github.ilpanich/axiam-sdk-kotlin) — served from the Dokka `-javadoc.jar`
 - **License:** Apache-2.0
-- **Kotlin:** 2.1.0 minimum · **JVM:** 17 minimum — see [Supported Kotlin and JVM versions](#supported-kotlin-and-jvm-versions)
+- **Kotlin:** 2.2.21 minimum · **JVM:** 17 minimum — see [Supported Kotlin and JVM versions](#supported-kotlin-and-jvm-versions)
 
 ## Contract conformance
 
@@ -291,28 +291,32 @@ This SDK has **two** version axes, and floor + newest applies to each:
 | Axis | Floor | Newest tested | What the floor means |
 |---|---|---|---|
 | **JVM** | 17 | 27 | `jvmTarget` — the bytecode level in every class file. An older JVM fails with `UnsupportedClassVersionError` at class-load. |
-| **Kotlin** | 2.1.0 | 2.4.21 | The compiler the artifact is *published* with. An older consumer compiler cannot read the SDK's `@Metadata`. |
+| **Kotlin** | 2.2.21 | 2.4.21 | The compiler the artifact is *published* with. An older consumer compiler cannot read the SDK's `@Metadata`. |
 
 Both are exported as `io.axiam.sdk.SupportedVersions`.
 
 **Each floor enforces itself downward; neither enforces itself upward.** That
 asymmetry is the whole reason this section exists. JVM 17 bytecode loads on
-JDK 27 whether or not anybody ever ran it there, and 2.1-compiled metadata is
+JDK 27 whether or not anybody ever ran it there, and 2.2-compiled metadata is
 read by a 2.4 compiler whether or not anybody ever compiled against it. Both
 upper claims are unproven unless something builds them — so the gating matrix in
 `sdk-ci-kotlin.yml` runs two legs, each pinning one end of *both* axes:
 
 | Leg | JDK | Kotlin |
 |---|---|---|
-| floor | 17 | 2.1.0 |
+| floor | 17 | 2.2.21 |
 | newest | 27 | 2.4.21 |
 
-### Why the published Kotlin stays at 2.1.0
+### Why the published Kotlin stays at the floor (2.2.21)
 
-Kotlin metadata is forward-compatible: a library compiled with 2.1 is readable
+Kotlin metadata is forward-compatible: a library compiled with 2.2 is readable
 by any later compiler. Compiling the *published* artifact with 2.4 would not
-widen support, it would **narrow** it — every consumer still on 2.1, 2.2 or 2.3
-would be locked out. So the published compiler stays at the floor and the newest
+widen support, it would **narrow** it — every consumer still on 2.2 or 2.3
+would be locked out.
+
+The floor moved from 2.1.0 to 2.2.21 for OkHttp 5: every OkHttp 5.x release
+is built with Kotlin 2.2 and requires `kotlin-stdlib` 2.2, so a 2.1 floor could
+no longer be honoured by the SDK's own dependency tree. So the published compiler stays at the floor and the newest
 leg proves the forward direction still holds. That is the same shape as the JVM
 axis: build at the floor, prove it works at the newest.
 
@@ -2588,10 +2592,11 @@ transient failures under the contract's normative table: **3 attempts** (1 initi
 retries), 200 ms base, 5 s cap, **full jitter** (uniform over `[0, backoff]`), and
 `Retry-After` honored as a **floor** (a `429` or `5xx` answer's header, clamped at 60 s).
 
-One transport detail the attempt cap does not cover: OkHttp 4.12 recovers an **idempotent read** on a
-stale pooled connection by itself. The RFC 7592 `readClientRegistration` is such a `GET`, so over a
-connection that drops it can reach the server **once more in total** (OkHttp replays it once on a stale
-pooled connection): at most 4 sends with retry on, 2 with `retryDisabled()`. Every write is a one-shot body and is sent exactly once per attempt: a
+The sessionless transport (the RFC 7592 registration calls and the SSF poll) turns OkHttp's own
+connection-failure retry off, so the attempt cap is the whole story there: the RFC 7592
+`readClientRegistration` `GET` over a connection that drops makes 3 sends with retry on and 1 with
+`retryDisabled()`. A host whose first resolved address refuses is still reached, because OkHttp 5's
+fast fallback tries the next address while connecting, before anything is sent. Every write is a one-shot body and is sent exactly once per attempt: a
 management write, the registration `PUT` and `DELETE`, `cibaInitiate`, and the `ssf.poll` / device / CIBA
 polls (three §16 attempts in total, no OkHttp replay on top).
 

@@ -13,7 +13,7 @@ package io.axiam.sdk
  *
  * - **Kotlin** — the SDK is *published* compiled by [MIN_KOTLIN_VERSION] and is
  *   additionally *compiled* by [NEWEST_TESTED_KOTLIN]. Kotlin metadata is
- *   forward-compatible, so a library built with 2.1 can be consumed by any
+ *   forward-compatible, so a library built with 2.2 can be consumed by any
  *   later compiler; compiling with a newer one instead raises the floor for
  *   every consumer below it. The published compiler therefore stays at the
  *   floor, and the newest leg proves the forward direction still holds.
@@ -52,7 +52,7 @@ public object SupportedVersions {
      * Mirrors `kotlinVersion` in `gradle.properties`. A consumer on an older
      * Kotlin cannot read this library's `@Metadata` and fails at compile time.
      */
-    public const val MIN_KOTLIN_VERSION: String = "2.1.0"
+    public const val MIN_KOTLIN_VERSION: String = "2.2.21"
 
     /**
      * The newest Kotlin compiler this SDK's sources are known to compile under.
