@@ -82,7 +82,7 @@ dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
-    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    testImplementation("com.squareup.okhttp3:mockwebserver:5.5.1")
     // In-memory test PKI (HeldCertificate / HandshakeCertificates) for the mTLS
     // test — no private key material is ever committed.
     testImplementation("com.squareup.okhttp3:okhttp-tls:4.12.0")
