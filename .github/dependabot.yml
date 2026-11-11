@@ -1,0 +1,28 @@
+# .github/dependabot.yml
+# Automated dependency updates. Mirrors the AXIAM monorepo and the TypeScript
+# SDK: weekly on Monday, minor and patch bumps grouped into a single PR so the
+# CI matrix runs once per batch; majors arrive one per PR to be reviewed alone.
+version: 2
+updates:
+  # Gradle: build.gradle.kts / settings.gradle.kts and the wrapper.
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions-minor-patch:
+        update-types:
+          - minor
+          - patch
