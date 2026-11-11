@@ -33,7 +33,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     // JavaNetCookieJar (CookieManager-backed CookieJar adapter) — §4 cookie jar.
-    implementation("com.squareup.okhttp3:okhttp-urlconnection:4.12.0")
+    implementation("com.squareup.okhttp3:okhttp-urlconnection:5.5.1")
     // JWKS fetch/cache + EdDSA (Ed25519) verification — §9 local-verify companion.
     implementation("com.nimbusds:nimbus-jose-jwt:10.0.2")
     // nimbus delegates Ed25519 sign/verify to Tink — required at runtime for the
