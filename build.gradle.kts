@@ -29,8 +29,14 @@ val rabbitMqVersion = "5.37.1"
 val jnaVersion = "5.19.1"
 
 dependencies {
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.12.0")
+    // kotlinx-coroutines and kotlinx-serialization are held at the last
+    // releases built with Kotlin 2.1 (coroutines 1.11 needs kotlin-stdlib 2.2,
+    // serialization 1.9 needs 2.2 and 1.12 needs 2.4). A newer kotlin-stdlib on
+    // the classpath silently raises the Kotlin floor this SDK publishes against
+    // (kotlinVersion in gradle.properties), which the floor CI leg and
+    // VersionPolicyTest reject. Move them together with kotlinVersion.
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     // JavaNetCookieJar (CookieManager-backed CookieJar adapter) — §4 cookie jar.
     implementation("com.squareup.okhttp3:okhttp-urlconnection:4.12.0")
@@ -81,7 +87,7 @@ dependencies {
     testImplementation(platform("org.junit:junit-bom:5.14.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     // In-memory test PKI (HeldCertificate / HandshakeCertificates) for the mTLS
     // test — no private key material is ever committed.
