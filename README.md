@@ -270,7 +270,7 @@ default tenant.
 dependencies {
     implementation("io.github.ilpanich:axiam-sdk-kotlin:1.3.0")
     // Optional — only if you use the Ktor route guard / §11 helpers:
-    implementation("io.ktor:ktor-server-core:2.3.13")
+    implementation("io.ktor:ktor-server-core:3.2.4")
 }
 ```
 
