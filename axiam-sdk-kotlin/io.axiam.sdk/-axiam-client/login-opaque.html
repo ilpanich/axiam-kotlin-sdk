@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html class="no-js" lang="en">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" charset="UTF-8">
+    <title>loginOpaque</title>
+    <link href="../../../images/logo-icon.svg" rel="icon" type="image/svg">
+        <script>var pathToRoot = "../../../";</script>
+    <script>document.documentElement.classList.replace("no-js", "js");</script>
+    <script>const storage = localStorage.getItem("dokka-dark-mode")
+      if (storage == null) {
+        const osDarkSchemePreferred = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+        if (osDarkSchemePreferred === true) {
+          document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+      } else {
+        const savedDarkMode = JSON.parse(storage)
+        if (savedDarkMode === true) {
+          document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+      }
+    </script>
+<script type="text/javascript" src="../../../scripts/sourceset_dependencies.js" async="async"></script>
+<link href="../../../styles/style.css" rel="Stylesheet">
+<link href="../../../styles/main.css" rel="Stylesheet">
+<link href="../../../styles/prism.css" rel="Stylesheet">
+<link href="../../../styles/logo-styles.css" rel="Stylesheet">
+<link href="../../../ui-kit/ui-kit.min.css" rel="Stylesheet">
+<script type="text/javascript" src="../../../scripts/safe-local-storage_blocking.js"></script>
+<script type="text/javascript" src="../../../scripts/navigation-loader.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/platform-content-handler.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/main.js" defer="defer"></script>
+<script type="text/javascript" src="../../../scripts/prism.js" async="async"></script>
+<script type="text/javascript" src="../../../ui-kit/ui-kit.min.js" defer="defer"></script>
+</head>
+<body>
+<div class="root">
+    <header class="navigation theme-dark" id="navigation-wrapper" role="banner">
+            <a class="library-name--link" href="../../../index.html" tabindex="1">
+                    axiam-sdk-kotlin
+            </a>
+        <button class="navigation-controls--btn navigation-controls--btn_toc ui-kit_mobile-only" id="toc-toggle"
+                type="button">Toggle table of contents
+        </button>
+        <div class="navigation-controls--break ui-kit_mobile-only"></div>
+        <div class="library-version" id="library-version">
+1.3.1        </div>
+        <div class="navigation-controls">
+        <ul class="filter-section filter-section_loading" id="filter-section" aria-label="Target filter">
+                <button class="platform-tag platform-selector jvm-like" data-active="" aria-pressed="true"
+                        data-filter=":/main">jvm</button>
+            <div class="dropdown filter-section--dropdown" data-role="dropdown" id="filter-section-dropdown">
+                <button class="button button_dropdown filter-section--dropdown-toggle" role="combobox"
+                        data-role="dropdown-toggle"
+                        aria-controls="platform-tags-listbox"
+                        aria-haspopup="listbox"
+                        aria-expanded="false"
+                        aria-label="Toggle source sets"
+                ></button>
+                <ul role="listbox" id="platform-tags-listbox" class="dropdown--list" data-role="dropdown-listbox" aria-label="Target filter">
+                    <div class="dropdown--header"><span>Target filter</span>
+                        <button class="button" data-role="dropdown-toggle" aria-label="Close target filter">
+                            <i class="ui-kit-icon ui-kit-icon_cross"></i>
+                        </button>
+                    </div>
+                        <li role="option" class="dropdown--option platform-selector-option jvm-like" tabindex="0">
+                            <label class="checkbox">
+                                <input type="checkbox" class="checkbox--input" id=":/main"
+                                       data-filter=":/main"/>
+                                <span class="checkbox--icon"></span>
+                                jvm
+                            </label>
+                        </li>
+                </ul>
+                <div class="dropdown--overlay"></div>
+            </div>
+        </ul>
+            <button class="navigation-controls--btn navigation-controls--btn_theme" id="theme-toggle-button"
+                    type="button">Switch theme
+            </button>
+            <div class="navigation-controls--btn navigation-controls--btn_search" id="searchBar" role="button">Search in
+                API
+            </div>
+        </div>
+    </header>
+    <div id="container">
+        <nav id="leftColumn" class="sidebar" data-item-type="SECTION" data-item-config='{"defaultSize": 280, "minSize": 200, "maxSize": 400}'>
+            <a class="toc--skip-link" href="#main">Skip to content</a>
+            <div class="dropdown theme-dark_mobile" data-role="dropdown" id="toc-dropdown">
+                <ul role="listbox" id="toc-listbox" class="dropdown--list dropdown--list_toc-list"
+                    data-role="dropdown-listbox" aria-label="Table of contents">
+                    <div class="dropdown--header">
+                            <span>
+                                    axiam-sdk-kotlin
+                            </span>
+                        <button class="button" data-role="dropdown-toggle" aria-label="Close table of contents">
+                            <i class="ui-kit-icon ui-kit-icon_cross"></i>
+                        </button>
+                    </div>
+                    <div class="sidebar--inner" id="sideMenu"></div>
+                </ul>
+                <div class="dropdown--overlay"></div>
+            </div>
+        </nav>
+        <div id="resizer" class="resizer" data-item-type="BAR"></div>
+        <div id="main" data-item-type="SECTION" role="main">
+<div class="main-content" data-page-type="member" id="content" pageIds="axiam-sdk-kotlin::io.axiam.sdk/AxiamClient/loginOpaque/#kotlin.String#kotlin.CharArray/PointingToDeclaration//-251573632">
+  <div class="breadcrumbs"><a href="../../../index.html">axiam-sdk-kotlin</a><span class="delimiter">/</span><a href="../index.html">io.axiam.sdk</a><span class="delimiter">/</span><a href="index.html">AxiamClient</a><span class="delimiter">/</span><span class="current">loginOpaque</span></div>
+  <div class="cover ">
+    <h1 class="cover"><span>login</span><wbr></wbr><span><span>Opaque</span></span></h1>
+  </div>
+  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable=":/main"><div class="symbol monospace"><span class="token keyword">suspend </span><span class="token keyword">fun </span><a href="login-opaque.html"><span class="token function">loginOpaque</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">usernameOrEmail<span class="token operator">: </span><a href="https://kotlinlang.org/api/core/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token punctuation">, </span></span><span class="parameter ">password<span class="token operator">: </span><a href="https://kotlinlang.org/api/core/kotlin-stdlib/kotlin/-char-array/index.html">CharArray</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../-login-result/index.html">LoginResult</a></div><p class="paragraph"><code class="lang-kotlin">POST /api/v1/auth/opaque/login/start</code> followed by <code class="lang-kotlin">/finish</code> — OPAQUE login, RFC 9807 (CONTRACT.md §23).</p><p class="paragraph">A sibling of <a href="login.html">login</a>, not a replacement. It takes the same arguments and returns the same <a href="../-login-result/index.html">LoginResult</a>, MFA branch included, so an application can switch a tenant to OPAQUE without touching its own code.</p><p class="paragraph"><strong>What this does that </strong><a href="login.html"><strong>login</strong></a><strong> does not.</strong> The password never leaves this process. What crosses the wire is a blinded group element and a MAC, neither useful without the account's registration record <em>and</em> the tenant's OPRF seed — so a TLS-terminating proxy, an accidentally verbose request log, or a heap dump on the server cannot capture a plaintext password, because the server never has one. It also means a stolen record database is not offline-crackable on its own, which is the pre-computation resistance SRP could not offer. It does <strong>not</strong> protect against a compromised AXIAM server.</p><p class="paragraph"><strong>One round trip, and no server-proof step.</strong> SRP had to guess a group before the server named one and restart the exchange if it guessed wrong; <code class="lang-kotlin">KE1</code> does not depend on the key-stretching function. And where the old §23.3 rule 6 had to mandate an <code class="lang-kotlin">M2</code> check in capitals — because skipping it kept only half the protocol — RFC 9807's AKE authenticates the server during the handshake, so opening <code class="lang-kotlin">KE2</code> <em>is</em> the proof that it holds the record. There is nothing left to skip.</p><p class="paragraph"><strong>Cost.</strong> Runs the tenant's key-stretching function: Argon2id at 19 MiB and t=2 by default, tens to hundreds of milliseconds of CPU plus that memory, per attempt. That cost is the point — it is what makes a stolen record expensive to attack even by someone holding the OPRF seed. It runs on <span data-unresolved-link="kotlinx.coroutines/Dispatchers/Default/#/PointingToDeclaration/">Dispatchers.Default</span> rather than the caller's thread.</p><p class="paragraph"><strong>When </strong><code class="strong lang-kotlin"><strong>KE2</strong></code><strong> does not open</strong> — a wrong password, an account that does not exist, an account with no registration record, or a hostile endpoint, all indistinguishable by design — nothing is sent to <code class="lang-kotlin">login/finish</code>, and what happens next is decided by the <code class="lang-kotlin">mode</code> field of the <code class="lang-kotlin">login/start</code> response and by nothing else (§23.4 rule 7):</p><ul><li><p class="paragraph"><code class="lang-kotlin">optional</code>: this call retries over <a href="login.html">login</a> with the same credentials before reporting anything, and returns that call's outcome — its <a href="../-login-result/index.html">LoginResult</a> on success, its exception on failure. Under <code class="lang-kotlin">optional</code> an account with no record is the ordinary case rather than an error: every account has none the moment an operator enables OPAQUE and acquires one only when its password is next set, so treating the failed exchange as final would lock out every user of a tenant mid-migration.</p></li><li><p class="paragraph"><code class="lang-kotlin">required</code>, an unrecognised value, or <strong>no </strong><code class="strong lang-kotlin"><strong>mode</strong></code><strong> field at all</strong> (a server older than the field): an <a href="../../io.axiam.sdk.errors/-auth-error/index.html">AuthError</a>, the exchange is over, and nothing is retried over <a href="login.html">login</a>. <code class="lang-kotlin">required</code> answers <code class="lang-kotlin">403 opaque_required</code> for every principal, so the retry would put a plaintext password on the wire for nothing.</p></li></ul><p class="paragraph"><code class="lang-kotlin">mode</code> is <strong>not</strong> downgrade protection and must not be presented as such: a hostile server that wanted the plaintext could answer <code class="lang-kotlin">404</code> and get the fallback whatever it put here. What closes that is server-side — <code class="lang-kotlin">required</code> refusing <code class="lang-kotlin">/auth/login</code> before examining any credential.</p><h4 class="tableheader">Parameters</h4><div class="table"><div class="table-row table-row_content" data-filterable-current=":/main" data-filterable-set=":/main"><div class="main-subrow keyValue "><div class=""><span class="inline-flex"><div><u><span><span>password</span></span></u></div></span></div><div><div class="title"><p class="paragraph">the account password, as a <a href="https://kotlinlang.org/api/core/kotlin-stdlib/kotlin/-char-array/index.html">CharArray</a> so the caller can clear it; this SDK clears every copy it makes but cannot clear the caller's.</p></div></div></div></div></div><h4 class="tableheader">Throws</h4><div class="table"><div class="table-row table-row_content" data-filterable-current=":/main" data-filterable-set=":/main"><div class="main-subrow keyValue "><div class=""><span class="inline-flex"><div><a href="../../io.axiam.sdk.errors/-network-error/index.html"><span>Network</span><wbr></wbr><span><span>Error</span></span></a></div></span></div><div><div class="title"><p class="paragraph">if the tenant has OPAQUE disabled (the endpoint answers <code class="lang-kotlin">404</code> — a property of the tenant, not of any user), if <code class="lang-kotlin">libaxiam_opaque_ffi</code> is not installed, or if the server names a key-stretching function this SDK cannot ask for. Deliberately not <a href="../../io.axiam.sdk.errors/-auth-error/index.html">AuthError</a>: reporting a configuration gap as a credential failure would send a user off to reset a password that works, and would stop a caller falling back to <a href="login.html">login</a>.</p></div></div></div></div><div class="table-row table-row_content" data-filterable-current=":/main" data-filterable-set=":/main"><div class="main-subrow keyValue "><div class=""><span class="inline-flex"><div><a href="../../io.axiam.sdk.errors/-auth-error/index.html"><span>Auth</span><wbr></wbr><span><span>Error</span></span></a></div></span></div><div><div class="title"><p class="paragraph">for a wrong password, an account that does not exist, and a server that does not hold the record — indistinguishable by design — under <code class="lang-kotlin">required</code> or a <code class="lang-kotlin">mode</code>-less response; under <code class="lang-kotlin">optional</code>, only if the <a href="login.html">login</a> retry also fails.</p></div></div></div></div></div></div></div>
+</div>
+    <div class="footer">
+        <div class="footer--container">
+            <a href="#content" id="go-to-top-link" class="footer--button footer--button_go-to-top"></a>
+            <div class="footer--content">
+                <div>
+                    <span>Generated by </span>
+                    <a class="footer--link footer--link_external" href="https://github.com/Kotlin/dokka">
+                        Dokka
+                    </a>
+                    <div>© 2026 Copyright</div>
+                </div>
+            </div>
+        </div>
+    </div>
+        </div>
+    </div>
+</div>
+</body>
+</html>
