@@ -15,6 +15,15 @@ updates:
         update-types:
           - minor
           - patch
+    # Runtime dependencies are held at the last release whose kotlin-stdlib is
+    # no newer than kotlinVersion in gradle.properties (2.2.21): a newer
+    # stdlib does not compile on the floor CI leg and would raise the Kotlin
+    # floor for every consumer. Lift these together with kotlinVersion.
+    ignore:
+      - dependency-name: org.jetbrains.kotlinx:kotlinx-serialization-json
+        versions: [">= 1.10.0"]   # 1.10 needs kotlin-stdlib 2.3, 1.12+ needs 2.4
+      - dependency-name: "io.ktor:*"
+        versions: [">= 3.4.0"]    # 3.4 needs kotlin-stdlib 2.3
 
   - package-ecosystem: github-actions
     directory: /
