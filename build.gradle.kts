@@ -94,7 +94,7 @@ dependencies {
     // it arrives without widening every other consumer's classpath.
     compileOnly("com.rabbitmq:amqp-client:$rabbitMqVersion")
 
-    testImplementation(platform("org.junit:junit-bom:5.14.4"))
+    testImplementation(platform("org.junit:junit-bom:6.1.3"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
