@@ -26,12 +26,12 @@ repositories {
     mavenCentral()
 }
 
-// Held at 3.2.x, the last Ktor line built with Kotlin 2.1: 3.3 needs
-// kotlin-stdlib 2.2 and 3.4+ is built with Kotlin 2.3, whose metadata the
-// published Kotlin 2.1.0 compiler (the CI floor leg) cannot read at all.
-// Move it together with kotlinVersion in gradle.properties.
-val ktorVersion = "3.2.4"
-val rabbitMqVersion = "5.37.0"
+// Held at 3.3.x, the last Ktor line on kotlin-stdlib 2.2: 3.4 needs
+// kotlin-stdlib 2.3 and 3.5+ needs 2.3.21, newer than the Kotlin 2.2.21 this
+// SDK is published with (the CI floor leg). Move it together with
+// kotlinVersion in gradle.properties.
+val ktorVersion = "3.3.3"
+val rabbitMqVersion = "5.37.1"
 val jnaVersion = "5.19.1"
 // OkHttp's artifacts must move in lockstep: okhttp-urlconnection,
 // mockwebserver and okhttp-tls 5.x link against okhttp 5.x internals and fail
@@ -40,13 +40,13 @@ val okhttpVersion = "5.5.1"
 
 dependencies {
     // kotlinx-coroutines and kotlinx-serialization are held at the last
-    // releases built with Kotlin 2.1 (coroutines 1.11 needs kotlin-stdlib 2.2,
-    // serialization 1.9 needs 2.2 and 1.12 needs 2.4). A newer kotlin-stdlib on
+    // releases on kotlin-stdlib 2.2 (coroutines 1.11 needs 2.2.20; serialization
+    // 1.9 needs 2.2.0, 1.10 needs 2.3 and 1.12+ needs 2.4). A newer kotlin-stdlib on
     // the classpath silently raises the Kotlin floor this SDK publishes against
     // (kotlinVersion in gradle.properties), which the floor CI leg and
     // VersionPolicyTest reject. Move them together with kotlinVersion.
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
     implementation("com.squareup.okhttp3:okhttp:$okhttpVersion")
     // JavaNetCookieJar (CookieManager-backed CookieJar adapter) — §4 cookie jar.
     implementation("com.squareup.okhttp3:okhttp-urlconnection:$okhttpVersion")
@@ -97,7 +97,7 @@ dependencies {
     testImplementation(platform("org.junit:junit-bom:6.1.3"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
     testImplementation("com.squareup.okhttp3:mockwebserver:$okhttpVersion")
     // In-memory test PKI (HeldCertificate / HandshakeCertificates) for the mTLS
     // test — no private key material is ever committed.
