@@ -76,11 +76,12 @@ class KtorEnforceTest {
     @AfterEach
     fun tearDown() = backend.shutdown()
 
-    private fun token(scope: String): String {
+    private fun token(scope: String, roles: List<String>? = null): String {
         val claims = JWTClaimsSet.Builder()
             .subject("user-1")
             .claim("tenant_id", TestSupport.TENANT_ID)
             .claim("scope", scope)
+            .apply { if (roles != null) claim("roles", roles) }
             .expirationTime(Date(System.currentTimeMillis() + 3_600_000))
             .build()
         val jwt = SignedJWT(JWSHeader.Builder(JWSAlgorithm.EdDSA).keyID("k1").build(), claims)
@@ -105,7 +106,7 @@ class KtorEnforceTest {
         }
         // Token supplied via the axiam_access cookie (not a Bearer header).
         val ok = client.get("/docs/$resUuid") {
-            header("Cookie", "axiam_access=${token("admin ops")}")
+            header("Cookie", "axiam_access=${token("openid roles", roles = listOf("admin"))}")
         }
         assertEquals(HttpStatusCode.OK, ok.status)
         assertEquals("user-1", ok.bodyAsText())
@@ -125,7 +126,7 @@ class KtorEnforceTest {
                 }
             }
         }
-        val res = client.get("/docs/$resUuid") { header("Authorization", "Bearer ${token("admin")}") }
+        val res = client.get("/docs/$resUuid") { header("Authorization", "Bearer ${token("openid roles", roles = listOf("admin"))}") }
         assertEquals(HttpStatusCode.ServiceUnavailable, res.status)
         axiam.close()
     }

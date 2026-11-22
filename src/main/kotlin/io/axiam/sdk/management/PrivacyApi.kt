@@ -23,6 +23,10 @@ class PrivacyApi internal constructor(
      * Enqueues an async GDPR Art. 15 data-export job. Returns immediately with `{"queued": true}`;
      * the cleanup sweep generates the encrypted JSON, stores it, and emails a single-use 24 h
      * download link (D-12). Self-service (own account) or admin with `gdpr:export` permission.
+     * **The person's own act (SA-04 review S-3b).** Takes a &#91;`ConsoleSignIn`&#93;: a token
+     * AXIAM minted for an OAuth2 client is refused `403`. The route is bearer-only and so
+     * CSRF-exempt, and a relying party holding one of its user's tokens must not be able to have
+     * the user's personal data exported.
      *
      * Issues `POST /api/v1/account/export`.
      *
@@ -42,7 +46,10 @@ class PrivacyApi internal constructor(
     /**
      * Single-use download of the GDPR export blob (D-13). Looks up the job by SHA-256(token),
      * verifies it is ready and not expired/used, decrypts the blob, marks it as downloaded, and
-     * deletes the record. Requires authentication (self or admin with `gdpr:export`).
+     * deletes the record. Requires authentication (self or admin with `gdpr:export`). A
+     * &#91;`ConsoleSignIn`&#93;, like the request (S-3b): a token AXIAM minted for an OAuth2
+     * client is refused `403` before the token is looked up, so a relying party cannot spend the
+     * person's download link.
      *
      * Issues `GET /api/v1/account/export/{token}`.
      *
@@ -61,7 +68,10 @@ class PrivacyApi internal constructor(
     /**
      * Initiates Art. 17 erasure: immediately disables the account, revokes all sessions, emails a
      * single-use cancel link, and schedules purge at +30 d (D-07/D-08/D-09). Self-service (own
-     * account) or admin with `users:erase` permission.
+     * account) or admin with `users:erase` permission. A &#91;`ConsoleSignIn`&#93; (S-3b): a token
+     * AXIAM minted for an OAuth2 client is refused `403`. Erasure is the person's own act, and the
+     * route is bearer-only and so CSRF-exempt: a relying party holding one of its user's tokens
+     * must not be able to disable the account and schedule its purge.
      *
      * Issues `POST /api/v1/account/delete`.
      *
@@ -130,7 +140,12 @@ class PrivacyApi internal constructor(
      * so consent collected while the capability is off cannot sit waiting for somebody to turn it
      * on. Idempotent: the `(tenant, user, type, version)` index makes a repeated grant the same
      * grant, and a second call is answered `200` rather than a conflict. A consent screen the user
-     * double-submits has consented once.
+     * double-submits has consented once. **The person's own act (T-447, SA-04 review S-3).** Takes
+     * a &#91;`ConsoleSignIn`&#93;: a token AXIAM minted for an OAuth2 client is refused `403`.
+     * `/oauth2/authorize` reads exactly these records to skip the consent screen, and the CSRF
+     * middleware exempts bearer-only requests, so a relying party holding one of its user's tokens
+     * could otherwise record consent for another client in the user's name and have a code issued
+     * silently.
      *
      * Issues `POST /api/v1/account/consents/oidc-scopes`.
      *
@@ -160,7 +175,9 @@ class PrivacyApi internal constructor(
      * under the two-scope record but carry on under the one-scope one". Answers `200` whether or
      * not anything was there, and says how many records went. A subject who withdraws twice is not
      * told off, and an attacker who guesses `client_id`s learns nothing from the status code —
-     * though they would have to be the subject to ask at all.
+     * though they would have to be the subject to ask at all. A &#91;`ConsoleSignIn`&#93;, like
+     * the grant: withdrawing is the person's own act too, and a relying party holding one of its
+     * user's tokens must not be able to strip a consent the user gave another client (T-447, S-3).
      *
      * Issues `DELETE /api/v1/account/consents/oidc-scopes/{client_id}`.
      *

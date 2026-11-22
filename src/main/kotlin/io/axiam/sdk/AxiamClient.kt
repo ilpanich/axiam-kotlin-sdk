@@ -1470,7 +1470,11 @@ class AxiamClient private constructor(
         token: String,
         presentedProofs: PresentedProofs = PresentedProofs.none(),
     ): AxiamUser {
-        val claims = jwksVerifier.verifySignatureOnlyUnchecked(token)
+        // Rules 1 and 10-12: signature, and the token is an access token (a
+        // `typ` other than `at+jwt`, a `purpose` claim and a missing `kid` are
+        // all refused — the MFA-challenge and WebAuthn-state tokens share the
+        // key). The signature-only primitive is deliberately not used here.
+        val claims = jwksVerifier.verifyAccessTokenSignature(token)
         JwksVerifier.assertLocalClaims(
             claims = claims,
             configuredTenantId = tenantId,
@@ -1503,13 +1507,21 @@ class AxiamClient private constructor(
         }
 
         val sub = claims.subject ?: throw AuthError("token has no subject (sub) claim")
+        // §11.2 rule 11 (contract 1.68; N15): `roles` and `scope` are different
+        // claims. Roles come from the `roles` claim ALONE — never split,
+        // prefixed or derived from `scope`, and no fallback when it is absent —
+        // so a scope named like a role can never satisfy a role guard.
+        val rolesClaim = claims.getClaim("roles")
+        val roles: List<String>? = (rolesClaim as? List<*>)
+            ?.takeIf { list -> list.all { it is String } }
+            ?.map { it as String }
         val scope = try {
             claims.getStringClaim("scope")
         } catch (_: Exception) {
             null
         }
-        val roles = if (scope.isNullOrBlank()) emptyList() else scope.trim().split(Regex("\\s+"))
-        return AxiamUser(sub, tenantId, roles)
+        val scopes = scope?.split(' ')?.filter { it.isNotEmpty() } ?: emptyList()
+        return AxiamUser(sub, tenantId, roles ?: emptyList(), scopes, rolesClaimPresent = roles != null)
     }
 
     // ---- OIDC / SSO relying-party helpers (CONTRACT.md §12) --------------
@@ -2937,7 +2949,7 @@ class AxiamClient private constructor(
         if (claims?.sub == null || claims.tenantId == null) {
             throw AuthError("failed to decode access token claims after login")
         }
-        return AxiamUser(claims.sub, claims.tenantId, claims.roles)
+        return AxiamUser(claims.sub, claims.tenantId, claims.roles, claims.scopes, claims.rolesClaimPresent)
     }
 
     /**

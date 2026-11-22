@@ -34,6 +34,13 @@ import kotlin.concurrent.withLock
  * @property codeVerifier the PKCE verifier for the matching authorization request (§12.5 secret)
  * @property redirectUri the `redirect_uri` that was sent on the authorization request and must be replayed on exchange
  * @property returnTo optional application-owned data, e.g. the page the user was heading to before login
+ * @property bindingDigest optional (contract 1.68, §12.8 rule 1; C7): lower-case hex SHA-256 of the
+ *   browser-binding cookie value the login glue set for the browser that began this login. The
+ *   callback compares it, in constant time, with the cookie the callback request presents, and
+ *   refuses an entry that has none. It is not secret but is never logged. **A caller-supplied store
+ *   MUST persist and return it unchanged**: one that rebuilds entries from a fixed column list and
+ *   drops it refuses every sign-in — loudly, which is the safe failure. It is optional so that a
+ *   store written for 1.3.x still compiles and an entry without it can still be read.
  */
 data class OidcStateEntry(
     val state: String,
@@ -41,6 +48,7 @@ data class OidcStateEntry(
     val codeVerifier: Sensitive<String>,
     val redirectUri: String,
     val returnTo: String? = null,
+    val bindingDigest: String? = null,
 )
 
 /**
@@ -90,14 +98,23 @@ const val OIDC_STATE_TTL_MS: Long = 600_000L
  *   (10 minutes) and is CLAMPED to it: a shorter TTL is honoured (useful in
  *   tests), a longer one is reduced, because §12.3 rule 1 fixes 10 minutes as
  *   the maximum.
+ * @param maxEntries the most entries held at once (default
+ *   [DEFAULT_MAX_ENTRIES]); when full, [save] evicts the oldest entry. The login route is unauthenticated and every call saves one entry,
+ *   so an unbounded map is a memory-exhaustion lever.
  */
-class MemoryOidcStateStore(ttlMs: Long = OIDC_STATE_TTL_MS) : OidcStateStore {
+class MemoryOidcStateStore(
+    ttlMs: Long = OIDC_STATE_TTL_MS,
+    maxEntries: Int = DEFAULT_MAX_ENTRIES,
+) : OidcStateStore {
+
+    private val maxEntries: Int = maxEntries.coerceAtLeast(1)
 
     private val ttlMs: Long = ttlMs.coerceAtMost(OIDC_STATE_TTL_MS)
     private val entries = ConcurrentHashMap<String, Held>()
     private val sweepLock = ReentrantLock()
 
-    private class Held(val entry: OidcStateEntry, val expiresAtEpochMs: Long)
+    private class Held(val entry: OidcStateEntry, val expiresAtEpochMs: Long, val seq: Long)
+    private val nextSeq = java.util.concurrent.atomic.AtomicLong()
 
     /** Number of unexpired entries currently held. Intended for tests and metrics. */
     val size: Int
@@ -108,7 +125,13 @@ class MemoryOidcStateStore(ttlMs: Long = OIDC_STATE_TTL_MS) : OidcStateStore {
 
     override suspend fun save(entry: OidcStateEntry) {
         sweep()
-        entries[entry.state] = Held(entry, System.currentTimeMillis() + ttlMs)
+        sweepLock.withLock {
+            while (entries.size >= maxEntries && !entries.containsKey(entry.state)) {
+                val oldest = entries.entries.minByOrNull { it.value.seq } ?: break
+                entries.remove(oldest.key)
+            }
+        }
+        entries[entry.state] = Held(entry, System.currentTimeMillis() + ttlMs, nextSeq.incrementAndGet())
     }
 
     /**
@@ -135,5 +158,10 @@ class MemoryOidcStateStore(ttlMs: Long = OIDC_STATE_TTL_MS) : OidcStateStore {
                 }
             }
         }
+    }
+
+    companion object {
+        /** The default bound on live entries. */
+        const val DEFAULT_MAX_ENTRIES: Int = 10_000
     }
 }

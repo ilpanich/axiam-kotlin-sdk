@@ -296,8 +296,11 @@ class SessionState(
      * Subset of access-token claims decoded WITHOUT verifying the signature —
      * tenant/org resolution and near-expiry only, never an authz decision.
      *
-     * @property roles derived from the space-separated `scope` claim (AXIAM has
-     *   no dedicated `roles` claim); empty when absent.
+     * @property roles the names in the `roles` claim (CONTRACT.md §11.2 rule 11);
+     *   empty when it is absent or not an array of strings. NEVER derived from
+     *   `scope`.
+     * @property rolesClaimPresent whether the `roles` claim was an array of strings.
+     * @property scopes the entries of the space-separated `scope` claim.
      */
     data class Claims(
         val sub: String?,
@@ -306,6 +309,8 @@ class SessionState(
         val jti: String?,
         val roles: List<String>,
         val exp: Long,
+        val scopes: List<String> = emptyList(),
+        val rolesClaimPresent: Boolean = roles.isNotEmpty(),
     )
 
     companion object {
@@ -342,15 +347,21 @@ class SessionState(
                 return null
             }
             val scope = node["scope"]?.jsonPrimitiveContentOrNull()
-            val roles = if (scope.isNullOrBlank()) emptyList() else scope.trim().split(Regex("\\s+"))
+            val scopes = scope?.split(' ')?.filter { it.isNotEmpty() } ?: emptyList()
+            val rolesArray = node["roles"] as? kotlinx.serialization.json.JsonArray
+            val roles: List<String>? = rolesArray
+                ?.takeIf { arr -> arr.all { it is kotlinx.serialization.json.JsonPrimitive && it.isString } }
+                ?.map { (it as kotlinx.serialization.json.JsonPrimitive).content }
             val exp = node["exp"]?.jsonPrimitiveContentOrNull()?.toLongOrNull() ?: 0L
             return Claims(
                 sub = node["sub"]?.jsonPrimitiveContentOrNull(),
                 tenantId = node["tenant_id"]?.jsonPrimitiveContentOrNull(),
                 orgId = node["org_id"]?.jsonPrimitiveContentOrNull(),
                 jti = node["jti"]?.jsonPrimitiveContentOrNull(),
-                roles = roles,
+                roles = roles ?: emptyList(),
                 exp = exp,
+                scopes = scopes,
+                rolesClaimPresent = roles != null,
             )
         }
 

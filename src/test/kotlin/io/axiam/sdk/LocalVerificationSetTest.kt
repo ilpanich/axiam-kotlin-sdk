@@ -92,7 +92,7 @@ class LocalVerificationSetTest {
     /** A hand-rolled compact JWS whose payload is arbitrary JSON (so `exp` can be a string). */
     private fun signEd25519Raw(payloadJson: String): String {
         val enc = Base64.getUrlEncoder().withoutPadding()
-        val header = enc.encodeToString("""{"alg":"EdDSA","kid":"k1","typ":"JWT"}""".toByteArray())
+        val header = enc.encodeToString("""{"alg":"EdDSA","kid":"k1","typ":"at+jwt"}""".toByteArray())
         val payload = enc.encodeToString(payloadJson.toByteArray())
         val signer = Ed25519Signer(signingKey)
         val sig = signer.sign(
@@ -144,7 +144,7 @@ class LocalVerificationSetTest {
     @Test
     fun `rule 1 - a well-formed EdDSA header with an empty signature is rejected`() {
         val enc = Base64.getUrlEncoder().withoutPadding()
-        val header = enc.encodeToString("""{"alg":"EdDSA","kid":"k1","typ":"JWT"}""".toByteArray())
+        val header = enc.encodeToString("""{"alg":"EdDSA","kid":"k1","typ":"at+jwt"}""".toByteArray())
         val payload = enc.encodeToString(claims().toString().toByteArray())
         assertRejected("$header.$payload.")
     }

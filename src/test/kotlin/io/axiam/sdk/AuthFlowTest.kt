@@ -37,7 +37,9 @@ class AuthFlowTest {
             assertFalse(result.mfaRequired)
             assertNotNull(result.user)
             assertEquals("user-1", result.user!!.userId)
-            assertTrue(result.user!!.roles.contains("documents:read"))
+            // N15 (contract 1.68): the token's `scope` is not the user's roles.
+            assertTrue(result.user!!.roles.isEmpty())
+            assertEquals(listOf("documents:read", "documents:write"), result.user!!.scopes)
         }
         val recorded = server.takeRequest()
         assertEquals("/api/v1/auth/login", recorded.path)

@@ -31,13 +31,24 @@ Source: [ilpanich/axiam-kotlin-sdk](https://github.com/ilpanich/axiam-kotlin-sdk
 
 ## Contract conformance
 
-This SDK conforms to **contract 1.66**: CONTRACT.md §1–§7 (§1.1's `getUserInfo` and §1.1.1's
+This SDK conforms to **contract 1.68**: CONTRACT.md §1–§7 (§1.1's `getUserInfo` and §1.1.1's
 `validateToken`/`introspectToken` declined — gRPC-only, and this SDK ships no gRPC transport; see
 [Scope of this SDK (v1)](#scope-of-this-sdk-v1) below), §9–§13 and §12.7, §14, §15, §17, §19,
 §20, §21, §22, §23, §24, §25, §26, §27, §28 (including §6.1 mTLS), and §28.12, §29, §30, §31, §32,
 §33, §36 and §37, with §32.7 and §33.2 signed. Manifest pruning: not offered in any namespace (§27.10). §12 is implemented in full at its
 1.38 shape: all **thirteen** operations, including the four public "Sign in with X" entry points,
 as `suspend` functions on the same `AxiamClient`.
+
+**Contract 1.68 — the security-audit 2026-11-14 fixes (§34.12). This release (1.4.0) changes behaviour; see
+[`CHANGELOG.md`](CHANGELOG.md) for the migration notes.** No operation is added. §10.1 rules 10–12: the guard
+refuses a token whose header `typ` is not `at+jwt` (`JWT`, `logout+jwt`, `axiam-…+jwt`), one whose claims carry
+a `purpose` member, and one with no `kid`. §11.2 rule 11: `requireRole` reads the **`roles` claim only** and fails
+closed, `scope` is no longer mapped to roles, and `requireScope` is new — **the application must request the
+`roles` scope for `requireRole` to work**. §3a: the Ktor guard applies the cookie double-submit check to a
+credential read from `axiam_access` on `POST`/`PUT`/`PATCH`/`DELETE`. §12.8: the Ktor login glue binds the
+callback to the browser that began it (`__Host-axiam_oidc_bind`), follows `return_to` only as a same-origin
+relative path, and hands the request to the success callback. §12.4 rule 2: at most one JWKS re-fetch per
+unknown-`kid` cooldown window.
 
 **Contract 1.66 — federated sign-in bound to its client (§34.10).** No operation is added and no API
 changes. §12.1 rule 12b: `ssoStart`, `ssoStartOauth2` and the SAML login answer with the
@@ -211,8 +222,8 @@ rather than folded into the range because they landed after this SDK already sta
 would turn a statement that was true when written into a different claim without anyone editing it.
 
 `CONTRACT.md`, `openapi.json`, `management-registry.json` and `proto/` are vendored byte for byte
-from `axiam` (contract 1.66) at `5f9d079` (`proto/` unchanged since 1.62; spec digest
-`sha256:09419a6e…4656e`), and the §27 surface is generated from them. See
+from `axiam` (contract 1.68) at `e502a3b` (`proto/` unchanged since 1.62; spec digest
+`sha256:badfb480…d59ca`), and the §27 surface is generated from them. See
 [MCP resource-server helpers](#mcp-resource-server-helpers-ioaxiamsdkmcp-28-opt-in) below for §28.
 
 **§27 is the Management API** — all 202 operations across 29 namespaces, with the §27.6 declarative
@@ -268,7 +279,7 @@ default tenant.
 
 ```kotlin
 dependencies {
-    implementation("io.github.ilpanich:axiam-sdk-kotlin:1.3.1")
+    implementation("io.github.ilpanich:axiam-sdk-kotlin:1.4.0")
     // Optional — only if you use the Ktor route guard / §11 helpers:
     implementation("io.ktor:ktor-server-core:3.2.4")
 }
@@ -280,7 +291,7 @@ dependencies {
 <dependency>
   <groupId>io.github.ilpanich</groupId>
   <artifactId>axiam-sdk-kotlin</artifactId>
-  <version>1.3.1</version>
+  <version>1.4.0</version>
 </dependency>
 ```
 
@@ -529,8 +540,8 @@ whose aliases are malformed cannot break the clients that never use them.
 
 For **Ktor**, install the `AxiamAuthentication` plugin with a client; it verifies the incoming
 session (the full §10.1 set below) and injects an `AxiamUser`. The §11 helpers
-(`requireAuth`, `requireAccess`, `requireRole`) and the annotation-driven `enforce` compose on
-top of it:
+(`requireAuth`, `requireAccess`, `requireRole`, `requireScope`) and the annotation-driven `enforce`
+compose on top of it:
 
 ```kotlin
 import io.axiam.sdk.ktor.*
@@ -552,7 +563,7 @@ enforces the same annotation vocabulary.
 
 ### What the guard checks (§10.1 minimum local-verification set)
 
-`AxiamClient.verifySession` — the entry point the Ktor plugin uses — applies **all seven** rules.
+`AxiamClient.verifySession` — the entry point the Ktor plugin uses — applies **every** rule below.
 A signature check alone is not a guard.
 
 | # | Claim | Rule |
@@ -564,6 +575,9 @@ A signature check alone is not a guard.
 | 5 | `iss` | Checked only when `expectedIssuer(...)` was configured on the builder. |
 | 6 | `aud` | Checked only when `expectedAudience(...)` was configured on the builder. |
 | 7 | clock skew | One named 60s constant, `JwksVerifier.CLOCK_SKEW_SECONDS`, on rules 2 and 3. Not settable. |
+| 10 | `typ` (contract 1.68) | When the header carries `typ` it must be `at+jwt` (any case, with or without `application/`). `JWT`, `logout+jwt` and the `axiam-…+jwt` purpose types are refused. A header with no `typ` is not refused by this rule. |
+| 11 | `purpose` (contract 1.68) | A payload with a `purpose` member is refused, whatever its value and whatever `typ` says — the MFA-challenge and WebAuthn-state tokens share the access-token key and carry no `aud`. |
+| 12 | `kid` (contract 1.68) | Required. The key is selected by `kid`; there is no "the only key in the set" fallback. An unknown `kid` causes at most one JWKS re-fetch per 60 s window (§12.4 rule 2). |
 | 9 | `cnf` (sender-constrained tokens, contract 1.51) | Absent `cnf` ⇒ an ordinary bearer token, rules 1–7 alone decide. A **present** `cnf.x5t#S256` (a device-login token, §6.1 rule 9) is now checked against what the caller proves it holds — see below. |
 
 Every rule fails **closed** — a required claim that is absent, unparseable, or of the wrong JSON
@@ -579,6 +593,29 @@ val guardClient = AxiamClient.builder(baseUrl, tenantId = "22222222-…-uuid")
 `JwksVerifier.verifySignatureOnlyUnchecked(...)` is the raw signature primitive §10.1 permits for
 integrators writing their own policy. As its name says, it checks **no** claims — it is not a
 guard, and the SDK's own guards never stop there.
+
+#### Cookie-sourced credentials: the CSRF double submit (§3a, contract 1.68)
+
+The Ktor plugin remembers where the credential came from. When it is the `axiam_access` **cookie**
+(not an `Authorization: Bearer` header) and the method is anything but `GET`, `HEAD` or `OPTIONS`, the
+`X-CSRF-Token` header must be present and equal — compared in constant time — to the `axiam_csrf`
+cookie, or the call is rejected `403` (`csrf_validation_failed`) **before any handler or §11 helper
+runs**. A Bearer credential is exempt. The SDK does not assume Ktor's own CSRF plugin is installed.
+Browsers and this SDK's own `AxiamClient` already echo the cookie as the header (§3).
+
+#### `requireRole` and `requireScope` (§11.2 rule 11, contract 1.68)
+
+`requireRole("admin")` is a **local** check of the token's **`roles` claim only** — exact,
+case-sensitive — and it **fails closed**: a token with no `roles` claim, one that is not an array of
+strings, or `[]`, is `403`. It never reads `scope`. `requireScope("admin")` reads only the
+space-separated `scope` claim (whole entries) and is `403` when it is absent. `AxiamUser` carries
+both: `roles`, `scopes`, and `rolesClaimPresent` to tell an absent claim from an empty one.
+
+**The application must request the `roles` scope** — add `roles` to the scope it passes to
+`oidcBegin` (or `scope=roles` on a client-credentials grant) — and an administrator must register
+`roles` for the client. The SDK never adds it on its own. Without it every `requireRole` is a `403`.
+The claim is a snapshot taken when the token was minted (stale for at most one access-token
+lifetime), and role names are tenant-defined, so `requireAccess` remains the authoritative check.
 
 #### Rule 9 — sender-constrained tokens (contract 1.51, breaking fix)
 
@@ -832,7 +869,19 @@ routing {
 ```
 
 Installs a `GET /login` (redirect to the IdP) and a `GET /callback` (exchanges the code) pair,
-using an in-memory `OidcStateStore` by default. Kept `compileOnly`-safe exactly like
+using an in-memory `OidcStateStore` by default.
+
+**Browser binding (§12.8, contract 1.68; login CSRF).** The login route sets a random
+`__Host-axiam_oidc_bind` cookie (`HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=600`) and stores its
+SHA-256 on the entry (`OidcStateEntry.bindingDigest`). The callback consumes the entry first, then
+answers the same `401` it gives an unknown state — no code exchange, no `onSuccess` — unless the
+request carries a matching cookie; it clears the cookie on every response. On a plain-HTTP loopback
+`redirectUri` (`localhost`, `127.0.0.1`, `[::1]`) the name is `axiam_oidc_bind` without `Secure`, there
+only. A custom `OidcStateStore` must persist and return `bindingDigest` unchanged.
+**`return_to`** is followed only as a same-origin relative path (a single leading `/`, no `//`, `/\`,
+backslash or control character), checked when stored and again before redirecting; `allowReturnTo` may
+widen it (e.g. an allowlist) and `successRedirect` still wins. Pass `onSuccessWithCall = { tokens, entry, call -> … }`
+to create the application session on the request that completed the sign-in (`onSuccess` is unchanged). Kept `compileOnly`-safe exactly like
 `AxiamAuthentication` — the core §12 operations above compile and run with Ktor absent from a
 consumer's classpath; only importing `io.axiam.sdk.ktor.*` requires adding `ktor-server-core`.
 
