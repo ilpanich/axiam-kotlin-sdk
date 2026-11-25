@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Monthly dependency refresh (2026-11): Gradle wrapper 9.9.1 -> 9.9.2; RabbitMQ `amqp-client` (compileOnly / tests) 5.38.0. Kotlin (2.2.21 floor, 2.4.21 newest) and JVM (17 floor, 27 newest) support unchanged.
+
 ## [1.3.1] - 2026-11-11
 
 ### Changed

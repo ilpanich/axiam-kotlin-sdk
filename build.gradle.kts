@@ -31,7 +31,7 @@ repositories {
 // SDK is published with (the CI floor leg). Move it together with
 // kotlinVersion in gradle.properties.
 val ktorVersion = "3.3.3"
-val rabbitMqVersion = "5.37.1"
+val rabbitMqVersion = "5.38.0"
 val jnaVersion = "5.19.1"
 // OkHttp's artifacts must move in lockstep: okhttp-urlconnection,
 // mockwebserver and okhttp-tls 5.x link against okhttp 5.x internals and fail
