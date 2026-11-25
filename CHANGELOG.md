@@ -6,14 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-
-## [1.4.0] - 2026-11-22
-
-Security-audit 2026-11-14 fixes (CONTRACT.md 1.68). **Three of these are behaviour changes for integrators**
-(login glue, `requireRole`, and the guard's stricter access-token checks); read the migration notes.
-
 ### Security
 
+- Security-audit 2026-11-14 fixes (CONTRACT.md 1.68). **Three of these are behaviour changes for integrators**
+(login glue, `requireRole`, and the guard's stricter access-token checks); read the migration notes.
 - **N12 — the Ktor guard applies the §3a cookie double-submit check.** When the credential it accepted was the
   `axiam_access` cookie and the method is `POST`, `PUT`, `PATCH` or `DELETE` (anything but `GET`, `HEAD`,
   `OPTIONS`), `X-CSRF-Token` must be present and equal, in constant time, to the `axiam_csrf` cookie; otherwise
@@ -74,6 +70,9 @@ Security-audit 2026-11-14 fixes (CONTRACT.md 1.68). **Three of these are behavio
   equal to the `axiam_csrf` cookie; a browser client that already echoes it (this SDK's `AxiamClient` does) is
   unaffected, a hand-rolled one is refused `403`. Access tokens minted by an AXIAM server before 1.67 carry
   `typ: JWT` and are refused; their holders refresh (at most one access-token lifetime).
+### Changed
+
+- Monthly dependency refresh (2026-11): Gradle wrapper 9.9.1 -> 9.9.2; RabbitMQ `amqp-client` (compileOnly / tests) 5.38.0. Kotlin (2.2.21 floor, 2.4.21 newest) and JVM (17 floor, 27 newest) support unchanged.
 
 ## [1.3.1] - 2026-11-11
 
