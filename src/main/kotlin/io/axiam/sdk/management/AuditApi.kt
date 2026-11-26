@@ -63,8 +63,17 @@ class AuditApi internal constructor(
         ManagementSupport.collectPages(start) { list(actorId, action, outcome, resourceId, from, to, it) }
 
     /**
-     * Returns audit entries for unauthenticated/system requests (nil tenant_id). Requires
-     * authentication — only logged-in users can query system audit logs.
+     * Returns audit entries for unauthenticated/system requests (nil tenant_id). Of the caller's
+     * organization only (SA-02, N1): the partition is deployment-wide, and this returns the
+     * entries whose recorded `organization_id` is the caller's own. The server records one on a
+     * new entry only where it resolved it with certainty — a deleted tenant's organization, a
+     * verified SCIM token's tenant's, an organization or tenant the request's path names and that
+     * exists. An entry with none, every entry written before the field existed among them, is
+     * returned to nobody. Organization-level: requires `audit_logs:list_system` and a caller whose
+     * own record lives in the organization's scope tenant and whose role assignments are not
+     * restricted to particular tenants. A tenant administrator is refused `403` whatever its role
+     * holds, and so is an organization-level principal whose roles name particular tenants: the
+     * partition belongs to the organization as a whole.
      *
      * Issues `GET /api/v1/audit-logs/system`.
      *

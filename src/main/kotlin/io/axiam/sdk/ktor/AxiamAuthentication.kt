@@ -27,6 +27,7 @@ import io.ktor.server.response.respondText
 import io.ktor.util.AttributeKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.security.MessageDigest
 import java.util.UUID
 
 /**
@@ -49,6 +50,16 @@ import java.util.UUID
  * leave-it-absent choice deliberately, but they sit behind Spring Security and
  * ASP.NET Core authorization respectively; Ktor has no equivalent layer behind
  * this plugin, so the omission is not caught anywhere else.
+ *
+ * **Cookie-sourced credentials are CSRF-checked** (CONTRACT.md §3a; N12). The
+ * `axiam_access` cookie is `SameSite=Strict`, but a same-site origin the
+ * attacker controls still has it sent, so when the credential came from the
+ * cookie and the method is anything but `GET`, `HEAD` or `OPTIONS`, the
+ * `X-CSRF-Token` header must be present and equal — compared in constant time —
+ * to the `axiam_csrf` cookie, or the call is rejected `403`
+ * (`csrf_validation_failed`) **here, before any route handler or §11 helper
+ * runs**. A `Bearer` credential is exempt: a cross-site page cannot set the
+ * header. Ktor's own CSRF plugin is not assumed to be installed.
  *
  * A call carrying **no token at all** is left absent, exactly as before: that is
  * not a failed authentication, and public routes must keep working. The
@@ -101,11 +112,10 @@ val AxiamAuthentication = createApplicationPlugin(
             return@onCall
         }
 
-        val token = extractToken(call)
-        if (token != null) {
-            try {
-                val user = withContext(Dispatchers.IO) { client.verifySession(token) }
-                call.attributes.put(USER_KEY, user)
+        val credential = extractCredential(call)
+        if (credential != null) {
+            val user = try {
+                withContext(Dispatchers.IO) { client.verifySession(credential.token) }
             } catch (_: AuthError) {
                 // §15.3.3: the caller PRESENTED a credential and it did not
                 // verify. Leaving the attribute absent and continuing makes a
@@ -122,7 +132,23 @@ val AxiamAuthentication = createApplicationPlugin(
                     "authentication_failed",
                     "invalid or expired token",
                 )
+                return@onCall
             }
+
+            // §3a (N12): a credential read from the cookie needs the double
+            // submit on every state-changing method. It runs HERE — before the
+            // identity is injected and so before any handler or §11 helper can
+            // admit the request — because a helper that ran first would make
+            // the check advisory.
+            if (credential.fromCookie && !call.request.httpMethod.isSafeMethod() && !call.isCsrfValid()) {
+                call.respondError(
+                    HttpStatusCode.Forbidden,
+                    "csrf_validation_failed",
+                    "CSRF token missing or does not match",
+                )
+                return@onCall
+            }
+            call.attributes.put(USER_KEY, user)
         }
     }
 }
@@ -169,12 +195,34 @@ private fun ApplicationCall.axiamClient(): AxiamClient =
     attributes.getOrNull(CLIENT_KEY)
         ?: error("AxiamAuthentication plugin is not installed")
 
-private fun extractToken(call: ApplicationCall): String? {
+private const val ACCESS_COOKIE = "axiam_access"
+private const val CSRF_COOKIE = "axiam_csrf"
+private const val CSRF_HEADER = "X-CSRF-Token"
+
+/** A presented session token and where it was read from — §3a applies only to the cookie. */
+private class Credential(val token: String, val fromCookie: Boolean)
+
+private fun extractCredential(call: ApplicationCall): Credential? {
     val auth = call.request.headers["Authorization"]
     if (auth != null && auth.startsWith("Bearer ", ignoreCase = true)) {
-        return auth.substring(7).trim().ifEmpty { null }
+        return auth.substring(7).trim().ifEmpty { null }?.let { Credential(it, fromCookie = false) }
     }
-    return call.request.cookies["axiam_access"]
+    return call.request.cookies[ACCESS_COOKIE]?.let { Credential(it, fromCookie = true) }
+}
+
+/** §3a: `GET`, `HEAD` and `OPTIONS` are the safe methods; everything else is state-changing. */
+private fun io.ktor.http.HttpMethod.isSafeMethod(): Boolean =
+    value.uppercase() == "GET" || value.uppercase() == "HEAD" || value.uppercase() == "OPTIONS"
+
+/**
+ * §3a cookie double-submit: the `X-CSRF-Token` header must be present, non-empty
+ * and equal, in constant time, to the `axiam_csrf` cookie.
+ */
+private fun ApplicationCall.isCsrfValid(): Boolean {
+    val header = request.headers[CSRF_HEADER]
+    val cookie = request.cookies[CSRF_COOKIE]
+    if (header.isNullOrEmpty() || cookie.isNullOrEmpty()) return false
+    return MessageDigest.isEqual(header.toByteArray(Charsets.UTF_8), cookie.toByteArray(Charsets.UTF_8))
 }
 
 /**
@@ -200,11 +248,42 @@ suspend fun ApplicationCall.requireAuth(): AxiamUser? {
 /**
  * §11 `require_role`: a LOCAL check that the caller holds at least one of
  * [roles]. 401 if unauthenticated, 403 if none match.
+ *
+ * Reads the token's **`roles` claim only** (CONTRACT.md §11.2 rule 11), by exact
+ * case-sensitive match, and **fails closed**: a token with no `roles` claim, one
+ * that is not an array of strings, or `[]`, is a 403. It never consults `scope`;
+ * use [requireScope] to guard on an OAuth2 scope.
+ *
+ * The server emits `roles` only when the client requested the `roles` scope, so
+ * the application must add `roles` to the scope it passes to `oidcBegin` (and an
+ * administrator must register it for the client); without it every
+ * `requireRole` answers 403. Role names are tenant-defined and the claim is a
+ * snapshot taken when the token was minted — at most one access-token lifetime
+ * stale — so [requireAccess] remains the authoritative check.
  */
 suspend fun ApplicationCall.requireRole(vararg roles: String): AxiamUser? {
     val user = requireAuth() ?: return null
-    if (roles.none { it in user.roles }) {
+    if (!user.rolesClaimPresent || roles.none { it in user.roles }) {
         respondError(HttpStatusCode.Forbidden, "authorization_denied", "caller lacks a required role")
+        return null
+    }
+    return user
+}
+
+/**
+ * §11 `require_scope` (CONTRACT.md §11.2 rule 11d): a LOCAL check that the
+ * token's `scope` claim contains at least one of [scopes]. 401 if
+ * unauthenticated, 403 if none match, or if the token has no (string) `scope`.
+ *
+ * Entries are the space-separated values of RFC 6749 §3.3, compared whole and
+ * case-sensitively (`administrator` does not satisfy `admin`). It reads `scope`
+ * only — a `roles` claim never stands in for it — and is coarser than
+ * [requireAccess], which remains the authoritative check.
+ */
+suspend fun ApplicationCall.requireScope(vararg scopes: String): AxiamUser? {
+    val user = requireAuth() ?: return null
+    if (scopes.none { it in user.scopes }) {
+        respondError(HttpStatusCode.Forbidden, "authorization_denied", "caller lacks a required scope")
         return null
     }
     return user
@@ -277,9 +356,8 @@ suspend fun ApplicationCall.enforce(vararg annotations: Annotation): AxiamUser? 
         val scope = ann.scope.ifEmpty { null }
         user = requireAccess(ann.action, resourceId, scope) ?: return null
     }
-    // Method is read from the request for completeness (state-changing calls are
-    // handled identically — auth is already enforced above).
-    @Suppress("UNUSED_EXPRESSION") request.httpMethod
+    // The §3a CSRF check for a cookie credential already ran in the plugin's
+    // `onCall`, before this helper (and any handler) could run.
     return user
 }
 

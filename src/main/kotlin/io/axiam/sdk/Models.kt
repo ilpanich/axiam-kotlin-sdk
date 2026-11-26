@@ -6,14 +6,38 @@ import java.util.UUID
  * Authenticated user identity, injected into the request context by the §10
  * guard and returned as part of a completed [LoginResult].
  *
+ * **[roles] and [scopes] are different claims and never stand in for each
+ * other** (CONTRACT.md §11.2 rule 11; contract 1.68, N15). A scope is chosen by
+ * the OAuth2 *client* and bounded only by its registration; it says nothing
+ * about what the user holds. Through 1.3.x this SDK split `scope` into
+ * [roles], so a user signed in through a client registered for a scope named
+ * like an application role passed that role's guard. Since 1.4.0 [roles] is
+ * read from the `roles` claim alone.
+ *
+ * The server emits `roles` only when the client requested, and is allowed, the
+ * `roles` scope. An application that guards with `requireRole` must request
+ * that scope (add `roles` to the scope it passes to `oidcBegin`), or every
+ * `requireRole` answers 403.
+ *
  * @property userId   the authenticated user's id (the token `sub` claim)
  * @property tenantId the tenant the user authenticated into
- * @property roles    the user's roles within [tenantId] (derived from the token `scope` claim)
+ * @property roles    the names in the token's `roles` claim: the user's global
+ *                    roles in [tenantId], a snapshot taken when the token was
+ *                    minted. Empty when the claim is absent, not an array of
+ *                    strings, or `[]` — see [rolesClaimPresent]
+ * @property scopes   the entries of the token's space-separated `scope` claim
+ * @property rolesClaimPresent `true` when the token carried a `roles` claim
+ *                    that is a JSON array of strings (`[]` included); `false`
+ *                    when it was absent or malformed. `false` means "the token
+ *                    says nothing about roles (ask for the `roles` scope)",
+ *                    `true` with an empty [roles] means "the user holds none"
  */
 data class AxiamUser(
     val userId: String,
     val tenantId: String,
     val roles: List<String>,
+    val scopes: List<String> = emptyList(),
+    val rolesClaimPresent: Boolean = roles.isNotEmpty(),
 )
 
 /**

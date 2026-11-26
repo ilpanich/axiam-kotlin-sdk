@@ -22,6 +22,7 @@ import java.net.URI
 import java.net.URL
 import java.security.MessageDigest
 import java.util.Base64
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
@@ -59,6 +60,18 @@ class JwksVerifier private constructor(jwksUrl: URL) {
         RemoteJWKSet(jwksUrl, null, DefaultJWKSetCache(300, 60, TimeUnit.SECONDS))
     private val refreshLock = ReentrantLock()
 
+    /** When the last JWKS fetch was started (the cooldown window's origin); guarded by [refreshLock]. */
+    private var lastFetchNanos: Long = 0L
+
+    /** Monotonic clock (nanoseconds) behind the unknown-`kid` cooldown; replaceable by tests. */
+    @Volatile
+    private var clockNanos: () -> Long = System::nanoTime
+
+    /** Test seam: replaces the monotonic clock behind the unknown-`kid` cooldown. */
+    fun setClockForTesting(clock: () -> Long) {
+        clockNanos = clock
+    }
+
     /**
      * The §10 middleware's public entry point: a verifier bound to
      * `{baseUrl}/oauth2/jwks`.
@@ -82,7 +95,70 @@ class JwksVerifier private constructor(jwksUrl: URL) {
      * @throws AuthError if the token is malformed, the alg is not EdDSA, no
      *   matching key is found, or the signature is invalid.
      */
-    fun verifySignatureOnlyUnchecked(token: String): JWTClaimsSet {
+    fun verifySignatureOnlyUnchecked(token: String): JWTClaimsSet = verifiedJwt(token).claims()
+
+    /**
+     * The §10 guard's token primitive: [verifySignatureOnlyUnchecked] plus the
+     * CONTRACT.md §10.1 rules 10-12 that say the token is an ACCESS token
+     * (contract 1.68; N14, N10, D-7).
+     *
+     * AXIAM signs more than access tokens with the access-token key — the MFA
+     * challenge and setup tokens and the WebAuthn ceremony state, which an
+     * anonymous caller can obtain with the nil UUID as `sub`. They carry `sub`,
+     * `tenant_id`, `iss` and `exp` and no `aud`, so without these rules a guard
+     * with no expected audience would admit them as the user they name.
+     *
+     * - rule 10 `typ`: when the header carries one it MUST be `at+jwt`
+     *   (RFC 9068 §2.1), compared ASCII case-insensitively and with or without
+     *   the `application/` prefix (RFC 7515 §4.1.9). A header with no `typ` is
+     *   not refused by this rule.
+     * - rule 11 `purpose`: a payload with a `purpose` member is refused,
+     *   whatever its value (`null` included) and whatever `typ` says. It is
+     *   read from the verified payload itself, not from a claims model that
+     *   would drop an unknown or null member.
+     * - rule 12 `kid`: REQUIRED — enforced by key selection, which has no
+     *   "the only key in the set" fallback.
+     *
+     * These apply on the access-token path only: the ID token
+     * ([verifyForIdToken], `typ` `JWT`), the back-channel logout token and the
+     * SSF event token take other paths and are not affected.
+     *
+     * @throws AuthError if [token] fails signature verification or rules 10-12.
+     */
+    fun verifyAccessTokenSignature(token: String): JWTClaimsSet {
+        val jwt = verifiedJwt(token)
+        assertAccessTokenShape(jwt)
+        return jwt.claims()
+    }
+
+    private fun SignedJWT.claims(): JWTClaimsSet =
+        try {
+            jwtClaimsSet
+        } catch (e: Exception) {
+            throw AuthError("malformed claims: ${e.message}")
+        }
+
+    private fun assertAccessTokenShape(jwt: SignedJWT) {
+        // Rule 10.
+        val typ = jwt.header.type?.type
+        if (typ != null) {
+            val normalized = typ.lowercase(Locale.ROOT).removePrefix("application/")
+            if (normalized != ACCESS_TOKEN_TYP) {
+                throw AuthError("token typ is not at+jwt: only an access token is accepted here (CONTRACT.md §10.1 rule 10)")
+            }
+        }
+        // Rule 11.
+        val payload = try {
+            jwt.payload.toJSONObject()
+        } catch (e: Exception) {
+            throw AuthError("malformed claims: ${e.message}")
+        }
+        if (payload != null && payload.containsKey("purpose")) {
+            throw AuthError("token carries a purpose claim: only an access token is accepted here (CONTRACT.md §10.1 rule 11)")
+        }
+    }
+
+    private fun verifiedJwt(token: String): SignedJWT {
         val parts = token.split(".")
         if (parts.size != 3) {
             throw AuthError("malformed token: expected a 3-part compact JWS")
@@ -124,11 +200,7 @@ class JwksVerifier private constructor(jwksUrl: URL) {
         if (!valid) {
             throw AuthError("invalid token signature")
         }
-        return try {
-            jwt.jwtClaimsSet
-        } catch (e: Exception) {
-            throw AuthError("malformed claims: ${e.message}")
-        }
+        return jwt
     }
 
     /**
@@ -234,6 +306,21 @@ class JwksVerifier private constructor(jwksUrl: URL) {
 
         return refreshLock.withLock {
             selectFromCache(selector)?.let { return@withLock it }
+
+            // CONTRACT.md §12.4 rule 2 (C5): at most ONE re-fetch per cooldown
+            // window, however many tokens present a `kid` the cache does not
+            // hold. nimbus's DefaultJWKSetCache re-fetches on EVERY `kid` miss
+            // (its 60 s "refresh time" bounds the TTL path, not this one), so
+            // an attacker minting random kids would drive one JWKS fetch per
+            // forged token. The window is kept here. A cold or expired cache is
+            // a plain load, but it opens the window too.
+            val now = clockNanos()
+            val cold = jwkSource.cachedJWKSet == null
+            if (!cold && lastFetchNanos != 0L && now - lastFetchNanos < UNKNOWN_KID_COOLDOWN_NANOS) {
+                return@withLock null
+            }
+            lastFetchNanos = if (now == 0L) 1L else now
+
             val matches = try {
                 jwkSource.get(selector, null)
             } catch (_: Exception) {
@@ -287,6 +374,16 @@ class JwksVerifier private constructor(jwksUrl: URL) {
          * an operator raising it to an unbounded value.
          */
         const val CLOCK_SKEW_SECONDS: Long = 60
+
+        /**
+         * CONTRACT.md §12.4 rule 2 (C5) — the unknown-`kid` re-fetch window: at
+         * most ONE JWKS fetch per window, however many tokens present a `kid`
+         * the cache does not hold. 60 s, in nanoseconds.
+         */
+        const val UNKNOWN_KID_COOLDOWN_NANOS: Long = 60_000_000_000L
+
+        /** CONTRACT.md §10.1 rule 10 — the `typ` an access token carries (RFC 9068 §2.1), lower-cased. */
+        private const val ACCESS_TOKEN_TYP = "at+jwt"
 
         /**
          * CONTRACT.md §10.1 rules 2-7 — the **minimum local-verification set**,

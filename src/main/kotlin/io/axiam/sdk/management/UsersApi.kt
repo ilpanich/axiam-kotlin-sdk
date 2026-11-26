@@ -166,7 +166,10 @@ class UsersApi internal constructor(
     }
 
     /**
-     * Remove a specific MFA method. Returns 400 if it is the last method and MFA is enabled.
+     * Remove a specific MFA method. Returns 400 if it is the last method and MFA is enabled. **The
+     * person's own act (SR4-1).** On the caller's OWN account a token AXIAM minted for an OAuth2
+     * client is refused `403` (a console sign-in is required); an administrator with `users:admin`
+     * acting on another user is not.
      *
      * Issues `DELETE /api/v1/users/{user_id}/mfa-methods/{method_id}`.
      *
@@ -193,7 +196,9 @@ class UsersApi internal constructor(
      * caller resetting their **own** account is refused with `403 mfa_enforced` where their
      * tenant's effective policy enforces MFA (D-1, T-267): the reset is otherwise the one
      * self-service path below the floor an administrator set. `users:admin` is unaffected — an
-     * administrator resetting a locked-out user is what the endpoint exists for.
+     * administrator resetting a locked-out user is what the endpoint exists for. **The person's
+     * own act (SR4-1).** On the caller's own account a token AXIAM minted for an OAuth2 client is
+     * refused `403`; an administrator acting on another user keeps accepting one.
      *
      * Issues `POST /api/v1/users/{user_id}/reset-mfa`.
      *

@@ -20,6 +20,14 @@ import kotlinx.serialization.json.JsonElement
  * @property id the server's id field
  * @property ipAddress the server's ip_address field
  * @property metadata the server's metadata field
+ * @property organizationId The organization a **system-partition** row (nil `tenant_id`)
+ *     concerns, recorded only where the server resolved it with certainty (SA-02, N1): a deleted
+ *     tenant's organization, a verified SCIM token's tenant's, or an organization or tenant the
+ *     request's path names and that exists. `GET /api/v1/audit-logs/system` returns a row only to
+ *     an organization principal of this organization, and a row without one to nobody. Always
+ *     `None` on a tenant's own rows, whose organization is their tenant's, and on every system row
+ *     written before the field existed. Omitted from the serialized form when `None`, so an
+ *     existing row's export line and dead-letter line are what they were.
  * @property outcome the server's outcome field
  * @property resourceId the server's resource_id field
  * @property tenantId the server's tenant_id field
@@ -33,6 +41,7 @@ data class AuditLogEntry(
     @SerialName("id") val id: @Serializable(with = UuidSerializer::class) UUID,
     @SerialName("ip_address") val ipAddress: String? = null,
     @SerialName("metadata") val metadata: JsonElement,
+    @SerialName("organization_id") val organizationId: @Serializable(with = UuidSerializer::class) UUID? = null,
     @SerialName("outcome") val outcome: AuditOutcome,
     @SerialName("resource_id") val resourceId: @Serializable(with = UuidSerializer::class) UUID? = null,
     @SerialName("tenant_id") val tenantId: @Serializable(with = UuidSerializer::class) UUID,

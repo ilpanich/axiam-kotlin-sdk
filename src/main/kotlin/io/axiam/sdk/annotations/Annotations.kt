@@ -45,11 +45,15 @@ annotation class AxiamRequireAccess(
 /**
  * Declares that the authenticated caller must hold at least one of [roles]
  * (CONTRACT.md §11 `require_role`). A LOCAL check against the verified token's
- * roles — it never calls the server. 401 if unauthenticated, 403 if the caller
- * holds none of the roles.
+ * **`roles` claim only** — it never calls the server and never reads `scope`
+ * (§11.2 rule 11; use `requireScope` for scopes). 401 if unauthenticated, 403 if
+ * the caller holds none of the roles, **and 403 when the token has no `roles`
+ * claim at all**: the application must request the `roles` scope for this to
+ * ever pass.
  *
- * Role names are tenant-defined; this is cheaper but coarser than
- * [AxiamRequireAccess], which is the authoritative resource-level check.
+ * Role names are tenant-defined and the claim is a snapshot taken when the
+ * token was minted; this is cheaper but coarser than [AxiamRequireAccess],
+ * which is the authoritative resource-level check.
  */
 @Retention(AnnotationRetention.RUNTIME)
 @Target(AnnotationTarget.FUNCTION, AnnotationTarget.CLASS)

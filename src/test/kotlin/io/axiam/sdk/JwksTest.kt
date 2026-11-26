@@ -70,8 +70,11 @@ class JwksTest {
             val user = client.verifySession(token)
             assertEquals("user-1", user.userId)
             assertEquals(TestSupport.TENANT_ID, user.tenantId)
-            assertTrue(user.roles.contains("documents:read"))
-            assertTrue(user.roles.contains("admin"))
+            // N15 (contract 1.68): `scope` is NOT the user's roles. It used to be split into
+            // `roles`, which made `scope: "... admin"` satisfy a role guard for "admin".
+            assertTrue(user.roles.isEmpty(), "scope must not be mapped to roles: ${user.roles}")
+            assertEquals(false, user.rolesClaimPresent)
+            assertEquals(listOf("documents:read", "admin"), user.scopes)
         }
     }
 

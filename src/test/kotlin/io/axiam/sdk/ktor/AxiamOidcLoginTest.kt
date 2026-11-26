@@ -4,6 +4,8 @@ import io.axiam.sdk.AxiamClient
 import io.axiam.sdk.oidc.MemoryOidcStateStore
 import io.axiam.sdk.oidc.OidcTestKit
 import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
@@ -132,12 +134,13 @@ class AxiamOidcLoginTest {
         val loginResponse = this.client.config { followRedirects = false }.get("/login")
         val location = loginResponse.headers[HttpHeaders.Location]!!
         val state = Regex("state=([^&]+)").find(location)!!.groupValues[1]
+        val bindCookie = bindingCookieOf(loginResponse)
 
         val configuration = axiamClient.oidcDiscover()
         val idToken = OidcTestKit.signIdToken(signingKey, issuer = configuration.issuer, nonce = extractNonce(store, state))
         dispatcher.onJson("/oauth2/token", 200, OidcTestKit.tokenResponseJson(accessToken = "acc", idToken = idToken))
 
-        val callbackResponse = this.client.get("/callback?state=$state&code=auth-code")
+        val callbackResponse = this.client.get("/callback?state=$state&code=auth-code") { header(HttpHeaders.Cookie, bindCookie) }
         assertEquals(HttpStatusCode.OK, callbackResponse.status)
         assertTrue(callbackResponse.bodyAsText().contains("\"authenticated\":true"))
         assertTrue(onSuccessCalled)
@@ -160,11 +163,12 @@ class AxiamOidcLoginTest {
         val loginResponse = this.client.config { followRedirects = false }.get("/login")
         val location = loginResponse.headers[HttpHeaders.Location]!!
         val state = Regex("state=([^&]+)").find(location)!!.groupValues[1]
+        val bindCookie = bindingCookieOf(loginResponse)
 
         val configuration = axiamClient.oidcDiscover()
         dispatcher.onJson("/oauth2/token", 200, OidcTestKit.tokenResponseJson(accessToken = "acc"))
 
-        val callbackResponse = this.client.config { followRedirects = false }.get("/callback?state=$state&code=auth-code")
+        val callbackResponse = this.client.config { followRedirects = false }.get("/callback?state=$state&code=auth-code") { header(HttpHeaders.Cookie, bindCookie) }
         assertEquals(HttpStatusCode.Found, callbackResponse.status)
         assertEquals("/welcome", callbackResponse.headers[HttpHeaders.Location])
     }
@@ -179,10 +183,11 @@ class AxiamOidcLoginTest {
         val loginResponse = this.client.config { followRedirects = false }.get("/login")
         val location = loginResponse.headers[HttpHeaders.Location]!!
         val state = Regex("state=([^&]+)").find(location)!!.groupValues[1]
+        val bindCookie = bindingCookieOf(loginResponse)
 
         dispatcher.onJson("/oauth2/token", 400, OidcTestKit.oauth2ErrorJson("invalid_grant", "replayed code"))
 
-        val callbackResponse = this.client.get("/callback?state=$state&code=auth-code")
+        val callbackResponse = this.client.get("/callback?state=$state&code=auth-code") { header(HttpHeaders.Cookie, bindCookie) }
         assertEquals(HttpStatusCode.Unauthorized, callbackResponse.status)
         assertTrue(callbackResponse.bodyAsText().contains("invalid_grant"))
     }
@@ -197,12 +202,22 @@ class AxiamOidcLoginTest {
         val loginResponse = this.client.config { followRedirects = false }.get("/login")
         val location = loginResponse.headers[HttpHeaders.Location]!!
         val state = Regex("state=([^&]+)").find(location)!!.groupValues[1]
+        val bindCookie = bindingCookieOf(loginResponse)
 
         server.shutdown()
 
-        val callbackResponse = this.client.get("/callback?state=$state&code=auth-code")
+        val callbackResponse = this.client.get("/callback?state=$state&code=auth-code") { header(HttpHeaders.Cookie, bindCookie) }
         assertEquals(HttpStatusCode.ServiceUnavailable, callbackResponse.status)
     }
+
+    /**
+     * The `name=value` the browser would send back: since contract 1.68 (§12.8) the callback
+     * completes only for the browser that received the binding cookie at login.
+     */
+    private fun bindingCookieOf(loginResponse: HttpResponse): String =
+        loginResponse.headers.getAll(HttpHeaders.SetCookie)!!
+            .first { it.startsWith("__Host-axiam_oidc_bind=") }
+            .substringBefore(";")
 
     private suspend fun extractNonce(store: MemoryOidcStateStore, state: String): String {
         // Peek without consuming: re-save after reading, since the real

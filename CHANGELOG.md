@@ -7,6 +7,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-22
+
+### Security
+
+- Security-audit 2026-11-14 fixes (CONTRACT.md 1.68). **Three of these are behaviour changes for integrators**
+(login glue, `requireRole`, and the guard's stricter access-token checks); read the migration notes.
+- **N12 — the Ktor guard applies the §3a cookie double-submit check.** When the credential it accepted was the
+  `axiam_access` cookie and the method is `POST`, `PUT`, `PATCH` or `DELETE` (anything but `GET`, `HEAD`,
+  `OPTIONS`), `X-CSRF-Token` must be present and equal, in constant time, to the `axiam_csrf` cookie; otherwise
+  the call is `403` (`csrf_validation_failed`) before any handler or §11 helper runs. A `Bearer` credential is
+  exempt. Previously a same-site page could submit a form `POST` that the guarded route executed as the victim.
+- **N14 — the guard refuses non-access tokens (§10.1 rules 10–12).** `verifySession` now refuses a token whose
+  header `typ` is present and is not `at+jwt` (`JWT`, `logout+jwt`, `axiam-…+jwt`), and one whose payload carries
+  a `purpose` member (`null` included), so an MFA-challenge or WebAuthn-state token can no longer be admitted as
+  the user it names. Rule 12 (`kid` required, no single-key fallback) was already enforced and is now pinned by a
+  test. `verifyForIdToken` and the signature-only primitive are unchanged.
+- **N15 — `requireRole` reads the `roles` claim only (§11.2 rule 11).** `AxiamUser.roles` was the `scope` claim
+  split on whitespace, so a user signed in through a client registered for a scope named like an application
+  role passed that role's guard. It is now read from the `roles` claim and `requireRole` fails closed when the
+  claim is absent or malformed.
+- **C7 — the Ktor login glue binds the callback to the browser that began the login (§12.8 rule 1).** The login
+  route sets `__Host-axiam_oidc_bind` and stores its SHA-256 as `OidcStateEntry.bindingDigest`; the callback
+  consumes the entry, then answers the uniform `401` — no code exchange, no success callback — unless the cookie
+  matches. The cookie is cleared on every callback response.
+- **C6 — `return_to` is followed only as a same-origin relative path (§12.8 rule 3).** Checked when stored and
+  again before redirecting.
+- **C5 — at most one JWKS fetch per unknown-`kid` window (§12.4 rule 2).** nimbus's `DefaultJWKSetCache` re-fetched
+  on every `kid` miss; `JwksVerifier` now keeps a 60 s window, so forged `kid`s cannot drive one fetch each.
+
+### Added
+
+- `requireScope(vararg scopes)` (§11.2 rule 11d): a local check of the `scope` claim; `403` when absent.
+- `AxiamUser.scopes` and `AxiamUser.rolesClaimPresent` (an absent `roles` claim is distinguishable from `[]`).
+- `axiamOidcLogin(..., onSuccessWithCall = { tokens, entry, call -> })`: the success callback that receives the
+  Ktor `ApplicationCall` (§12.8 rule 2). `onSuccess` is unchanged and still runs.
+- `axiamOidcLogin(..., allowReturnTo = { url -> })`: an integrator predicate that may widen the `return_to` rule.
+- `OidcStateEntry.bindingDigest` (optional) and `MemoryOidcStateStore(maxEntries = 10_000)`, which evicts the
+  oldest entry when full.
+
+### Changed
+
+- Vendored `CONTRACT.md`, `openapi.json` and `management-registry.json` re-synced to contract 1.68; the §27
+  surface is regenerated (`AuditLogEntry.organizationId`, the audit and privacy operation documentation).
+
+### Migration notes
+
+- **`requireRole` / `@AxiamRequireRole` / `AxiamUser.roles` (N15, behaviour change).** Roles now come from the
+  `roles` claim, which the server emits only when the client requested, and is allowed, the `roles` scope.
+  **Add `roles` to the scope you pass to `oidcBegin`** (or `scope=roles` on a client-credentials grant) and have
+  an administrator register `roles` for the client; the SDK never adds it. Until you do, every `requireRole` is a
+  `403`. If you relied on a scope standing in for a role, switch those routes to `requireScope`. `AxiamUser`'s
+  constructor gained two defaulted parameters (`scopes`, `rolesClaimPresent`); a `copy`/destructuring call
+  site that listed three components still compiles.
+- **Login glue (C7, C6, behaviour change).** Sign-ins in flight across the upgrade fail once and restart (their
+  entries have no digest). A custom `OidcStateStore` MUST persist and return `OidcStateEntry.bindingDigest`
+  unchanged, or every callback is refused. The callback must be reached by the same browser that hit the login
+  route, so a front end that starts the login from one origin and completes it on another loses the cookie
+  (`__Host-` cookies are host-only and `Secure`). On plain HTTP to a non-loopback host the browser drops the
+  cookie and the callback fails closed; use HTTPS. An absolute or scheme-relative `return_to` is now dropped;
+  pass `allowReturnTo` to accept the origins you trust. In `axiamOidcLogin` the new `allowReturnTo` and
+  `onSuccessWithCall` parameters sit before the trailing `onSuccess`, so a trailing-lambda call is unaffected;
+  a call that passed `onSuccess` positionally must name it.
+- **Guard (N12, N14).** A cookie-authenticated `POST`/`PUT`/`PATCH`/`DELETE` must now send `X-CSRF-Token`
+  equal to the `axiam_csrf` cookie; a browser client that already echoes it (this SDK's `AxiamClient` does) is
+  unaffected, a hand-rolled one is refused `403`. Access tokens minted by an AXIAM server before 1.67 carry
+  `typ: JWT` and are refused; their holders refresh (at most one access-token lifetime).
 ### Changed
 
 - Monthly dependency refresh (2026-11): Gradle wrapper 9.9.1 -> 9.9.2; RabbitMQ `amqp-client` (compileOnly / tests) 5.38.0. Kotlin (2.2.21 floor, 2.4.21 newest) and JVM (17 floor, 27 newest) support unchanged.

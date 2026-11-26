@@ -77,11 +77,12 @@ class KtorPluginTest {
     @AfterEach
     fun tearDown() = backend.shutdown()
 
-    private fun token(scope: String = "documents:read"): String {
+    private fun token(scope: String = "documents:read", roles: List<String>? = null): String {
         val claims = JWTClaimsSet.Builder()
             .subject("user-1")
             .claim("tenant_id", TestSupport.TENANT_ID)
             .claim("scope", scope)
+            .apply { if (roles != null) claim("roles", roles) }
             .expirationTime(Date(System.currentTimeMillis() + 3_600_000))
             .build()
         val jwt = SignedJWT(JWSHeader.Builder(JWSAlgorithm.EdDSA).keyID("k1").build(), claims)
@@ -140,11 +141,17 @@ class KtorPluginTest {
         }
         assertEquals(
             HttpStatusCode.OK,
-            client.get("/admin") { header("Authorization", "Bearer ${token("admin ops")}") }.status,
+            client.get("/admin") { header("Authorization", "Bearer ${token("openid roles", roles = listOf("admin", "ops"))}") }.status,
         )
         assertEquals(
             HttpStatusCode.Forbidden,
-            client.get("/admin") { header("Authorization", "Bearer ${token("documents:read")}") }.status,
+            client.get("/admin") { header("Authorization", "Bearer ${token("documents:read", roles = listOf("viewer"))}") }.status,
+        )
+        // N15 (contract 1.68): a scope named like the role is not the role. This pinned the
+        // opposite (scope "admin ops" satisfied requireRole("admin")) through 1.3.x.
+        assertEquals(
+            HttpStatusCode.Forbidden,
+            client.get("/admin") { header("Authorization", "Bearer ${token("openid admin ops")}") }.status,
         )
         axiam.close()
     }
