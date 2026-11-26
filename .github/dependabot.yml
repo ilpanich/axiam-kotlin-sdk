@@ -16,9 +16,9 @@ updates:
           - minor
           - patch
     # Runtime dependencies are held at the last release whose kotlin-stdlib is
-    # no newer than kotlinVersion in gradle.properties (2.2.21): a newer
+    # no newer than kotlinFloor in gradle.properties (2.2.21): a newer
     # stdlib does not compile on the floor CI leg and would raise the Kotlin
-    # floor for every consumer. Lift these together with kotlinVersion.
+    # floor for every consumer. Lift these together with kotlinFloor.
     ignore:
       - dependency-name: org.jetbrains.kotlinx:kotlinx-serialization-json
         versions: [">= 1.10.0"]   # 1.10 needs kotlin-stdlib 2.3, 1.12+ needs 2.4

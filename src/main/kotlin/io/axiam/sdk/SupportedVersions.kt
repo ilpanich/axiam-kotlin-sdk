@@ -46,11 +46,12 @@ public object SupportedVersions {
     public const val NEWEST_TESTED_JVM: Int = 27
 
     /**
-     * The Kotlin compiler version this SDK is published with, and therefore the
-     * minimum a consumer's compiler must be.
+     * The minimum Kotlin a consumer's compiler must be.
      *
-     * Mirrors `kotlinVersion` in `gradle.properties`. A consumer on an older
-     * Kotlin cannot read this library's `@Metadata` and fails at compile time.
+     * Mirrors `kotlinFloor` in `gradle.properties`, to which the build pins the
+     * published `@Metadata` (language and API version) and the `kotlin-stdlib`
+     * dependency, whichever compiler produced the artifact. A consumer on an
+     * older Kotlin cannot read that metadata and fails at compile time.
      */
     public const val MIN_KOTLIN_VERSION: String = "2.2.21"
 

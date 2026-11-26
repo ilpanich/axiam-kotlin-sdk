@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **The build now runs on Kotlin Gradle plugin 2.4.21** (was 2.2.21), which fixes GHSA-r937-wjx7-w2jp, a
+  build-cache deserialization flaw in the plugin. The plugin is a build tool and the published artifact does not
+  change for consumers: a new `kotlinFloor=2.2.21` property pins `apiVersion`, `languageVersion` and
+  `coreLibrariesVersion`, so the `@Metadata` and the POM's `kotlin-stdlib` still ask for Kotlin 2.2.21.
+  `VersionPolicyTest` reads the metadata version back from the compiled classes and checks the stdlib on the
+  classpath. The minimum Kotlin for consumers is unchanged.
+
 ## [1.4.0] - 2026-11-22
 
 ### Security

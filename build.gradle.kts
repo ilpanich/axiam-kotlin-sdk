@@ -1,4 +1,5 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.dsl.KotlinVersion as KotlinLanguageVersion
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
@@ -28,8 +29,8 @@ repositories {
 
 // Held at 3.3.x, the last Ktor line on kotlin-stdlib 2.2: 3.4 needs
 // kotlin-stdlib 2.3 and 3.5+ needs 2.3.21, newer than the Kotlin 2.2.21 this
-// SDK is published with (the CI floor leg). Move it together with
-// kotlinVersion in gradle.properties.
+// SDK is published against (the CI floor leg). Move it together with
+// kotlinFloor in gradle.properties.
 val ktorVersion = "3.3.3"
 val rabbitMqVersion = "5.38.0"
 val jnaVersion = "5.19.1"
@@ -43,8 +44,8 @@ dependencies {
     // releases on kotlin-stdlib 2.2 (coroutines 1.11 needs 2.2.20; serialization
     // 1.9 needs 2.2.0, 1.10 needs 2.3 and 1.12+ needs 2.4). A newer kotlin-stdlib on
     // the classpath silently raises the Kotlin floor this SDK publishes against
-    // (kotlinVersion in gradle.properties), which the floor CI leg and
-    // VersionPolicyTest reject. Move them together with kotlinVersion.
+    // (kotlinFloor in gradle.properties), which the floor CI leg and
+    // VersionPolicyTest reject. Move them together with kotlinFloor.
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
     implementation("com.squareup.okhttp3:okhttp:$okhttpVersion")
@@ -110,12 +111,26 @@ dependencies {
     testImplementation("io.ktor:ktor-server-test-host:$ktorVersion")
 }
 
+// The Kotlin consumers need, independent of the compiler that runs the build
+// (kotlinVersion). See gradle.properties.
+val kotlinFloor: String = providers.gradleProperty("kotlinFloor").get()
+
 kotlin {
+    // Published against the Kotlin FLOOR whatever compiler builds it: the
+    // language and API level fix the @Metadata version a consumer's compiler
+    // must read, and coreLibrariesVersion fixes the kotlin-stdlib the POM
+    // declares. Without these, building with the newest plugin would silently
+    // raise the floor for every consumer on 2.2 or 2.3.
+    coreLibrariesVersion = kotlinFloor
+    val floorLanguage = KotlinLanguageVersion.fromVersion(kotlinFloor.substringBeforeLast('.'))
+
     // Target JVM 17 bytecode. A strict toolchain(17) is intentionally NOT pinned
     // so the build runs on either JDK 17 (CI's setup-java) or a newer JDK
     // (e.g. 21) while always emitting 17-compatible bytecode.
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_17)
+        apiVersion.set(floorLanguage)
+        languageVersion.set(floorLanguage)
         freeCompilerArgs.add("-Xjvm-default=all")
     }
 }
