@@ -5,6 +5,8 @@ import io.axiam.sdk.AxiamUser
 import io.axiam.sdk.annotations.AxiamRequireAccess
 import io.axiam.sdk.annotations.AxiamRequireAuth
 import io.axiam.sdk.annotations.AxiamRequireRole
+import io.axiam.sdk.annotations.AxiamRequireScope
+import io.axiam.sdk.annotations.AxiamRequireScopes
 import io.axiam.sdk.errors.AuthError
 import io.axiam.sdk.errors.AuthzError
 import io.axiam.sdk.errors.AxiamException
@@ -336,20 +338,34 @@ suspend fun ApplicationCall.requireAccess(
 
 /**
  * Annotation-driven enforcement (§11): applies any of [AxiamRequireAuth],
- * [AxiamRequireRole], [AxiamRequireAccess] present in [annotations], resolving a
+ * [AxiamRequireRole], [AxiamRequireScope] (repeatable: every occurrence must pass), [AxiamRequireAccess] present in [annotations], resolving a
  * [AxiamRequireAccess] resource from its static `resourceId` or the route
  * parameter named by `resourceParam`. Returns the [AxiamUser] on success, or
  * `null` (after responding) on any failure. State-changing methods with an
  * absent token still resolve to 401 via [requireAuth].
  */
 suspend fun ApplicationCall.enforce(vararg annotations: Annotation): AxiamUser? {
-    if (annotations.none { it is AxiamRequireAuth || it is AxiamRequireRole || it is AxiamRequireAccess }) {
+    // A repeated @AxiamRequireScope reaches reflection wrapped in its JVM container.
+    val scopeAnnotations = annotations.flatMap {
+        when (it) {
+            is AxiamRequireScope -> listOf(it)
+            is AxiamRequireScopes -> it.value.toList()
+            else -> emptyList()
+        }
+    }
+    if (scopeAnnotations.isEmpty() &&
+        annotations.none { it is AxiamRequireAuth || it is AxiamRequireRole || it is AxiamRequireAccess }
+    ) {
         return axiamUser
     }
     var user = requireAuth() ?: return null
 
     annotations.filterIsInstance<AxiamRequireRole>().firstOrNull()?.let { ann ->
         user = requireRole(*ann.roles) ?: return null
+    }
+    // Every scope annotation must pass (any-of within one, all-of across repeats).
+    for (ann in scopeAnnotations) {
+        user = requireScope(*ann.scopes) ?: return null
     }
     annotations.filterIsInstance<AxiamRequireAccess>().firstOrNull()?.let { ann ->
         val resourceId = ann.resourceId.ifEmpty { parameters[ann.resourceParam] ?: "" }

@@ -72,4 +72,53 @@ class JwksUnknownKidCooldownTest {
             assertEquals(before + 1, jwks.fetches.get())
         }
     }
+
+    @Test
+    fun `a cold cache and an unknown kid cause one fetch, not a load plus a miss fetch`() {
+        jwks.client().use { c ->
+            c.jwksVerifier().setClockForTesting { now.get() }
+            val forged = AccessTokenFixtures.mint(key, kid = "forged")
+            assertThrows(AuthError::class.java) { c.verifySession(forged) }
+            assertEquals(1, jwks.fetches.get(), "a cold cache and a forged kid must cost one JWKS fetch")
+            // And the window holds from there.
+            for (i in 0 until 49) {
+                assertThrows(AuthError::class.java) { c.verifySession(AccessTokenFixtures.mint(key, kid = "forged-$i")) }
+            }
+            assertEquals(1, jwks.fetches.get())
+        }
+    }
+
+    @Test
+    fun `the first unknown kid after the window costs exactly one fetch`() {
+        jwks.client().use { c ->
+            c.jwksVerifier().setClockForTesting { now.get() }
+            assertEquals("user-1", c.verifySession(AccessTokenFixtures.mint(key)).userId)
+            val warm = jwks.fetches.get()
+            now.addAndGet(JwksVerifier.UNKNOWN_KID_COOLDOWN_NANOS + 1)
+            assertThrows(AuthError::class.java) { c.verifySession(AccessTokenFixtures.mint(key, kid = "forged")) }
+            assertEquals(warm + 1, jwks.fetches.get(), "one fetch for the first miss after the window")
+            for (i in 0 until 49) {
+                assertThrows(AuthError::class.java) { c.verifySession(AccessTokenFixtures.mint(key, kid = "forged-$i")) }
+            }
+            assertEquals(warm + 1, jwks.fetches.get())
+        }
+    }
+
+    @Test
+    fun `fifty tokens against a failing JWKS endpoint cause at most one fetch per window`() {
+        jwks.status = 500
+        jwks.client().use { c ->
+            c.jwksVerifier().setClockForTesting { now.get() }
+            for (i in 0 until 50) {
+                assertThrows(AuthError::class.java) { c.verifySession(AccessTokenFixtures.mint(key)) }
+            }
+            assertEquals(1, jwks.fetches.get(), "a failing endpoint is fetched once per window, not once per token")
+
+            // The endpoint recovers: after the window one fetch brings the key in.
+            jwks.status = 200
+            now.addAndGet(JwksVerifier.UNKNOWN_KID_COOLDOWN_NANOS + 1)
+            assertEquals("user-1", c.verifySession(AccessTokenFixtures.mint(key)).userId)
+            assertEquals(2, jwks.fetches.get())
+        }
+    }
 }

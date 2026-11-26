@@ -44,10 +44,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   again before redirecting.
 - **C5 — at most one JWKS fetch per unknown-`kid` window (§12.4 rule 2).** nimbus's `DefaultJWKSetCache` re-fetched
   on every `kid` miss; `JwksVerifier` now keeps a 60 s window, so forged `kid`s cannot drive one fetch each.
+  The key set is now fetched and cached by `JwksVerifier` itself (KOT-R1-5): nimbus's `RemoteJWKSet` could still
+  fetch twice for one lookup (a load or refresh, then a second fetch on the `kid` miss), so a cold cache, or the
+  first miss after a window, cost two fetches. Now one fetch per window holds on a warm cache, a cold one, and
+  while the endpoint is failing (a failed attempt opens the window too); the first fetch is immediate.
+- **Back-channel logout tokens are selected by `kid` (contract 1.69, #880).** `verifyLogoutToken` already
+  required a `kid` through the shared §12.4 verifier; new tests pin it with a server-shaped token (header exactly
+  `alg`, `typ: logout+jwt`, `kid`) against a two-key JWKS whose signing key is not first, refuse a kid-less token
+  and an unknown `kid` as `unknown_kid`, and show that §10.1 rules 10 and 11 stay off the logout and ID-token
+  paths. No production behaviour changed. A logout token from a server before 1.69 carries no `kid` and is refused.
 
 ### Added
 
 - `requireScope(vararg scopes)` (§11.2 rule 11d): a local check of the `scope` claim; `403` when absent.
+- `@AxiamRequireScope(vararg scopes)` (KOT-R1-1), the annotation form of `requireScope`, applied by `call.enforce(...)`.
+  It is repeatable: any listed scope satisfies one annotation, and every annotation must pass.
 - `AxiamUser.scopes` and `AxiamUser.rolesClaimPresent` (an absent `roles` claim is distinguishable from `[]`).
 - `axiamOidcLogin(..., onSuccessWithCall = { tokens, entry, call -> })`: the success callback that receives the
   Ktor `ApplicationCall` (§12.8 rule 2). `onSuccess` is unchanged and still runs.
@@ -60,15 +71,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Vendored `CONTRACT.md`, `openapi.json` and `management-registry.json` re-synced to contract 1.68; the §27
   surface is regenerated (`AuditLogEntry.organizationId`, the audit and privacy operation documentation).
 
+### Fixed
+
+- **The login callback clears the binding cookie on every exit (KOT-R1-4).** The clearing `Set-Cookie` is set
+  before the success hook runs, so the framework's error response for a hook (or store) that throws carries it
+  too. The KDoc of `onSuccessWithCall` now says the hook must not send a response (a hook that responds itself was
+  already tolerated by the test host; no behaviour change there).
+- **The callback's `Location` header is the percent-encoded form of the destination (login-glue Decision 7).** A
+  `return_to` or `successRedirect` holding a space or a non-ASCII character used to reach the header raw; a CR/LF
+  admitted by `allowReturnTo` now becomes `%0D%0A`. The application is never asked to encode.
+- An `allowReturnTo` predicate that throws an `Error` (not only an `Exception`) accepts nothing (N4).
+- `MemoryOidcStateStore` enforces its bound under the same lock that checks it, so concurrent `/login` calls can
+  no longer overshoot `maxEntries`; eviction and the expiry sweep are O(1) per removed entry (KOT-R1-7).
+- Binary compatibility with 1.3.1 is restored for `AxiamUser(String, String, List)`, the five-argument
+  `OidcStateEntry`, `MemoryOidcStateStore(long)` and the 1.3.1 `axiamOidcLogin` signature (KOT-R1-3, N2).
+- README and KDoc: the §10.1 rule table is in order, "every rule above" replaces "all seven rules", and
+  `verifySession` documents rules 10-12 and the `roles` / `scopes` sources (KOT-R1-6).
+
 ### Migration notes
 
 - **`requireRole` / `@AxiamRequireRole` / `AxiamUser.roles` (N15, behaviour change).** Roles now come from the
   `roles` claim, which the server emits only when the client requested, and is allowed, the `roles` scope.
   **Add `roles` to the scope you pass to `oidcBegin`** (or `scope=roles` on a client-credentials grant) and have
   an administrator register `roles` for the client; the SDK never adds it. Until you do, every `requireRole` is a
-  `403`. If you relied on a scope standing in for a role, switch those routes to `requireScope`. `AxiamUser`'s
-  constructor gained two defaulted parameters (`scopes`, `rolesClaimPresent`); a `copy`/destructuring call
-  site that listed three components still compiles.
+  `403`. If you relied on a scope standing in for a role, switch those routes to `requireScope` or
+  `@AxiamRequireScope`. `AxiamUser`'s constructor gained two defaulted parameters (`scopes`,
+  `rolesClaimPresent`); a three-argument constructor call still compiles **and** still links (`@JvmOverloads`
+  keeps the 1.3.1 JVM signature, as do the five-argument `OidcStateEntry`, `MemoryOidcStateStore(long)` and the
+  1.3.1 `axiamOidcLogin`). The data classes' generated `copy` and `copy$default` did change shape, so Kotlin code
+  that calls `copy` on `AxiamUser` or `OidcStateEntry` must be recompiled against 1.4.0 (source is unchanged).
 - **Login glue (C7, C6, behaviour change).** Sign-ins in flight across the upgrade fail once and restart (their
   entries have no digest). A custom `OidcStateStore` MUST persist and return `OidcStateEntry.bindingDigest`
   unchanged, or every callback is refused. The callback must be reached by the same browser that hit the login
@@ -77,7 +108,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cookie and the callback fails closed; use HTTPS. An absolute or scheme-relative `return_to` is now dropped;
   pass `allowReturnTo` to accept the origins you trust. In `axiamOidcLogin` the new `allowReturnTo` and
   `onSuccessWithCall` parameters sit before the trailing `onSuccess`, so a trailing-lambda call is unaffected;
-  a call that passed `onSuccess` positionally must name it.
+  a call that passed `onSuccess` positionally must name it in source (a jar already compiled against 1.3.1 keeps
+  working). The success hook runs after the clearing `Set-Cookie` is set and must not send a response itself.
+- **`JwksVerifier` (KOT-R1-2).** `verifyAccessTokenSignature` and `setClockForTesting`, new in this release,
+  are `internal`: a custom guard calls `AxiamClient.verifySession`, not a signature-only primitive.
 - **Guard (N12, N14).** A cookie-authenticated `POST`/`PUT`/`PATCH`/`DELETE` must now send `X-CSRF-Token`
   equal to the `axiam_csrf` cookie; a browser client that already echoes it (this SDK's `AxiamClient` does) is
   unaffected, a hand-rolled one is refused `403`. Access tokens minted by an AXIAM server before 1.67 carry

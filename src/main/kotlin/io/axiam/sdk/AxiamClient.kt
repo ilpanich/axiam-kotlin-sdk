@@ -1435,7 +1435,11 @@ class AxiamClient private constructor(
      * key lookup, REQUIRED `exp`, `nbf` when present, REQUIRED `tenant_id`
      * asserted against the configured tenant, `iss`/`aud` when this client
      * was configured with an expected value (see [Builder.expectedIssuer] /
-     * [Builder.expectedAudience]), and **rule 9**: a token carrying `cnf`
+     * [Builder.expectedAudience]), **rules 10-12** (contract 1.68: the token
+     * is an ACCESS token — a header `typ` other than `at+jwt` is refused, a
+     * payload with a `purpose` member is refused whatever its value, and a
+     * missing `kid` is refused, with no "only key in the set" fallback), and
+     * **rule 9**: a token carrying `cnf`
      * MUST NOT be accepted without proof the caller holds the named key — see
      * [presentedProofs] — with a single bounded
      * [JwksVerifier.CLOCK_SKEW_SECONDS] leeway on the time claims. Every
@@ -1456,6 +1460,10 @@ class AxiamClient private constructor(
      * own, but an integrator embedding it in one that does terminate mTLS or
      * verify DPoP — passes [presentedProofs] explicitly; see
      * [JwksVerifier.verifyTokenBinding] for the full ten-row table.
+     *
+     * The returned [AxiamUser] takes `roles` from the token's `roles` claim
+     * only and `scopes` from its space-separated `scope` claim (§11.2 rule 11):
+     * the two never stand in for each other.
      *
      * The signature-only primitive
      * ([JwksVerifier.verifySignatureOnlyUnchecked]) is NOT a substitute for

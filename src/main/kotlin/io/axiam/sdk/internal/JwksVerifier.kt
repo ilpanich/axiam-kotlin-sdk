@@ -8,12 +8,12 @@ import com.nimbusds.jose.jwk.Curve
 import com.nimbusds.jose.jwk.JWK
 import com.nimbusds.jose.jwk.JWKMatcher
 import com.nimbusds.jose.jwk.JWKSelector
+import com.nimbusds.jose.jwk.JWKSet
 import com.nimbusds.jose.jwk.KeyType
 import com.nimbusds.jose.jwk.KeyUse
 import com.nimbusds.jose.jwk.OctetKeyPair
-import com.nimbusds.jose.jwk.source.DefaultJWKSetCache
 import com.nimbusds.jose.jwk.source.RemoteJWKSet
-import com.nimbusds.jose.proc.SecurityContext
+import com.nimbusds.jose.util.DefaultResourceRetriever
 import com.nimbusds.jose.util.Base64URL
 import com.nimbusds.jwt.JWTClaimsSet
 import com.nimbusds.jwt.SignedJWT
@@ -23,7 +23,6 @@ import java.net.URL
 import java.security.MessageDigest
 import java.util.Base64
 import java.util.Locale
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
@@ -32,9 +31,9 @@ import kotlin.concurrent.withLock
  * verification primitive — extended (never forked) by [verifyForIdToken] for
  * the CONTRACT.md §12.4 ID-token validation checklist.
  *
- * Keys are fetched/cached/rotated by nimbus's [RemoteJWKSet] +
- * [DefaultJWKSetCache] (TTL 300s, forced-refetch cooldown 60s — matching the
- * sibling SDKs' defaults).
+ * Keys are fetched through nimbus's [DefaultResourceRetriever] and cached here
+ * (TTL 300 s; a set older than 60 s is re-fetched on the next use; at most ONE
+ * fetch per 60 s window whatever the cause — see [selectKeyOrNull]).
  *
  * **Algorithm pinning:** the header `alg` is checked against an EdDSA allowlist
  * BEFORE any key lookup, so the token's own `alg` never selects the
@@ -54,21 +53,34 @@ import kotlin.concurrent.withLock
  * signature verification through it and then applies [assertLocalClaims],
  * which is the full §10.1 minimum local-verification set.
  */
-class JwksVerifier private constructor(jwksUrl: URL) {
+class JwksVerifier private constructor(private val jwksUrl: URL) {
 
-    private val jwkSource: RemoteJWKSet<SecurityContext> =
-        RemoteJWKSet(jwksUrl, null, DefaultJWKSetCache(300, 60, TimeUnit.SECONDS))
+    private val retriever = DefaultResourceRetriever(
+        RemoteJWKSet.DEFAULT_HTTP_CONNECT_TIMEOUT,
+        RemoteJWKSet.DEFAULT_HTTP_READ_TIMEOUT,
+        RemoteJWKSet.DEFAULT_HTTP_SIZE_LIMIT,
+    )
     private val refreshLock = ReentrantLock()
 
-    /** When the last JWKS fetch was started (the cooldown window's origin); guarded by [refreshLock]. */
+    /** One fetched key set and the moment it was fetched. */
+    private class Cached(val keys: JWKSet, val atNanos: Long)
+
+    /** The last key set fetched; written only under [refreshLock], read lock-free. */
+    @Volatile
+    private var cached: Cached? = null
+
+    /**
+     * When the last JWKS fetch was ATTEMPTED, success or failure (the cooldown
+     * window's origin); `0` until the first one. Guarded by [refreshLock].
+     */
     private var lastFetchNanos: Long = 0L
 
-    /** Monotonic clock (nanoseconds) behind the unknown-`kid` cooldown; replaceable by tests. */
+    /** Monotonic clock (nanoseconds) behind the cooldown and the cache ages; replaceable by tests. */
     @Volatile
     private var clockNanos: () -> Long = System::nanoTime
 
-    /** Test seam: replaces the monotonic clock behind the unknown-`kid` cooldown. */
-    fun setClockForTesting(clock: () -> Long) {
+    /** Test seam: replaces the monotonic clock behind the unknown-`kid` cooldown. Not part of the public API. */
+    internal fun setClockForTesting(clock: () -> Long) {
         clockNanos = clock
     }
 
@@ -98,7 +110,10 @@ class JwksVerifier private constructor(jwksUrl: URL) {
     fun verifySignatureOnlyUnchecked(token: String): JWTClaimsSet = verifiedJwt(token).claims()
 
     /**
-     * The §10 guard's token primitive: [verifySignatureOnlyUnchecked] plus the
+     * The §10 guard's token primitive — **internal to the SDK, not a public entry
+     * point** (it checks rules 1 and 10-12 only: no `exp`, `nbf`, `tenant_id`,
+     * `iss`, `aud` or `cnf`, so it is not a guard on its own; the guard is
+     * [io.axiam.sdk.AxiamClient.verifySession]): [verifySignatureOnlyUnchecked] plus the
      * CONTRACT.md §10.1 rules 10-12 that say the token is an ACCESS token
      * (contract 1.68; N14, N10, D-7).
      *
@@ -125,7 +140,7 @@ class JwksVerifier private constructor(jwksUrl: URL) {
      *
      * @throws AuthError if [token] fails signature verification or rules 10-12.
      */
-    fun verifyAccessTokenSignature(token: String): JWTClaimsSet {
+    internal fun verifyAccessTokenSignature(token: String): JWTClaimsSet {
         val jwt = verifiedJwt(token)
         assertAccessTokenShape(jwt)
         return jwt.claims()
@@ -206,7 +221,7 @@ class JwksVerifier private constructor(jwksUrl: URL) {
     /**
      * CONTRACT.md §12.4 rules 1-2 for an OIDC `id_token`: the SAME
      * alg-allowlist + kid-lookup + one-shot unknown-kid-refetch machinery as
-     * [verifySignatureOnlyUnchecked] (same [jwkSource], same [refreshLock] —
+     * [verifySignatureOnlyUnchecked] (same cache, same [refreshLock] —
      * never a forked fetch path), but the thrown [AuthError] carries one of
      * the §12.3 rule 3 reason codes (`invalid_alg`, `unknown_kid`,
      * `invalid_signature`) instead of that method's plain messages, so the
@@ -280,15 +295,21 @@ class JwksVerifier private constructor(jwksUrl: URL) {
         AuthError("id_token validation failed ($reason): $detail", reason)
 
     /**
-     * Resolves the EdDSA key matching [header]'s `kid` from the cached JWKS,
-     * forcing exactly one re-fetch on a cache miss before giving up. Returns
-     * `null` — never throws — on ANY failure to produce a match: no `kid`
-     * header, a `kid` absent from the JWKS even after the re-fetch, or the
-     * re-fetch itself failing (e.g. the JWKS endpoint returning a 5xx). Both
-     * [verifySignatureOnlyUnchecked] and [verifyForIdToken] treat a `null`
-     * result as their own
-     * "no matching key" failure — this is the ONE shared fetch/cache/refetch
-     * code path (CONTRACT.md §12 forbids forking the JWKS mechanism).
+     * Resolves the EdDSA key matching [header]'s `kid`. Returns `null` — never
+     * throws — on ANY failure to produce a match: no `kid` header, a `kid`
+     * absent from the key set, or the fetch itself failing (a 5xx, a timeout).
+     * Both [verifySignatureOnlyUnchecked] and [verifyForIdToken] treat a `null`
+     * result as their own "no matching key" failure — this is the ONE shared
+     * fetch/cache code path (CONTRACT.md §12 forbids forking the JWKS mechanism).
+     *
+     * CONTRACT.md §12.4 rule 2 (C5): at most ONE JWKS fetch per cooldown window,
+     * however many tokens present a `kid` the cache does not hold — on a warm
+     * cache, on a cold one, and when the endpoint is failing. The fetch is made
+     * here, exactly once per call that is allowed to fetch (nimbus's
+     * `RemoteJWKSet` can fetch twice per lookup: a refresh, then a second fetch
+     * on the miss). A set younger than the window serves known keys with no
+     * fetch; an older one is re-fetched on the next use, so a withdrawn key stops
+     * being accepted within about a minute. The very first fetch is immediate.
      */
     private fun selectKeyOrNull(header: JWSHeader): OctetKeyPair? {
         if (header.keyID.isNullOrEmpty()) return null
@@ -302,37 +323,35 @@ class JwksVerifier private constructor(jwksUrl: URL) {
             .build()
         val selector = JWKSelector(matcher)
 
-        selectFromCache(selector)?.let { return it }
+        val clock = clockNanos
+        cached?.takeIf { clock() - it.atNanos < UNKNOWN_KID_COOLDOWN_NANOS }?.let { snapshot ->
+            firstOctetKeyPair(selector.select(snapshot.keys))?.let { return it }
+        }
 
         return refreshLock.withLock {
-            selectFromCache(selector)?.let { return@withLock it }
-
-            // CONTRACT.md §12.4 rule 2 (C5): at most ONE re-fetch per cooldown
-            // window, however many tokens present a `kid` the cache does not
-            // hold. nimbus's DefaultJWKSetCache re-fetches on EVERY `kid` miss
-            // (its 60 s "refresh time" bounds the TTL path, not this one), so
-            // an attacker minting random kids would drive one JWKS fetch per
-            // forged token. The window is kept here. A cold or expired cache is
-            // a plain load, but it opens the window too.
-            val now = clockNanos()
-            val cold = jwkSource.cachedJWKSet == null
-            if (!cold && lastFetchNanos != 0L && now - lastFetchNanos < UNKNOWN_KID_COOLDOWN_NANOS) {
-                return@withLock null
+            val now = clock()
+            val current = cached
+            if (current != null && now - current.atNanos < UNKNOWN_KID_COOLDOWN_NANOS) {
+                // Another caller refreshed while this one waited for the lock.
+                firstOctetKeyPair(selector.select(current.keys))?.let { return@withLock it }
+            }
+            // Inside the window: no fetch. A key the (unexpired) cache holds is
+            // still served; an unknown one is refused.
+            val usable = current?.takeIf { now - it.atNanos < CACHE_TTL_NANOS }
+            if (lastFetchNanos != 0L && now - lastFetchNanos < UNKNOWN_KID_COOLDOWN_NANOS) {
+                return@withLock usable?.let { firstOctetKeyPair(selector.select(it.keys)) }
             }
             lastFetchNanos = if (now == 0L) 1L else now
 
-            val matches = try {
-                jwkSource.get(selector, null)
+            val fetched = try {
+                JWKSet.parse(retriever.retrieveResource(jwksUrl).content)
             } catch (_: Exception) {
-                emptyList()
+                null
             }
-            firstOctetKeyPair(matches)
+            if (fetched != null) cached = Cached(fetched, now)
+            val keys = fetched ?: usable?.keys ?: return@withLock null
+            firstOctetKeyPair(selector.select(keys))
         }
-    }
-
-    private fun selectFromCache(selector: JWKSelector): OctetKeyPair? {
-        val cached = jwkSource.cachedJWKSet ?: return null
-        return firstOctetKeyPair(selector.select(cached))
     }
 
     private fun firstOctetKeyPair(jwks: List<JWK>): OctetKeyPair? =
@@ -381,6 +400,9 @@ class JwksVerifier private constructor(jwksUrl: URL) {
          * the cache does not hold. 60 s, in nanoseconds.
          */
         const val UNKNOWN_KID_COOLDOWN_NANOS: Long = 60_000_000_000L
+
+        /** How long a fetched key set is served at all, when a re-fetch fails: 300 s, in nanoseconds. */
+        private const val CACHE_TTL_NANOS: Long = 300_000_000_000L
 
         /** CONTRACT.md §10.1 rule 10 — the `typ` an access token carries (RFC 9068 §2.1), lower-cased. */
         private const val ACCESS_TOKEN_TYP = "at+jwt"

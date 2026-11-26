@@ -232,6 +232,8 @@ object OidcTestKit {
         eventValueNotAnObject: Boolean = false,
         nonce: String? = null,
         kid: String? = signingKey.keyID,
+        /** The server's own header `typ` (contract 1.69): the header is exactly `alg`, `typ`, `kid`. */
+        typ: String? = "logout+jwt",
     ): String {
         val claims = JWTClaimsSet.Builder()
         claims.issuer(issuer)
@@ -249,6 +251,7 @@ object OidcTestKit {
 
         val headerBuilder = JWSHeader.Builder(JWSAlgorithm.EdDSA)
         kid?.let { headerBuilder.keyID(it) }
+        typ?.let { headerBuilder.type(com.nimbusds.jose.JOSEObjectType(it)) }
         val jwt = SignedJWT(headerBuilder.build(), claims.build())
         jwt.sign(Ed25519Signer(signingKey))
         return jwt.serialize()

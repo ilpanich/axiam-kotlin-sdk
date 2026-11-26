@@ -32,7 +32,7 @@ import java.util.UUID
  *                    says nothing about roles (ask for the `roles` scope)",
  *                    `true` with an empty [roles] means "the user holds none"
  */
-data class AxiamUser(
+data class AxiamUser @JvmOverloads constructor(
     val userId: String,
     val tenantId: String,
     val roles: List<String>,

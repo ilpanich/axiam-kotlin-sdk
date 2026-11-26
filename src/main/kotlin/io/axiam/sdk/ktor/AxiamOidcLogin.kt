@@ -105,7 +105,10 @@ import java.util.Locale
  *   [ApplicationCall] that completed the sign-in, so the application creates
  *   its session on THAT request without ambient context (§12.8 rule 2). Runs
  *   after [onSuccess] when both are set; the old hook is kept so the published
- *   signature of [onSuccess] does not change
+ *   signature of [onSuccess] does not change. **The hook must not send a
+ *   response**: the glue sends the outcome itself. A
+ *   hook that throws gets the framework's error response, which still clears the
+ *   binding cookie (the clearing header is set before the hook can run)
  * @param onSuccess called with the validated token set once the exchange
  *   succeeds — the hook where the host application establishes its OWN
  *   session (sign a cookie, write a session row, ...). Receives the consumed
@@ -134,6 +137,11 @@ fun Route.axiamOidcLogin(
     get(callbackPath) {
         val query = call.request.queryParameters
         val applicationCall = call
+        // §12.8 rule 1 (d): every callback response — success, the uniform
+        // 401, every other error AND the framework's error response when a hook
+        // or the store throws — clears the binding cookie. The header is set
+        // before anything that can throw runs, so no exit path can miss it.
+        call.response.headers.append(HttpHeaders.SetCookie, oidcBindingCookie(redirectUri, value = "", clear = true))
         val outcome = completeOidcLogin(
             client = client,
             store = store,
@@ -156,12 +164,37 @@ fun Route.axiamOidcLogin(
             bindingCookie = call.request.cookies[cookieName],
             allowReturnTo = allowReturnTo,
         )
-        // §12.8 rule 1 (d): every callback response — success, the uniform
-        // 401 and every other error — clears the binding cookie.
-        call.response.headers.append(HttpHeaders.SetCookie, oidcBindingCookie(redirectUri, value = "", clear = true))
         respondOutcome(call, outcome)
     }
 }
+
+/**
+ * The 1.3.1 signature of [axiamOidcLogin], kept in the bytecode so a caller
+ * compiled against 1.3.x still links; hidden from source, where the full
+ * signature above applies.
+ */
+@Deprecated("Binary compatibility with 1.3.1 only.", level = DeprecationLevel.HIDDEN)
+fun Route.axiamOidcLogin(
+    client: AxiamClient,
+    redirectUri: String,
+    store: OidcStateStore = MemoryOidcStateStore(),
+    loginPath: String = "/login",
+    callbackPath: String = "/callback",
+    scope: String? = null,
+    successRedirect: String? = null,
+    onSuccess: (suspend (OidcTokenSet, OidcStateEntry) -> Unit)? = null,
+) = axiamOidcLogin(
+    client = client,
+    redirectUri = redirectUri,
+    store = store,
+    loginPath = loginPath,
+    callbackPath = callbackPath,
+    scope = scope,
+    successRedirect = successRedirect,
+    allowReturnTo = null,
+    onSuccessWithCall = null,
+    onSuccess = onSuccess,
+)
 
 /**
  * What a login/callback route should do next — one arm per response shape.
@@ -311,7 +344,8 @@ private suspend fun respondOutcome(call: ApplicationCall, outcome: OidcLoginOutc
     when (outcome) {
         is OidcLoginOutcome.Redirect -> {
             outcome.setCookie?.let { call.response.headers.append(HttpHeaders.SetCookie, it) }
-            call.respondRedirect(outcome.url)
+            // Decision 7 (login-glue binding): the adapter encodes the Location value.
+            call.respondRedirect(encodeRedirectLocation(outcome.url))
         }
         is OidcLoginOutcome.Success -> {
             val body = buildJsonObject {
@@ -421,7 +455,58 @@ internal fun isAcceptableReturnTo(value: String, allow: ((String) -> Boolean)?):
     if (allow == null) return false
     return try {
         allow(value)
-    } catch (_: Exception) {
+    } catch (e: Throwable) {
+        // A predicate that fails — an Error included (a stack overflow in a
+        // recursive matcher, say) — accepts nothing. Only a dying JVM is not ours to swallow.
+        if (e is VirtualMachineError) throw e
         false
     }
 }
+
+/**
+ * The `Location` value for a redirect to [destination]: its percent-encoded form
+ * (login-glue binding, Decision 7). Every character outside the URL-safe set is
+ * UTF-8 percent-encoded with upper-case hex (space `%20`, `é` `%C3%A9`, CR `%0D`,
+ * LF `%0A`); a `%` that already starts a well-formed escape is kept, any other
+ * `%` becomes `%25`; every lone surrogate becomes U+FFFD (then UTF-8 encoded, never a crash); `\` is kept as it is. The result
+ * is pure ASCII with no byte below `0x21`, so CR/LF can never split the header.
+ */
+internal fun encodeRedirectLocation(destination: String): String {
+    val out = StringBuilder(destination.length + 8)
+    var i = 0
+    while (i < destination.length) {
+        val c = destination[i]
+        val code = c.code
+        when {
+            c == '%' -> {
+                val wellFormed = i + 2 < destination.length &&
+                    isHexDigit(destination[i + 1]) && isHexDigit(destination[i + 2])
+                out.append(if (wellFormed) "%" else "%25")
+                i++
+            }
+            code == 0x21 || code in 0x23..0x3B || code == 0x3D || code in 0x3F..0x5F || code in 0x61..0x7A || code == 0x7C || code == 0x7E -> {
+                out.append(c)
+                i++
+            }
+            else -> {
+                val cp = when {
+                    Character.isHighSurrogate(c) && i + 1 < destination.length &&
+                        Character.isLowSurrogate(destination[i + 1]) -> {
+                        val pair = Character.toCodePoint(c, destination[i + 1])
+                        i++
+                        pair
+                    }
+                    Character.isSurrogate(c) -> 0xFFFD
+                    else -> code
+                }
+                i++
+                for (b in String(Character.toChars(cp)).toByteArray(Charsets.UTF_8)) {
+                    out.append('%').append("%02X".format(b.toInt() and 0xFF))
+                }
+            }
+        }
+    }
+    return out.toString()
+}
+
+private fun isHexDigit(c: Char): Boolean = c in '0'..'9' || c in 'a'..'f' || c in 'A'..'F'

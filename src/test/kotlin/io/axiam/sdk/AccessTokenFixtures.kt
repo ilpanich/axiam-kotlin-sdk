@@ -79,14 +79,22 @@ object AccessTokenFixtures {
     class Jwks(initial: OctetKeyPair) {
         val published = AtomicReference(listOf(initial))
         val fetches = AtomicInteger()
+
+        /** The status `/oauth2/jwks` answers with; anything but 200 is a failing endpoint. */
+        @Volatile
+        var status: Int = 200
         val server = MockWebServer().also { s ->
             s.dispatcher = object : Dispatcher() {
                 override fun dispatch(request: RecordedRequest): MockResponse =
                     if ((request.path ?: "").startsWith("/oauth2/jwks")) {
                         fetches.incrementAndGet()
-                        MockResponse().setResponseCode(200)
-                            .addHeader("Content-Type", "application/json")
-                            .setBody(JWKSet(published.get().map { it.toPublicJWK() }).toString())
+                        if (status != 200) {
+                            MockResponse().setResponseCode(status).setBody("down")
+                        } else {
+                            MockResponse().setResponseCode(200)
+                                .addHeader("Content-Type", "application/json")
+                                .setBody(JWKSet(published.get().map { it.toPublicJWK() }).toString())
+                        }
                     } else {
                         MockResponse().setResponseCode(404)
                     }
