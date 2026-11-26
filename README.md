@@ -302,7 +302,7 @@ This SDK has **two** version axes, and floor + newest applies to each:
 | Axis | Floor | Newest tested | What the floor means |
 |---|---|---|---|
 | **JVM** | 17 | 27 | `jvmTarget` — the bytecode level in every class file. An older JVM fails with `UnsupportedClassVersionError` at class-load. |
-| **Kotlin** | 2.2.21 | 2.4.21 | The compiler the artifact is *published* with. An older consumer compiler cannot read the SDK's `@Metadata`. |
+| **Kotlin** | 2.2.21 | 2.4.21 | The language/API level and `kotlin-stdlib` the artifact is *published* against. An older consumer compiler cannot read the SDK's `@Metadata`. |
 
 Both are exported as `io.axiam.sdk.SupportedVersions`.
 
@@ -321,21 +321,30 @@ upper claims are unproven unless something builds them — so the gating matrix 
 ### Why the published Kotlin stays at the floor (2.2.21)
 
 Kotlin metadata is forward-compatible: a library compiled with 2.2 is readable
-by any later compiler. Compiling the *published* artifact with 2.4 would not
-widen support, it would **narrow** it — every consumer still on 2.2 or 2.3
-would be locked out.
+by any later compiler. Publishing 2.4 metadata would not widen support, it
+would **narrow** it — every consumer still on 2.2 or 2.3 would be locked out.
+
+The build tool and the published target are two separate settings in
+`gradle.properties`. `kotlinVersion` is the Kotlin Gradle plugin and compiler
+that run the build; it tracks the newest release, because a build tool's
+security fixes matter (GHSA-r937-wjx7-w2jp, a build-cache deserialization flaw,
+is fixed only in plugin 2.4.20). `kotlinFloor` is what consumers see: the build
+pins `apiVersion`, `languageVersion` and `coreLibrariesVersion` to it, so the
+`@Metadata` and the POM's `kotlin-stdlib` say 2.2.21 whichever compiler wrote
+them. `VersionPolicyTest` reads both back from the compiled classes and the
+test classpath.
 
 The floor moved from 2.1.0 to 2.2.21 for OkHttp 5: every OkHttp 5.x release
 is built with Kotlin 2.2 and requires `kotlin-stdlib` 2.2, so a 2.1 floor could
-no longer be honoured by the SDK's own dependency tree. So the published compiler stays at the floor and the newest
-leg proves the forward direction still holds. That is the same shape as the JVM
+no longer be honoured by the SDK's own dependency tree. So the published target stays at the floor, the floor
+leg proves the sources still compile with a 2.2.21 compiler, and the newest leg proves the forward direction. That is the same shape as the JVM
 axis: build at the floor, prove it works at the newest.
 
 Both ends are Gradle properties, so either leg is reproducible locally:
 
 ```bash
-./gradlew test                                              # floor
-./gradlew test -PkotlinVersion=2.4.21 -PtestJavaVersion=27  # newest
+./gradlew test -PkotlinVersion=2.2.21                       # floor
+./gradlew test -PtestJavaVersion=27                         # newest (Kotlin 2.4.21 is the default)
 ```
 
 ### Why the tests fork a separate JVM

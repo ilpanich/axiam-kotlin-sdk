@@ -12,8 +12,9 @@ import java.io.File
  * nothing compares:
  *
  * - `jvmTarget` in `build.gradle.kts` — the bytecode level in every class file;
- * - `kotlinVersion` in `gradle.properties` — the compiler that produces the
- *   published artifact and its `@Metadata`;
+ * - `kotlinFloor` in `gradle.properties` — the Kotlin the published
+ *   `@Metadata` and `kotlin-stdlib` dependency are pinned to (the compiler
+ *   that runs the build, `kotlinVersion`, is a separate and newer build tool);
  * - the `include:` matrix in `.github/workflows/sdk-ci-kotlin.yml` — the only
  *   declaration that is ever executed;
  * - [SupportedVersions] — the only one a consumer can read.
@@ -37,8 +38,8 @@ class VersionPolicyTest {
         /** `jvmTarget.set(JvmTarget.JVM_17)` in build.gradle.kts. */
         val JVM_TARGET = Regex("""JvmTarget\.JVM_(\d+)""")
 
-        /** `kotlinVersion=2.2.21` in gradle.properties. */
-        val KOTLIN_VERSION = Regex("""(?m)^kotlinVersion=(.+)$""")
+        /** `kotlinFloor=2.2.21` in gradle.properties. */
+        val KOTLIN_FLOOR = Regex("""(?m)^kotlinFloor=(.+)$""")
 
         /** `java: '17'` inside the CI matrix's include: entries. */
         val CI_JAVA = Regex("""(?m)^\s*java:\s*'([^']+)'\s*$""")
@@ -72,10 +73,10 @@ class VersionPolicyTest {
         return match!!.groupValues[1].toInt()
     }
 
-    /** The published Kotlin compiler version from gradle.properties. */
-    private fun declaredKotlinVersion(): String {
-        val match = KOTLIN_VERSION.find(read("gradle.properties"))
-        assertTrue(match != null, "gradle.properties declares no kotlinVersion")
+    /** The Kotlin floor the artifact is published against, from gradle.properties. */
+    private fun declaredKotlinFloor(): String {
+        val match = KOTLIN_FLOOR.find(read("gradle.properties"))
+        assertTrue(match != null, "gradle.properties declares no kotlinFloor")
         return match!!.groupValues[1].trim()
     }
 
@@ -100,9 +101,9 @@ class VersionPolicyTest {
     }
 
     @Test
-    fun `MIN_KOTLIN_VERSION matches the compiler the artifact is published with`() {
+    fun `MIN_KOTLIN_VERSION matches the Kotlin floor the artifact is published against`() {
         assertEquals(
-            declaredKotlinVersion(),
+            declaredKotlinFloor(),
             SupportedVersions.MIN_KOTLIN_VERSION,
             "SupportedVersions.MIN_KOTLIN_VERSION has drifted from gradle.properties",
         )
@@ -118,11 +119,39 @@ class VersionPolicyTest {
     }
 
     @Test
-    fun `CI compiles with the published Kotlin, not only a newer one`() {
-        val published = declaredKotlinVersion()
+    fun `CI compiles with the floor Kotlin, not only a newer one`() {
+        val floor = declaredKotlinFloor()
         assertTrue(
-            ciKotlinLegs().contains(published),
-            "the artifact is published from Kotlin $published but no CI leg uses it: ${ciKotlinLegs()}",
+            ciKotlinLegs().contains(floor),
+            "the artifact is published against Kotlin $floor but no CI leg compiles with it: ${ciKotlinLegs()}",
+        )
+    }
+
+    @Test
+    fun `the compiled metadata is the floor's, whichever compiler wrote it`() {
+        // The build compiles with the newest Kotlin plugin but pins
+        // languageVersion to the floor, which is what decides the @Metadata
+        // version a consumer's compiler must be able to read. Read it back from
+        // a class this build produced rather than trusting the build script.
+        val metadata = SupportedVersions::class.java.getAnnotation(Metadata::class.java)
+        val written = metadata.metadataVersion.take(2).joinToString(".")
+        assertEquals(
+            SupportedVersions.MIN_KOTLIN_VERSION.substringBeforeLast('.'),
+            written,
+            "the SDK's classes carry Kotlin $written metadata, not the floor's — " +
+                "consumers on ${SupportedVersions.MIN_KOTLIN_VERSION} could not read them",
+        )
+    }
+
+    @Test
+    fun `the kotlin-stdlib on the classpath is the floor's`() {
+        // coreLibrariesVersion pins the stdlib the POM declares to the floor. A
+        // newer one here means a dependency dragged it up, which would raise the
+        // floor for every consumer at resolution time.
+        assertEquals(
+            SupportedVersions.MIN_KOTLIN_VERSION,
+            KotlinVersion.CURRENT.toString(),
+            "kotlin-stdlib ${KotlinVersion.CURRENT} is on the classpath, not the floor's",
         )
     }
 
@@ -147,7 +176,7 @@ class VersionPolicyTest {
         assertEquals(
             SupportedVersions.MIN_KOTLIN_VERSION,
             kotlinLegs.first(),
-            "the first Kotlin leg is not the published compiler version",
+            "the first Kotlin leg is not the declared Kotlin floor",
         )
         assertEquals(
             SupportedVersions.NEWEST_TESTED_KOTLIN,
@@ -195,25 +224,6 @@ class VersionPolicyTest {
             "the build requested a JDK $expected test launcher but the suite is running on " +
                 "${Runtime.version().feature()} — the toolchain fell back to Gradle's own JVM, " +
                 "so this leg is testing nothing it was added to test",
-        )
-    }
-
-    @Test
-    fun `the compiling Kotlin version is one of the declared legs`() {
-        // KotlinVersion.CURRENT is the version of the compiler that built THIS
-        // test, so it identifies the leg from the inside — the one declaration
-        // that cannot be faked by editing a file.
-        val running = "${KotlinVersion.CURRENT.major}.${KotlinVersion.CURRENT.minor}"
-        val declared = listOf(
-            SupportedVersions.MIN_KOTLIN_VERSION,
-            SupportedVersions.NEWEST_TESTED_KOTLIN,
-        ).map { it.substringBeforeLast('.') }
-
-        assertTrue(
-            running in declared,
-            "compiled by Kotlin $running, which is neither the published " +
-                "${SupportedVersions.MIN_KOTLIN_VERSION} nor the newest tested " +
-                "${SupportedVersions.NEWEST_TESTED_KOTLIN}",
         )
     }
 }
