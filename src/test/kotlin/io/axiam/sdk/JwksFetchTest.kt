@@ -54,22 +54,30 @@ class JwksFetchTest {
             c.jwksVerifier().setClockForTesting { now.get() }
             val known = AccessTokenFixtures.mint(key)
             assertEquals("user-1", v(c, known).userId)
-            jwks.headersDelayMs = 3_000
+            // The refresh will stall for seconds: a dripped body, far below the 6 s deadline's end.
+            jwks.drip = true
+            jwks.padBytes = 100_000
+            c.jwksVerifier().fetchTotalTimeoutMs = 6_000
             at(ttl + 1 * s)
-            val started = System.nanoTime()
+            val t1 = System.nanoTime()
             assertEquals("user-1", c.verifySession(known).userId) // starts the stalled refresh behind it
-            // a second known-kid call while the fetch is in flight is not blocked either
+            val first = (System.nanoTime() - t1) / 1_000_000
+            // wait until the refresh is really on the wire and still in flight
+            val limit = System.nanoTime() + 3_000_000_000L
+            while (jwks.fetches.get() < 2 && System.nanoTime() < limit) Thread.sleep(5)
+            assertEquals(2, jwks.fetches.get(), "the refresh is in flight")
+            val t2 = System.nanoTime()
             assertEquals("user-1", c.verifySession(known).userId)
-            val ms = (System.nanoTime() - started) / 1_000_000
-            assertTrue(ms < 1_500, "a usable held key must not wait for the in-flight fetch, took $ms ms")
-            c.jwksVerifier().awaitIdleForTesting()
+            val second = (System.nanoTime() - t2) / 1_000_000
+            assertTrue(first < 200 && second < 200, "known-kid calls must not wait for the fetch: $first ms, $second ms")
+            c.jwksVerifier().awaitIdleForTesting() // the deadline ends it
             assertEquals(2, jwks.fetches.get())
         }
     }
 
     @Test
     fun `concurrent callers on a cold cache cause one fetch`() {
-        jwks.headersDelayMs = 400
+        jwks.headersDelayMs = 150
         jwks.client().use { c ->
             val pool = Executors.newFixedThreadPool(8)
             try {
@@ -86,12 +94,16 @@ class JwksFetchTest {
     }
 
     @Test
-    fun `an interrupted caller records no failure and opens no cooldown`() {
-        jwks.headersDelayMs = 150
+    fun `an interrupted caller records no failure and the window is stamped by the fetch's completion`() {
+        jwks.status = 500
+        jwks.headersDelayMs = 300
         jwks.client().use { c ->
+            c.jwksVerifier().setClockForTesting { now.get() }
             val token = AccessTokenFixtures.mint(key)
             val outcome = AtomicReference<Throwable?>()
+            val started = CountDownLatch(1)
             val t = Thread {
+                started.countDown()
                 try {
                     c.verifySession(token)
                 } catch (e: Throwable) {
@@ -99,14 +111,82 @@ class JwksFetchTest {
                 }
             }
             t.start()
-            Thread.sleep(40)
+            started.await()
+            val limit = System.nanoTime() + 3_000_000_000L
+            while (jwks.fetches.get() < 1 && System.nanoTime() < limit) Thread.sleep(2)
+            assertEquals(1, jwks.fetches.get(), "the fetch is on the wire")
             t.interrupt()
             t.join(5_000)
             assertTrue(outcome.get() is AuthError, "the interrupted caller is refused: ${outcome.get()}")
-            // The detached fetch is unaffected by the caller: it completes and publishes the set.
+            // The fake clock moves while the fetch is still stalled (the endpoint answers after 300 ms):
+            // only the fetch's own completion may stamp the window, at THIS instant.
+            at(10 * s)
             c.jwksVerifier().awaitIdleForTesting()
-            assertEquals("user-1", c.verifySession(token).userId)
-            assertEquals(1, jwks.fetches.get(), "the caller's interrupt did not cost or repeat a fetch")
+            at(10 * s + 59 * s)
+            assertThrows(AuthError::class.java) { v(c, token) }
+            assertEquals(1, jwks.fetches.get(), "inside the window stamped at the fetch's completion: no fetch")
+            at(10 * s + 61 * s)
+            assertThrows(AuthError::class.java) { v(c, token) }
+            assertEquals(2, jwks.fetches.get(), "past that window: one more fetch")
+        }
+    }
+
+    @Test
+    fun `a server dripping the response headers is abandoned at the deadline and a new fetch follows the window`() {
+        val accepts = java.util.concurrent.atomic.AtomicInteger()
+        val server = java.net.ServerSocket(0, 50, java.net.InetAddress.getLoopbackAddress())
+        val sockets = java.util.concurrent.CopyOnWriteArrayList<java.net.Socket>()
+        val acceptor = Thread {
+            try {
+                while (true) {
+                    val sock = server.accept()
+                    sockets.add(sock)
+                    accepts.incrementAndGet()
+                    Thread {
+                        try {
+                            sock.getInputStream().read(ByteArray(4096)) // the request
+                            val out = sock.getOutputStream()
+                            out.write("HTTP/1.1 200 OK\r\nX-Drip: ".toByteArray())
+                            out.flush()
+                            repeat(600) {
+                                out.write('a'.code)
+                                out.flush()
+                                Thread.sleep(100)
+                            }
+                        } catch (_: Exception) {
+                            // the client closed
+                        }
+                    }.apply { isDaemon = true }.start()
+                }
+            } catch (_: Exception) {
+                // server closed
+            }
+        }.apply { isDaemon = true }
+        acceptor.start()
+        try {
+            io.axiam.sdk.AxiamClient.builder("http://127.0.0.1:${server.localPort}/", TestSupport.TENANT_ID)
+                .orgId(TestSupport.ORG_ID)
+                .build().use { c ->
+                    c.jwksVerifier().setClockForTesting { now.get() }
+                    c.jwksVerifier().fetchTotalTimeoutMs = 1_000
+                    val token = AccessTokenFixtures.mint(key)
+                    val started = System.nanoTime()
+                    assertThrows(AuthError::class.java) { c.verifySession(token) }
+                    val ms = (System.nanoTime() - started) / 1_000_000
+                    assertTrue(ms < 3_500, "the header-dripping fetch must be abandoned near its 1 s deadline, took $ms ms")
+                    c.jwksVerifier().awaitIdleForTesting()
+                    assertEquals(1, accepts.get())
+                    // Inside the window: no new fetch. Past it: the in-flight slot is free, a new fetch is made.
+                    at(10 * s)
+                    assertThrows(AuthError::class.java) { c.verifySession(token) }
+                    assertEquals(1, accepts.get())
+                    at(61 * s + 10 * s)
+                    assertThrows(AuthError::class.java) { c.verifySession(token) }
+                    assertEquals(2, accepts.get())
+                }
+        } finally {
+            sockets.forEach { runCatching { it.close() } }
+            server.close()
         }
     }
 

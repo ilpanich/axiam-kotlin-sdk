@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `HttpURLConnection` (no redirects, nimbus's timeouts and size limit) so it can read the headers. There is no
   caller-set TTL, so a configured TTL never competes with `max-age` and no `config_clamped` event applies.
   The fetch no longer runs under the cache lock: it is single-flight on an SDK-owned daemon thread with a 5 s total
-  deadline, a held key that is still usable is answered without waiting for it, and a caller that is interrupted
+  deadline enforced by a watchdog that closes the connection (a server dripping the status line or headers cannot hold it), a held key that is still usable is answered without waiting for it, and a caller that is interrupted
   records no failure and opens no cooldown. Every TTL-driven refresh respects the 60 s window, so `max-age=0` cannot
   mean a fetch per verification.
 

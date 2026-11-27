@@ -27,6 +27,8 @@ import java.util.Locale
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
@@ -395,18 +397,25 @@ class JwksVerifier private constructor(private val jwksUrl: URL) {
         }
     }
 
-    /** Starts THE fetch (caller holds [refreshLock], [inFlight] is null) on the SDK-owned executor. */
+    /**
+     * Starts THE fetch (caller holds [refreshLock], [inFlight] is null) on the SDK-owned executor.
+     *
+     * The total deadline is enforced from OUTSIDE the blocking call: a watchdog fires at the deadline,
+     * closes the connection (which unblocks a read stuck in the status line, the headers or the body) and
+     * settles the flight as failed itself. The flight settles exactly once — whichever of the fetch task
+     * and the watchdog gets there first — so a result arriving late is ignored, and the fetch's `finally`
+     * always clears [inFlight] and completes the flight.
+     */
     private fun startFetch(startNanos: Long, etag: String?): CompletableFuture<Unit> {
         val flight = CompletableFuture<Unit>()
         inFlight = flight
         val clock = clockNanos
-        try {
-            FETCH_EXECUTOR.execute {
-                val r = try {
-                    refresh(etag, System.nanoTime() + fetchTotalTimeoutMs * 1_000_000L)
-                } catch (_: Throwable) {
-                    Refresh.Failed
-                }
+        val settled = AtomicBoolean(false)
+        val connRef = AtomicReference<HttpURLConnection?>(null)
+
+        fun settle(r: Refresh) {
+            if (!settled.compareAndSet(false, true)) return // a late result is ignored
+            try {
                 refreshLock.withLock {
                     when (r) {
                         is Refresh.Fetched -> cached = Cached(r.keys, startNanos, r.ttlNanos, r.etag)
@@ -420,13 +429,41 @@ class JwksVerifier private constructor(private val jwksUrl: URL) {
                     // The cooldown is stamped from the fetch's own outcome, success or failure.
                     val t = clock()
                     lastFetchNanos = if (t == 0L) 1L else t
-                    inFlight = null
                 }
+            } finally {
+                refreshLock.withLock { if (inFlight === flight) inFlight = null }
                 flight.complete(Unit)
             }
+        }
+
+        val timeoutMs = fetchTotalTimeoutMs
+        val watchdog = try {
+            FETCH_WATCHDOG.schedule({
+                try {
+                    connRef.get()?.disconnect()
+                } catch (_: Throwable) {
+                    // best effort
+                }
+                settle(Refresh.Failed)
+            }, timeoutMs, TimeUnit.MILLISECONDS)
         } catch (_: java.util.concurrent.RejectedExecutionException) {
-            inFlight = null
-            flight.complete(Unit)
+            null
+        }
+        try {
+            FETCH_EXECUTOR.execute {
+                var r: Refresh = Refresh.Failed
+                try {
+                    r = refresh(etag, System.nanoTime() + timeoutMs * 1_000_000L, connRef)
+                } catch (_: Throwable) {
+                    r = Refresh.Failed
+                } finally {
+                    watchdog?.cancel(false)
+                    settle(r)
+                }
+            }
+        } catch (_: java.util.concurrent.RejectedExecutionException) {
+            watchdog?.cancel(false)
+            settle(Refresh.Failed)
         }
         return flight
     }
@@ -448,7 +485,7 @@ class JwksVerifier private constructor(private val jwksUrl: URL) {
      * body that is not a JWKS document, an over-size body, an EMPTY key set — is
      * [Refresh.Failed]. Nothing about the response is logged.
      */
-    private fun refresh(etag: String?, deadlineNanos: Long): Refresh {
+    private fun refresh(etag: String?, deadlineNanos: Long, connRef: AtomicReference<HttpURLConnection?>): Refresh {
         var conn: HttpURLConnection? = null
         return try {
             conn = (jwksUrl.openConnection() as HttpURLConnection).apply {
@@ -459,6 +496,7 @@ class JwksVerifier private constructor(private val jwksUrl: URL) {
                 setRequestProperty("Accept", "application/json")
                 if (etag != null) setRequestProperty("If-None-Match", etag)
             }
+            connRef.set(conn)
             when (conn.responseCode) {
                 HttpURLConnection.HTTP_NOT_MODIFIED -> if (etag != null) {
                         Refresh.NotModified(conn.getHeaderField("Cache-Control")?.let { ttlFrom(it) })
@@ -586,12 +624,21 @@ class JwksVerifier private constructor(private val jwksUrl: URL) {
          */
         private const val MAX_TTL_NANOS: Long = 300_000_000_000L
 
-        /** The total deadline of one JWKS fetch (connect + headers + body), in milliseconds. */
+        /**
+         * The total deadline of one JWKS fetch, in milliseconds, enforced from outside the blocking call by
+         * a watchdog (it closes the connection and settles the fetch as failed), so a server that drips the
+         * status line, the headers or the body cannot hold the single in-flight fetch past it. DNS
+         * resolution, which Java cannot interrupt, is the one step the watchdog abandons rather than aborts.
+         */
         private const val FETCH_TOTAL_TIMEOUT_MS: Long = 5_000L
 
         /** SDK-owned daemon threads for the detached fetches: no caller's thread or cancellation scope runs one. */
         private val FETCH_EXECUTOR = Executors.newCachedThreadPool { r ->
             Thread(r, "axiam-jwks-fetch").apply { isDaemon = true }
+        }
+
+        private val FETCH_WATCHDOG = java.util.concurrent.Executors.newSingleThreadScheduledExecutor { r ->
+            Thread(r, "axiam-jwks-watchdog").apply { isDaemon = true }
         }
 
         /** The stale-if-error bound beyond the TTL: held keys verify until TTL + 300 s after the last successful fetch. */
