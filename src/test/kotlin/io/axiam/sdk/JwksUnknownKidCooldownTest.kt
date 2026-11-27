@@ -123,26 +123,34 @@ class JwksUnknownKidCooldownTest {
     }
 
     @Test
-    fun `a failing endpoint keeps serving a known key for 300 s and then refuses it`() {
+    fun `a failing endpoint keeps serving a known key until TTL plus 300 s and then refuses it`() {
         jwks.client().use { c ->
             c.jwksVerifier().setClockForTesting { now.get() }
             val known = AccessTokenFixtures.mint(key)
             assertEquals("user-1", c.verifySession(known).userId)
             assertEquals(1, jwks.fetches.get())
 
-            jwks.status = 500
-            // Past the window: one (failed) fetch, and the cached key is still accepted.
+            // Within the TTL the held set answers with no fetch, past the cooldown window too.
             now.addAndGet(JwksVerifier.UNKNOWN_KID_COOLDOWN_NANOS + 1)
+            assertEquals("user-1", c.verifySession(known).userId)
+            assertEquals(1, jwks.fetches.get(), "a known kid inside the TTL costs no fetch")
+
+            jwks.status = 500
+            // Past the TTL: one (failed) fetch, and the held key is still accepted.
+            now.addAndGet(300_000_000_000L)
             assertEquals("user-1", c.verifySession(known).userId)
             assertEquals(2, jwks.fetches.get())
             // Inside the new window: accepted with no fetch.
             assertEquals("user-1", c.verifySession(known).userId)
             assertEquals(2, jwks.fetches.get())
 
-            // Past the 300 s TTL of the set: refused.
-            now.addAndGet(250_000_000_000L)
+            // 301 s past the TTL (the anchor never moved): refused.
+            now.set(T0 + 600_000_000_000L + 1_000_000_000L)
             assertThrows(AuthError::class.java) { c.verifySession(known) }
-            assertEquals(3, jwks.fetches.get())
         }
+    }
+
+    private companion object {
+        const val T0 = 1_000_000_000_000L
     }
 }

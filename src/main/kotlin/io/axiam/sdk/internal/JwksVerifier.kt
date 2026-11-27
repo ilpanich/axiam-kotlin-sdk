@@ -13,11 +13,12 @@ import com.nimbusds.jose.jwk.KeyType
 import com.nimbusds.jose.jwk.KeyUse
 import com.nimbusds.jose.jwk.OctetKeyPair
 import com.nimbusds.jose.jwk.source.RemoteJWKSet
-import com.nimbusds.jose.util.DefaultResourceRetriever
 import com.nimbusds.jose.util.Base64URL
 import com.nimbusds.jwt.JWTClaimsSet
 import com.nimbusds.jwt.SignedJWT
 import io.axiam.sdk.errors.AuthError
+import java.io.ByteArrayOutputStream
+import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
 import java.security.MessageDigest
@@ -31,9 +32,12 @@ import kotlin.concurrent.withLock
  * verification primitive — extended (never forked) by [verifyForIdToken] for
  * the CONTRACT.md §12.4 ID-token validation checklist.
  *
- * Keys are fetched through nimbus's [DefaultResourceRetriever] and cached here
- * (TTL 300 s; a set older than 60 s is re-fetched on the next use; at most ONE
- * fetch per 60 s window whatever the cause — see [selectKeyOrNull]).
+ * Keys are fetched over `HttpURLConnection` (so the `ETag` and `Cache-Control`
+ * headers are readable) and cached here: TTL 300 s by default and at most 300 s
+ * (a smaller advertised `max-age` is honoured), at most ONE fetch per 60 s
+ * window whatever the cause, and — CONTRACT.md §12.4 rule 2, stale-if-error —
+ * a failed refresh keeps the held keys for TTL + 300 s after the last
+ * SUCCESSFUL fetch and no longer. See [selectKeyOrNull].
  *
  * **Algorithm pinning:** the header `alg` is checked against an EdDSA allowlist
  * BEFORE any key lookup, so the token's own `alg` never selects the
@@ -55,15 +59,25 @@ import kotlin.concurrent.withLock
  */
 class JwksVerifier private constructor(private val jwksUrl: URL) {
 
-    private val retriever = DefaultResourceRetriever(
-        RemoteJWKSet.resolveDefaultHTTPConnectTimeout(),
-        RemoteJWKSet.resolveDefaultHTTPReadTimeout(),
-        RemoteJWKSet.resolveDefaultHTTPSizeLimit(),
-    )
+    private val connectTimeoutMs = RemoteJWKSet.resolveDefaultHTTPConnectTimeout()
+    private val readTimeoutMs = RemoteJWKSet.resolveDefaultHTTPReadTimeout()
+    private val sizeLimitBytes = RemoteJWKSet.resolveDefaultHTTPSizeLimit()
     private val refreshLock = ReentrantLock()
 
-    /** One fetched key set and the moment it was fetched. */
-    private class Cached(val keys: JWKSet, val atNanos: Long)
+    /**
+     * One fetched key set: [atNanos] is the anchor (the last SUCCESSFUL fetch, a
+     * `200` with at least one key or a `304`), [ttlNanos] the lifetime the
+     * response gave it (clamped to [MAX_TTL_NANOS]), [etag] the validator sent
+     * back as `If-None-Match`.
+     */
+    private class Cached(val keys: JWKSet, val atNanos: Long, val ttlNanos: Long, val etag: String?)
+
+    /** The outcome of one refresh attempt; everything but [Fetched] and [NotModified] is a failed refresh. */
+    private sealed interface Refresh {
+        class Fetched(val keys: JWKSet, val etag: String?, val ttlNanos: Long) : Refresh
+        class NotModified(val ttlNanos: Long?) : Refresh
+        object Failed : Refresh
+    }
 
     /** The last key set fetched; written only under [refreshLock], read lock-free. */
     @Volatile
@@ -325,40 +339,143 @@ class JwksVerifier private constructor(private val jwksUrl: URL) {
         val selector = JWKSelector(matcher)
 
         val clock = clockNanos
-        // Lock-free fast path: while the window is open nothing may be fetched, so a
-        // set within its TTL answers (a hit, or a miss that is refused) with no lock.
+        // Lock-free fast path: a set within its TTL answers a KNOWN kid with no fetch
+        // and no lock; an unknown kid inside the open cooldown window is refused with
+        // no fetch either.
         cached?.let { snapshot ->
             val t = clock()
-            val last = lastFetchNanos
-            if (t - snapshot.atNanos < CACHE_TTL_NANOS && last != 0L && t - last < UNKNOWN_KID_COOLDOWN_NANOS) {
-                return firstOctetKeyPair(selector.select(snapshot.keys))
+            if (t - snapshot.atNanos in 0 until snapshot.ttlNanos) {
+                firstOctetKeyPair(selector.select(snapshot.keys))?.let { return it }
+                val last = lastFetchNanos
+                if (last != 0L && t - last in 0 until UNKNOWN_KID_COOLDOWN_NANOS) return null
             }
         }
 
         return refreshLock.withLock {
             val now = clock()
             val current = cached
-            if (current != null && now - current.atNanos < UNKNOWN_KID_COOLDOWN_NANOS) {
-                // Another caller refreshed while this one waited for the lock.
-                firstOctetKeyPair(selector.select(current.keys))?.let { return@withLock it }
-            }
-            // Inside the window: no fetch. A key the (unexpired) cache holds is
-            // still served; an unknown one is refused.
-            val usable = current?.takeIf { now - it.atNanos < CACHE_TTL_NANOS }
-            if (lastFetchNanos != 0L && now - lastFetchNanos < UNKNOWN_KID_COOLDOWN_NANOS) {
+            // Held keys verify until TTL + 300 s after the anchor (the last successful
+            // fetch), strictly, and not after — whatever the cause of the failures.
+            val usable = current?.takeIf { now - it.atNanos in 0 until it.ttlNanos + MAX_STALE_NANOS }
+            val fresh = current?.takeIf { now - it.atNanos in 0 until it.ttlNanos }
+            // Another caller refreshed while this one waited for the lock.
+            fresh?.let { firstOctetKeyPair(selector.select(it.keys)) }?.let { return@withLock it }
+            // Inside the window: no fetch (a failed attempt counts toward it).
+            if (lastFetchNanos != 0L && now - lastFetchNanos in 0 until UNKNOWN_KID_COOLDOWN_NANOS) {
                 return@withLock usable?.let { firstOctetKeyPair(selector.select(it.keys)) }
             }
             lastFetchNanos = if (now == 0L) 1L else now
 
-            val fetched = try {
-                JWKSet.parse(retriever.retrieveResource(jwksUrl).content)
-            } catch (_: Exception) {
-                null
+            when (val r = refresh(current?.etag)) {
+                is Refresh.Fetched -> {
+                    cached = Cached(r.keys, now, r.ttlNanos, r.etag)
+                    firstOctetKeyPair(selector.select(r.keys))
+                }
+                is Refresh.NotModified -> {
+                    // 304 to a conditional request re-confirms the held set and moves the anchor.
+                    val held = current
+                    if (held == null) {
+                        null
+                    } else {
+                        cached = Cached(held.keys, now, r.ttlNanos ?: held.ttlNanos, held.etag)
+                        firstOctetKeyPair(selector.select(held.keys))
+                    }
+                }
+                // A failed refresh never replaces the held keys and never moves the anchor.
+                Refresh.Failed -> usable?.let { firstOctetKeyPair(selector.select(it.keys)) }
             }
-            if (fetched != null) cached = Cached(fetched, now)
-            val keys = fetched ?: usable?.keys ?: return@withLock null
-            firstOctetKeyPair(selector.select(keys))
         }
+    }
+
+    /**
+     * One JWKS fetch. Success is a `200` whose body is a JWKS document with at
+     * least one key, or a `304` to a conditional request ([etag] held). Anything
+     * else — transport error, timeout, another status (a redirect included), a
+     * body that is not a JWKS document, an over-size body, an EMPTY key set — is
+     * [Refresh.Failed]. Nothing about the response is logged.
+     */
+    private fun refresh(etag: String?): Refresh {
+        var conn: HttpURLConnection? = null
+        return try {
+            conn = (jwksUrl.openConnection() as HttpURLConnection).apply {
+                connectTimeout = connectTimeoutMs
+                readTimeout = readTimeoutMs
+                instanceFollowRedirects = false
+                requestMethod = "GET"
+                setRequestProperty("Accept", "application/json")
+                if (etag != null) setRequestProperty("If-None-Match", etag)
+            }
+            when (conn.responseCode) {
+                HttpURLConnection.HTTP_NOT_MODIFIED -> if (etag != null) {
+                        Refresh.NotModified(conn.getHeaderField("Cache-Control")?.let { ttlFrom(it) })
+                    } else {
+                        Refresh.Failed
+                    }
+                HttpURLConnection.HTTP_OK -> {
+                    val body = conn.inputStream.use { input ->
+                        val out = ByteArrayOutputStream()
+                        val buf = ByteArray(8192)
+                        while (true) {
+                            val n = input.read(buf)
+                            if (n < 0) break
+                            out.write(buf, 0, n)
+                            if (sizeLimitBytes in 1..out.size()) return Refresh.Failed
+                        }
+                        out.toString(Charsets.UTF_8)
+                    }
+                    val keys = parseEntries(body)
+                    if (keys == null) {
+                        Refresh.Failed
+                    } else {
+                        Refresh.Fetched(keys, sanitizeEtag(conn.getHeaderField("ETag")), ttlFrom(conn.getHeaderField("Cache-Control")))
+                    }
+                }
+                else -> Refresh.Failed
+            }
+        } catch (_: Exception) {
+            Refresh.Failed
+        } finally {
+            conn?.disconnect()
+        }
+    }
+
+    /**
+     * Parses a JWKS body entry by entry. An entry that is a JSON object with a string `kty` counts toward
+     * "holding at least one key" even if this library cannot build a usable JWK from it (it is skipped);
+     * `null` when the body is not a JWKS document or no entry is such an object.
+     */
+    private fun parseEntries(body: String): JWKSet? {
+        val json = com.nimbusds.jose.util.JSONObjectUtils.parse(body)
+        val entries = json["keys"] as? List<*> ?: return null
+        var wellFormed = 0
+        val usable = ArrayList<JWK>()
+        for (e in entries) {
+            val m = e as? Map<*, *> ?: continue
+            if (m["kty"] !is String) continue
+            wellFormed++
+            try {
+                @Suppress("UNCHECKED_CAST")
+                usable.add(JWK.parse(m as Map<String, Any>))
+            } catch (_: Exception) {
+                // unusable here, skipped
+            }
+        }
+        return if (wellFormed == 0) null else JWKSet(usable)
+    }
+
+    /** An `ETag` worth storing and echoing: printable ASCII only, at most 256 bytes; otherwise none. */
+    private fun sanitizeEtag(v: String?): String? =
+        v?.takeIf { it.length <= 256 && it.all { c -> c.code in 0x20..0x7e } }
+
+    /** `max-age` of a `Cache-Control` value, clamped to [MAX_TTL_NANOS]; [MAX_TTL_NANOS] when absent or unparseable. */
+    private fun ttlFrom(cacheControl: String?): Long {
+        val seconds = cacheControl?.split(',')
+            ?.map { it.trim().lowercase(Locale.ROOT) }
+            ?.firstOrNull { it.startsWith("max-age=") }
+            ?.substringAfter('=')?.trim('"')?.toLongOrNull()
+            ?: return MAX_TTL_NANOS
+        if (seconds < 0) return MAX_TTL_NANOS
+        return minOf(seconds, MAX_TTL_NANOS / 1_000_000_000L) * 1_000_000_000L
     }
 
     private fun firstOctetKeyPair(jwks: List<JWK>): OctetKeyPair? =
@@ -408,8 +525,14 @@ class JwksVerifier private constructor(private val jwksUrl: URL) {
          */
         const val UNKNOWN_KID_COOLDOWN_NANOS: Long = 60_000_000_000L
 
-        /** How long a fetched key set is served at all, when a re-fetch fails: 300 s, in nanoseconds. */
-        private const val CACHE_TTL_NANOS: Long = 300_000_000_000L
+        /**
+         * CONTRACT.md §12.4 rule 2 (contract 1.69; D-10): the default and the MAXIMUM TTL of a
+         * fetched set, 300 s in nanoseconds. A larger advertised `max-age` is clamped to it.
+         */
+        private const val MAX_TTL_NANOS: Long = 300_000_000_000L
+
+        /** The stale-if-error bound beyond the TTL: held keys verify until TTL + 300 s after the last successful fetch. */
+        private const val MAX_STALE_NANOS: Long = 300_000_000_000L
 
         /** CONTRACT.md §10.1 rule 10 — the `typ` an access token carries (RFC 9068 §2.1), lower-cased. */
         private const val ACCESS_TOKEN_TYP = "at+jwt"

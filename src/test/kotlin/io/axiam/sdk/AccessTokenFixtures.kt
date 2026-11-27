@@ -83,6 +83,25 @@ object AccessTokenFixtures {
         /** The status `/oauth2/jwks` answers with; anything but 200 is a failing endpoint. */
         @Volatile
         var status: Int = 200
+
+        /** When true a 200 answers `{"keys":[]}` (the empty set, a failed refresh under §12.4 rule 2). */
+        @Volatile
+        var emptyKeys: Boolean = false
+
+        /** `Cache-Control` sent with a 200, or null for none. */
+        @Volatile
+        var cacheControl: String? = null
+
+        /** `ETag` sent with a 200; a request carrying it in `If-None-Match` is answered 304 while [honour304]. */
+        @Volatile
+        var etag: String? = null
+
+        @Volatile
+        var honour304: Boolean = false
+
+        /** When set, a 200 answers exactly this body instead of the published set. */
+        @Volatile
+        var rawBody: String? = null
         val server = MockWebServer().also { s ->
             s.dispatcher = object : Dispatcher() {
                 override fun dispatch(request: RecordedRequest): MockResponse =
@@ -90,10 +109,20 @@ object AccessTokenFixtures {
                         fetches.incrementAndGet()
                         if (status != 200) {
                             MockResponse().setResponseCode(status).setBody("down")
+                        } else if (honour304 && etag != null && request.getHeader("If-None-Match") == etag) {
+                            MockResponse().setResponseCode(304)
                         } else {
                             MockResponse().setResponseCode(200)
                                 .addHeader("Content-Type", "application/json")
-                                .setBody(JWKSet(published.get().map { it.toPublicJWK() }).toString())
+                                .apply {
+                                    cacheControl?.let { addHeader("Cache-Control", it) }
+                                    etag?.let { addHeader("ETag", it) }
+                                }
+                                .setBody(
+                                    if (rawBody != null) rawBody!!
+                                    else if (emptyKeys) "{\"keys\":[]}"
+                                    else JWKSet(published.get().map { it.toPublicJWK() }).toString(),
+                                )
                         }
                     } else {
                         MockResponse().setResponseCode(404)

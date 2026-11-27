@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The JWKS cache is bounded stale-if-error (CONTRACT.md 1.69 §12.4 rule 2, D-10; axiam#883).** The held key set is
+  kept through a failed refresh for exactly TTL + 300 s after the last successful fetch (it was 300 s in all), then
+  every token is refused until a fetch succeeds. The TTL is 300 s, or a smaller `Cache-Control: max-age`; a larger
+  one is clamped to 300 s. A known `kid` inside the TTL no longer causes a refresh. A refresh succeeds on a `200`
+  with at least one key or a `304` to the `ETag` conditional request (which moves the anchor); an empty key set, a
+  non-JWKS body (including `{"keys":[{}]}`), any other status or a transport error is a failure that keeps the held keys and never moves the
+  anchor, and a failed unknown-`kid` refresh never opens or extends the stale window. The verifier now fetches with
+  `HttpURLConnection` (no redirects, nimbus's timeouts and size limit) so it can read the headers. There is no
+  caller-set TTL, so a configured TTL never competes with `max-age` and no `config_clamped` event applies.
+
 ### Security
 
 - **The build now runs on Kotlin Gradle plugin 2.4.21** (was 2.2.21), which fixes GHSA-r937-wjx7-w2jp, a
