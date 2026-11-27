@@ -124,6 +124,11 @@ class OidcRefreshTest {
     fun `the refresh response's scope replaces the grant's`(): Unit = runBlocking {
         val client = OidcTestKit.clientFor(server)
         client.oidcDiscover()
+        // Holds the first call's settled-outcome window open, the worst case of the race this test used to flake on.
+        val release = java.util.concurrent.CountDownLatch(1)
+        client.oidcRefreshAfterPublishHook = {
+            release.await(10, java.util.concurrent.TimeUnit.SECONDS)
+        }
         dispatcher.onJson("/oauth2/token", 200, OidcTestKit.tokenResponseJson(scope = "profile"))
         val narrowed = client.oidcRefresh(
             OidcRefreshParams.of("rt", scope = "openid profile email", tenantId = "22222222-2222-2222-2222-222222222222"),
@@ -131,10 +136,15 @@ class OidcRefreshTest {
         assertEquals("profile", narrowed.scope)
         assertNull(narrowed.idClaims, "no openid: no ID token")
 
+        // The refresh coalescer is one unkeyed flight per client (§9 rule 6a): a second call on this client can
+        // still join the first call's settled slot and read its scope, whatever the refresh token. The second
+        // half therefore uses a fresh client, with no flight to join.
+        release.countDown()
+        client.oidcRefreshAfterPublishHook = null
+        val other = OidcTestKit.clientFor(server)
+        other.oidcDiscover()
         dispatcher.onJson("/oauth2/token", 200, OidcTestKit.tokenResponseJson())
-        // A distinct refresh token: the same one can land in the first call's settled single-flight
-        // slot under load and read its scope (C164-33).
-        val unstated = client.oidcRefresh(
+        val unstated = other.oidcRefresh(
             OidcRefreshParams.of("rt2", scope = "openid profile", tenantId = "22222222-2222-2222-2222-222222222222"),
         )
         assertNull(unstated.scope, "the requested scope is never substituted for the response's")
