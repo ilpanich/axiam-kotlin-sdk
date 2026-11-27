@@ -51,7 +51,7 @@ import kotlin.coroutines.CoroutineContext
  * `deferred.isActive`/`isCompleted`, not nullness.
  *
  * **(c) Only the current owner clears its own slot.** The vacate is
- * identity-checked (`inFlight === slot`) so a lagging attempt can never clear
+ * identity-checked (`inFlight[key] === slot`) so a lagging attempt can never clear
  * a newer attempt's entry, and it runs inside [NonCancellable]: acquiring
  * [mutex] is a cancellable suspension point, so without that a worker unwound
  * by cancellation could throw *before* clearing and leave a settled outcome
@@ -59,7 +59,7 @@ import kotlin.coroutines.CoroutineContext
  * (a rule 6d violation) with no wire call ever happening again.
  *
  * **(d) A caller arriving after full settlement gets a fresh attempt.** Once
- * the slot is vacated it is `null`, so the next caller becomes a new leader and
+ * the slot is vacated its entry is removed, so the next caller becomes a new leader and
  * runs its own work block. Nothing caches the settled `Deferred` — [fastPath]
  * caches *values* (a token pair, a discovery document), never the in-flight
  * slot.

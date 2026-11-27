@@ -278,11 +278,13 @@ class OidcRefreshRule6Test {
         try {
             val a = callers.async { client.oidcRefresh(OidcRefreshParams.of("rtA", tenantId = tenantId)) }
             val b = callers.async { client.oidcRefresh(OidcRefreshParams.of("rtB", tenantId = tenantId)) }
+            val a2 = callers.async { client.oidcRefresh(OidcRefreshParams.of("rtA", tenantId = tenantId)) }
             delay(500)
             release.countDown()
             assertEquals("access-for-rtA-$tenantId", a.await().accessToken.expose())
             assertEquals("access-for-rtB-$tenantId", b.await().accessToken.expose())
-            assertEquals(2, calls.get())
+            assertEquals("access-for-rtA-$tenantId", a2.await().accessToken.expose(), "same token shares A's one call")
+            assertEquals(2, calls.get(), "one call for rtA (shared), one for rtB")
         } finally {
             release.countDown()
             callers.cancel()
@@ -394,6 +396,30 @@ class OidcRefreshRule6Test {
             b.await(); c.await()
             assertEquals(1, calls.get())
             assertEquals(listOf("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"), wireTenants.toList(), "canonical tenant on the wire")
+        } finally {
+            release.countDown()
+            callers.cancel()
+        }
+    }
+
+    /** An upper-case CONFIGURED default tenant is canonicalised: same flight as the lower-case spelling. */
+    @Test
+    fun `an upper-case configured default tenant shares a flight with the lower-case spelling`() = runBlocking {
+        val upper = "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE"
+        val client = OidcTestKit.clientFor(server, tenantId = upper)
+        client.oidcDiscover()
+        val calls = AtomicInteger(0)
+        val release = CountDownLatch(1)
+        installEchoToken(calls, release)
+        val callers = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val a = callers.async { client.oidcRefresh(OidcRefreshParams.of("rtA")) }
+            val b = callers.async { client.oidcRefresh(OidcRefreshParams.of("rtA", tenantId = upper.lowercase())) }
+            delay(500)
+            release.countDown()
+            a.await(); b.await()
+            assertEquals(1, calls.get())
+            assertEquals(listOf(upper.lowercase()), wireTenants.toList())
         } finally {
             release.countDown()
             callers.cancel()
