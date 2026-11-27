@@ -24,6 +24,9 @@ import java.net.URL
 import java.security.MessageDigest
 import java.util.Base64
 import java.util.Locale
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
@@ -63,6 +66,9 @@ class JwksVerifier private constructor(private val jwksUrl: URL) {
     private val readTimeoutMs = RemoteJWKSet.resolveDefaultHTTPReadTimeout()
     private val sizeLimitBytes = RemoteJWKSet.resolveDefaultHTTPSizeLimit()
     private val refreshLock = ReentrantLock()
+
+    /** The ONE fetch in flight, if any (single-flight); guarded by [refreshLock]. */
+    private var inFlight: CompletableFuture<Unit>? = null
 
     /**
      * One fetched key set: [atNanos] is the anchor (the last SUCCESSFUL fetch, a
@@ -317,14 +323,14 @@ class JwksVerifier private constructor(private val jwksUrl: URL) {
      * result as their own "no matching key" failure — this is the ONE shared
      * fetch/cache code path (CONTRACT.md §12 forbids forking the JWKS mechanism).
      *
-     * CONTRACT.md §12.4 rule 2 (C5): at most ONE JWKS fetch per cooldown window,
-     * however many tokens present a `kid` the cache does not hold — on a warm
-     * cache, on a cold one, and when the endpoint is failing. The fetch is made
-     * here, exactly once per call that is allowed to fetch (nimbus's
-     * `RemoteJWKSet` can fetch twice per lookup: a refresh, then a second fetch
-     * on the miss). A set younger than the window serves known keys with no
-     * fetch; an older one is re-fetched on the next use, so a withdrawn key stops
-     * being accepted within about a minute. The very first fetch is immediate.
+     * CONTRACT.md §12.4 rule 2: a set within its TTL (300 s, or a smaller `max-age`) answers a
+     * known `kid` with no fetch. Past the TTL, or for an unknown `kid`, a refresh is due, and at
+     * most ONE JWKS fetch is made per 60 s cooldown window (C5), however many tokens ask — a
+     * failed attempt, a cold cache included, counts toward the window. The fetch is single-flight
+     * and runs detached, on an SDK-owned thread with its own total deadline: no lock is held
+     * across the network, a usable held key is answered at once without waiting for it, and a
+     * caller that is interrupted records nothing. A failed refresh keeps the held keys, which
+     * verify until exactly TTL + 300 s after the last SUCCESSFUL fetch (the anchor) and not after.
      */
     private fun selectKeyOrNull(header: JWSHeader): OctetKeyPair? {
         if (header.keyID.isNullOrEmpty()) return null
@@ -351,41 +357,89 @@ class JwksVerifier private constructor(private val jwksUrl: URL) {
             }
         }
 
-        return refreshLock.withLock {
+        // Decide under the lock (a short snapshot, never across I/O); the fetch itself runs detached.
+        val toAwait: CompletableFuture<Unit> = refreshLock.withLock {
             val now = clock()
             val current = cached
             // Held keys verify until TTL + 300 s after the anchor (the last successful
             // fetch), strictly, and not after — whatever the cause of the failures.
             val usable = current?.takeIf { now - it.atNanos in 0 until it.ttlNanos + MAX_STALE_NANOS }
-            val fresh = current?.takeIf { now - it.atNanos in 0 until it.ttlNanos }
-            // Another caller refreshed while this one waited for the lock.
-            fresh?.let { firstOctetKeyPair(selector.select(it.keys)) }?.let { return@withLock it }
-            // Inside the window: no fetch (a failed attempt counts toward it).
-            if (lastFetchNanos != 0L && now - lastFetchNanos in 0 until UNKNOWN_KID_COOLDOWN_NANOS) {
-                return@withLock usable?.let { firstOctetKeyPair(selector.select(it.keys)) }
+            val held = usable?.let { firstOctetKeyPair(selector.select(it.keys)) }
+            val fresh = current != null && now - current.atNanos in 0 until current.ttlNanos
+            if (fresh && held != null) return held
+            var flight = inFlight
+            if (flight == null) {
+                // Inside the window: no fetch (a failed attempt counts toward it).
+                if (lastFetchNanos != 0L && now - lastFetchNanos in 0 until UNKNOWN_KID_COOLDOWN_NANOS) return held
+                flight = startFetch(now, current?.etag)
             }
-            lastFetchNanos = if (now == 0L) 1L else now
+            // A usable held key never waits for a fetch: it is answered now, the refresh runs behind it.
+            if (held != null) return held
+            flight
+        }
 
-            when (val r = refresh(current?.etag)) {
-                is Refresh.Fetched -> {
-                    cached = Cached(r.keys, now, r.ttlNanos, r.etag)
-                    firstOctetKeyPair(selector.select(r.keys))
-                }
-                is Refresh.NotModified -> {
-                    // 304 to a conditional request re-confirms the held set and moves the anchor.
-                    val held = current
-                    if (held == null) {
-                        null
-                    } else {
-                        cached = Cached(held.keys, now, r.ttlNanos ?: held.ttlNanos, held.etag)
-                        firstOctetKeyPair(selector.select(held.keys))
-                    }
-                }
-                // A failed refresh never replaces the held keys and never moves the anchor.
-                Refresh.Failed -> usable?.let { firstOctetKeyPair(selector.select(it.keys)) }
-            }
+        // No usable key for this kid: wait, bounded, for the one shared fetch. A caller that is
+        // interrupted or gives up records nothing — only the fetch's own outcome does.
+        try {
+            toAwait.get(fetchTotalTimeoutMs + 1_000, TimeUnit.MILLISECONDS)
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            return null
+        } catch (_: Exception) {
+            // timeout or failure: whatever the fetch published (if anything) is read below
+        }
+        return refreshLock.withLock {
+            val now = clock()
+            cached?.takeIf { now - it.atNanos in 0 until it.ttlNanos + MAX_STALE_NANOS }
+                ?.let { firstOctetKeyPair(selector.select(it.keys)) }
         }
     }
+
+    /** Starts THE fetch (caller holds [refreshLock], [inFlight] is null) on the SDK-owned executor. */
+    private fun startFetch(startNanos: Long, etag: String?): CompletableFuture<Unit> {
+        val flight = CompletableFuture<Unit>()
+        inFlight = flight
+        val clock = clockNanos
+        try {
+            FETCH_EXECUTOR.execute {
+                val r = try {
+                    refresh(etag, System.nanoTime() + fetchTotalTimeoutMs * 1_000_000L)
+                } catch (_: Throwable) {
+                    Refresh.Failed
+                }
+                refreshLock.withLock {
+                    when (r) {
+                        is Refresh.Fetched -> cached = Cached(r.keys, startNanos, r.ttlNanos, r.etag)
+                        is Refresh.NotModified -> cached?.let { held ->
+                            // 304 to a conditional request re-confirms the held set and moves the anchor.
+                            cached = Cached(held.keys, startNanos, r.ttlNanos ?: held.ttlNanos, held.etag)
+                        }
+                        // A failed refresh never replaces the held keys and never moves the anchor.
+                        Refresh.Failed -> Unit
+                    }
+                    // The cooldown is stamped from the fetch's own outcome, success or failure.
+                    val t = clock()
+                    lastFetchNanos = if (t == 0L) 1L else t
+                    inFlight = null
+                }
+                flight.complete(Unit)
+            }
+        } catch (_: java.util.concurrent.RejectedExecutionException) {
+            inFlight = null
+            flight.complete(Unit)
+        }
+        return flight
+    }
+
+    /** Test seam: waits for the in-flight fetch, if any, to publish its outcome. */
+    internal fun awaitIdleForTesting() {
+        val f = refreshLock.withLock { inFlight }
+        f?.get(30, TimeUnit.SECONDS)
+    }
+
+    /** Test seam: the total deadline of one fetch, in milliseconds. */
+    @Volatile
+    internal var fetchTotalTimeoutMs: Long = FETCH_TOTAL_TIMEOUT_MS
 
     /**
      * One JWKS fetch. Success is a `200` whose body is a JWKS document with at
@@ -394,7 +448,7 @@ class JwksVerifier private constructor(private val jwksUrl: URL) {
      * body that is not a JWKS document, an over-size body, an EMPTY key set — is
      * [Refresh.Failed]. Nothing about the response is logged.
      */
-    private fun refresh(etag: String?): Refresh {
+    private fun refresh(etag: String?, deadlineNanos: Long): Refresh {
         var conn: HttpURLConnection? = null
         return try {
             conn = (jwksUrl.openConnection() as HttpURLConnection).apply {
@@ -416,10 +470,11 @@ class JwksVerifier private constructor(private val jwksUrl: URL) {
                         val out = ByteArrayOutputStream()
                         val buf = ByteArray(8192)
                         while (true) {
+                            if (System.nanoTime() - deadlineNanos > 0) return Refresh.Failed // total deadline
                             val n = input.read(buf)
                             if (n < 0) break
                             out.write(buf, 0, n)
-                            if (sizeLimitBytes in 1..out.size()) return Refresh.Failed
+                            if (sizeLimitBytes > 0 && out.size() > sizeLimitBytes) return Refresh.Failed
                         }
                         out.toString(Charsets.UTF_8)
                     }
@@ -530,6 +585,14 @@ class JwksVerifier private constructor(private val jwksUrl: URL) {
          * fetched set, 300 s in nanoseconds. A larger advertised `max-age` is clamped to it.
          */
         private const val MAX_TTL_NANOS: Long = 300_000_000_000L
+
+        /** The total deadline of one JWKS fetch (connect + headers + body), in milliseconds. */
+        private const val FETCH_TOTAL_TIMEOUT_MS: Long = 5_000L
+
+        /** SDK-owned daemon threads for the detached fetches: no caller's thread or cancellation scope runs one. */
+        private val FETCH_EXECUTOR = Executors.newCachedThreadPool { r ->
+            Thread(r, "axiam-jwks-fetch").apply { isDaemon = true }
+        }
 
         /** The stale-if-error bound beyond the TTL: held keys verify until TTL + 300 s after the last successful fetch. */
         private const val MAX_STALE_NANOS: Long = 300_000_000_000L

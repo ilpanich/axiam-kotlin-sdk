@@ -38,25 +38,25 @@ class JwksStaleIfErrorTest {
         jwks.client().use { c ->
             c.jwksVerifier().setClockForTesting { now.get() }
             val known = AccessTokenFixtures.mint(key)
-            assertEquals("user-1", c.verifySession(known).userId)
+            assertEquals("user-1", v(c, known).userId)
             assertEquals(1, jwks.fetches.get())
 
             jwks.status = 500
             at(ttl + 1 * s)
-            assertEquals("user-1", c.verifySession(known).userId)
+            assertEquals("user-1", v(c, known).userId)
             assertEquals(2, jwks.fetches.get(), "one failed refresh is attempted")
 
             at(ttl + 250 * s)
-            assertThrows(AuthError::class.java) { c.verifySession(AccessTokenFixtures.mint(key, kid = "unknown")) }
-            assertEquals("user-1", c.verifySession(known).userId, "the held kid is still accepted")
+            assertThrows(AuthError::class.java) { v(c, AccessTokenFixtures.mint(key, kid = "unknown")) }
+            assertEquals("user-1", v(c, known).userId, "the held kid is still accepted")
 
             at(ttl + 301 * s)
-            assertThrows(AuthError::class.java) { c.verifySession(known) }
+            assertThrows(AuthError::class.java) { v(c, known) }
 
             jwks.status = 200
             at(ttl + 400 * s)
             val before = jwks.fetches.get()
-            assertEquals("user-1", c.verifySession(known).userId)
+            assertEquals("user-1", v(c, known).userId)
             assertEquals(before + 1, jwks.fetches.get(), "accepted again after one successful fetch")
         }
     }
@@ -66,16 +66,16 @@ class JwksStaleIfErrorTest {
         jwks.client().use { c ->
             c.jwksVerifier().setClockForTesting { now.get() }
             val known = AccessTokenFixtures.mint(key)
-            assertEquals("user-1", c.verifySession(known).userId)
+            assertEquals("user-1", v(c, known).userId)
 
             jwks.emptyKeys = true
             at(ttl + 1 * s)
-            assertEquals("user-1", c.verifySession(known).userId)
+            assertEquals("user-1", v(c, known).userId)
             assertEquals(2, jwks.fetches.get())
 
             // The empty answer never moved the anchor: the bound still runs from t0.
             at(ttl + 301 * s)
-            assertThrows(AuthError::class.java) { c.verifySession(known) }
+            assertThrows(AuthError::class.java) { v(c, known) }
         }
     }
 
@@ -84,18 +84,18 @@ class JwksStaleIfErrorTest {
         jwks.client().use { c ->
             c.jwksVerifier().setClockForTesting { now.get() }
             val known = AccessTokenFixtures.mint(key)
-            assertEquals("user-1", c.verifySession(known).userId)
+            assertEquals("user-1", v(c, known).userId)
 
             jwks.status = 500
             // Inside the TTL: an unknown kid (past the cooldown) fails its refresh, is refused,
             // and the held set is kept.
             at(100 * s)
-            assertThrows(AuthError::class.java) { c.verifySession(AccessTokenFixtures.mint(key, kid = "unknown")) }
+            assertThrows(AuthError::class.java) { v(c, AccessTokenFixtures.mint(key, kid = "unknown")) }
             assertEquals(2, jwks.fetches.get())
-            assertEquals("user-1", c.verifySession(known).userId)
+            assertEquals("user-1", v(c, known).userId)
             // The bound is still t0 + TTL + 300 s, not 100 s later.
             at(ttl + 301 * s)
-            assertThrows(AuthError::class.java) { c.verifySession(known) }
+            assertThrows(AuthError::class.java) { v(c, known) }
         }
     }
 
@@ -106,17 +106,17 @@ class JwksStaleIfErrorTest {
         jwks.client().use { c ->
             c.jwksVerifier().setClockForTesting { now.get() }
             val known = AccessTokenFixtures.mint(key)
-            assertEquals("user-1", c.verifySession(known).userId)
+            assertEquals("user-1", v(c, known).userId)
 
             at(ttl + 1 * s)
-            assertEquals("user-1", c.verifySession(known).userId) // 304: anchor now t0 + TTL + 1
+            assertEquals("user-1", v(c, known).userId) // 304: anchor now t0 + TTL + 1
             assertEquals(2, jwks.fetches.get())
 
             jwks.status = 500
             at(ttl + 1 * s + ttl + 250 * s) // beyond the ORIGINAL bound, inside the moved one
-            assertEquals("user-1", c.verifySession(known).userId)
+            assertEquals("user-1", v(c, known).userId)
             at(ttl + 1 * s + ttl + 301 * s)
-            assertThrows(AuthError::class.java) { c.verifySession(known) }
+            assertThrows(AuthError::class.java) { v(c, known) }
         }
     }
 
@@ -126,42 +126,42 @@ class JwksStaleIfErrorTest {
         jwks.client().use { c ->
             c.jwksVerifier().setClockForTesting { now.get() }
             val known = AccessTokenFixtures.mint(key)
-            assertEquals("user-1", c.verifySession(known).userId)
+            assertEquals("user-1", v(c, known).userId)
             jwks.status = 500
             at(ttl + 1 * s) // refresh due at 300 s despite max-age=86400
-            assertEquals("user-1", c.verifySession(known).userId)
+            assertEquals("user-1", v(c, known).userId)
             assertEquals(2, jwks.fetches.get())
             at(ttl + 301 * s) // and the bound is 600 s, not 86400 s + 300 s
-            assertThrows(AuthError::class.java) { c.verifySession(known) }
+            assertThrows(AuthError::class.java) { v(c, known) }
         }
         jwks.cacheControl = "max-age=60"
         jwks.status = 200
         jwks.client().use { c ->
             c.jwksVerifier().setClockForTesting { now.get() }
             at(0)
-            assertEquals("user-1", c.verifySession(AccessTokenFixtures.mint(key)).userId)
+            assertEquals("user-1", v(c, AccessTokenFixtures.mint(key)).userId)
             val n = jwks.fetches.get()
             at(61 * s)
-            assertEquals("user-1", c.verifySession(AccessTokenFixtures.mint(key)).userId)
+            assertEquals("user-1", v(c, AccessTokenFixtures.mint(key)).userId)
             assertEquals(n + 1, jwks.fetches.get(), "max-age=60 is honoured: a refresh is due after 60 s")
         }
     }
 
     @Test
     fun `a keys array with no JWK object is a failed refresh like the empty set`() {
-        for (body in listOf("{\"keys\":[{}]}", "{\"keys\":[0]}", "{\"keys\":[null]}", "[]", "not json")) {
+        for (body in listOf("{\"keys\":[{}]}", "{\"keys\":{}}", "{\"keys\":[0]}", "{\"keys\":[null]}", "[]", "not json")) {
             val j = AccessTokenFixtures.Jwks(key)
             try {
                 j.client().use { c ->
                     c.jwksVerifier().setClockForTesting { now.get() }
                     at(0)
                     val known = AccessTokenFixtures.mint(key)
-                    assertEquals("user-1", c.verifySession(known).userId)
+                    assertEquals("user-1", v(c, known).userId)
                     j.rawBody = body
                     at(ttl + 1 * s)
-                    assertEquals("user-1", c.verifySession(known).userId, "held kid kept for $body")
+                    assertEquals("user-1", v(c, known).userId, "held kid kept for $body")
                     at(ttl + 301 * s)
-                    assertThrows(AuthError::class.java) { c.verifySession(known) }
+                    assertThrows(AuthError::class.java) { v(c, known) }
                 }
             } finally {
                 j.shutdown()
@@ -175,7 +175,7 @@ class JwksStaleIfErrorTest {
         jwks.client().use { c ->
             c.jwksVerifier().setClockForTesting { now.get() }
             for (i in 0 until 20) {
-                assertThrows(AuthError::class.java) { c.verifySession(AccessTokenFixtures.mint(key)) }
+                assertThrows(AuthError::class.java) { v(c, AccessTokenFixtures.mint(key)) }
             }
             assertEquals(1, jwks.fetches.get())
         }
@@ -186,9 +186,9 @@ class JwksStaleIfErrorTest {
         jwks.client().use { c ->
             c.jwksVerifier().setClockForTesting { now.get() }
             val known = AccessTokenFixtures.mint(key)
-            assertEquals("user-1", c.verifySession(known).userId)
+            assertEquals("user-1", v(c, known).userId)
             at(-10 * s)
-            assertEquals("user-1", c.verifySession(known).userId)
+            assertEquals("user-1", v(c, known).userId)
             assertEquals(2, jwks.fetches.get(), "negative age: a refresh, not a cache hit")
         }
     }
@@ -199,7 +199,7 @@ class JwksStaleIfErrorTest {
             c.jwksVerifier().setClockForTesting { now.get() }
             val pub = key.toPublicJWK().toJSONString()
             jwks.rawBody = "{\"keys\":[{\"kty\":\"RSA\",\"n\":\"AQAB\"},$pub]}"
-            assertEquals("user-1", c.verifySession(AccessTokenFixtures.mint(key)).userId)
+            assertEquals("user-1", v(c, AccessTokenFixtures.mint(key)).userId)
         }
     }
 
@@ -208,10 +208,18 @@ class JwksStaleIfErrorTest {
         jwks.client().use { c ->
             c.jwksVerifier().setClockForTesting { now.get() }
             val known = AccessTokenFixtures.mint(key)
-            assertEquals("user-1", c.verifySession(known).userId)
+            assertEquals("user-1", v(c, known).userId)
             jwks.status = 500
             at(-10 * s)
-            assertThrows(AuthError::class.java) { c.verifySession(known) }
+            assertThrows(AuthError::class.java) { v(c, known) }
         }
     }
+
+    /** Verifies, then waits for any refresh the call started behind a usable held key to publish its outcome. */
+    private fun v(c: AxiamClient, token: String) =
+        try {
+            c.verifySession(token)
+        } finally {
+            c.jwksVerifier().awaitIdleForTesting()
+        }
 }
