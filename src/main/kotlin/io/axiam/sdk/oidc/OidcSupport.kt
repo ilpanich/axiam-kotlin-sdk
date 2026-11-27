@@ -12,6 +12,7 @@ import io.axiam.sdk.internal.AuthHeaderInterceptor
 import io.axiam.sdk.internal.JwksVerifier
 import io.axiam.sdk.internal.SessionState
 import io.axiam.sdk.internal.SingleFlight
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
@@ -1973,7 +1974,10 @@ internal class OidcSupport(
         val verifier = verifierFor(config.jwks_uri)
 
         val claims = try {
-            verifier.verifyForIdToken(logoutToken)
+            // The verifier may wait, bounded, on a JWKS fetch: keep that off the caller's dispatcher (#108).
+            withContext(Dispatchers.IO) { verifier.verifyForIdToken(logoutToken) }
+        } catch (e: CancellationException) {
+            throw e // the caller cancelled: not a verification failure
         } catch (e: AuthError) {
             throw e
         } catch (e: Exception) {
@@ -2224,7 +2228,7 @@ internal class OidcSupport(
 
         val idClaims = if (!idToken.isNullOrEmpty()) {
             val verifier = verifierFor(configuration.jwks_uri)
-            val claims = verifier.verifyForIdToken(idToken)
+            val claims = withContext(Dispatchers.IO) { verifier.verifyForIdToken(idToken) }
             OidcIdToken.checkClaims(claims, expectations)
         } else {
             null

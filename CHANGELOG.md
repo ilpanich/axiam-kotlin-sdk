@@ -77,6 +77,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The suspend OIDC verifiers no longer park the caller's thread on the JWKS fetch (#108).** `verifyLogoutToken`
+  and the ID-token check inside every token-returning OIDC call (`toTokenSet`) waited on the in-flight fetch with a
+  blocking `Future.get`, so a cold or stale cache and a slow endpoint stalled unrelated coroutines on a small
+  dispatcher for up to the fetch deadline. Both now run the verifier on `Dispatchers.IO`; a caller cancelled during
+  the wait gets a `CancellationException`, never an `AuthError`. The fetch rules are unchanged.
+
 - **`customCa` now reaches the JWKS fetch (#107).** `JwksVerifier` fetched the key set over a plain
   `HttpURLConnection`, so with a private CA `verifySession` and ID-token / logout-token validation failed closed
   (`unknown_kid`) while every other call worked. The fetch now uses the client's own TLS stack (CONTRACT.md §6:
