@@ -77,6 +77,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`oidcRefresh` with a different refresh token no longer receives another grant's token set (#109).** The
+  single-flight is now keyed by a SHA-256 digest of the resolved tenant UUID and the refresh token (the raw token is never a map key; `scope` is not part of the key): the same
+  token still joins an in-flight or publish-before-vacate attempt (CONTRACT §9 rules 2, 6a-6d, per key), a different
+  token makes its own wire call, and a key's slot is removed once vacated. The §1 `refresh()` guard is unchanged: its
+  wire call takes no token parameter.
+
 - **The suspend OIDC verifiers no longer park the caller's thread on the JWKS fetch (#108).** `verifyLogoutToken`
   and the ID-token check inside every token-returning OIDC call (`toTokenSet`) waited on the in-flight fetch with a
   blocking `Future.get`, so a cold or stale cache and a slow endpoint stalled unrelated coroutines on a small

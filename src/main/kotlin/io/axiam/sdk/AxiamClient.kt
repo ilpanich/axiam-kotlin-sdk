@@ -808,6 +808,9 @@ class AxiamClient private constructor(
             oidcSupport.afterRefreshPublishHook = value
         }
 
+    /** Visible-for-testing: keys occupying `oidcRefresh`'s single-flight (digests, never tokens). */
+    internal suspend fun oidcRefreshOccupiedKeys(): Set<Any> = oidcSupport.refreshOccupiedKeys()
+
     // ---- Auth methods (§1): login / verifyMfa / refresh / logout --------
 
     /**

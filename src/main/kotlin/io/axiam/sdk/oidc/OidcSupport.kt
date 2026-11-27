@@ -561,10 +561,15 @@ internal class OidcSupport(
             refreshFlight.afterPublishHook = value
         }
 
+    /** Visible-for-testing: the refresh single-flight's occupied keys. */
+    internal suspend fun refreshOccupiedKeys(): Set<Any> = refreshFlight.occupiedKeys()
+
     /**
      * `POST /oauth2/token` with `grant_type=refresh_token` (§12.1) — refresh
-     * an [OidcTokenSet] under [refreshFlight]'s single-flight guard (§9):
-     * concurrent callers collapse into ONE HTTP request and all receive the
+     * an [OidcTokenSet] under [refreshFlight]'s single-flight guard (§9),
+     * keyed by a digest of the resolved tenant and the refresh token (callers presenting different
+     * tokens are different bursts and never share an outcome; rule 6a–6d hold
+     * per token): concurrent callers with the same token collapse into ONE HTTP request and all receive the
      * same result (or the same failure), with no retry loop on failure
      * (§9 rule 3). See [SingleFlight] for how §9 rule 6's four invariants are
      * met — in particular why cancelling one caller can never strand the rest
@@ -583,9 +588,29 @@ internal class OidcSupport(
      * require a nonce in a refresh-issued ID token.
      */
     suspend fun oidcRefresh(params: OidcRefreshParams): OidcTokenSet =
-        refreshFlight.run { doOidcRefresh(params) }
+        // Resolve, validate and canonicalise the tenant ONCE, before the guard: an
+        // invalid or unresolvable tenant is an immediate client-side AuthError (no
+        // slot, no request), and the same value keys the flight and goes on the wire.
+        resolveTenantId(params.tenantId).lowercase().let { tenant ->
+            refreshFlight.run(key = refreshFlightKey(tenant, params.refreshToken.expose())) {
+                doOidcRefresh(params, tenant)
+            }
+        }
 
-    private suspend fun doOidcRefresh(params: OidcRefreshParams): OidcTokenSet {
+    /**
+     * The single-flight key: SHA-256 over the RESOLVED tenant UUID (explicit
+     * argument or the client's default, so both spell the same key), a NUL
+     * separator, and the refresh token. The raw single-use token is never a
+     * map key and so can never reach a log or error through one; `scope` is
+     * deliberately not part of it. Different tokens or tenants are different
+     * bursts.
+     */
+    internal fun refreshFlightKey(tenantId: String, token: String): String =
+        java.security.MessageDigest.getInstance("SHA-256")
+            .digest("${tenantId.lowercase()}\u0000$token".toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+
+    private suspend fun doOidcRefresh(params: OidcRefreshParams, tenantId: String): OidcTokenSet {
         val configuration = params.configuration ?: oidcDiscover()
         val clientId = requireClientId()
         val form = buildForm(
@@ -595,7 +620,7 @@ internal class OidcSupport(
             "client_secret" to oidcClientSecret?.expose(),
             "scope" to params.scope,
         )
-        val json = postToken(configuration, form, params.tenantId)
+        val json = postToken(configuration, form, tenantId)
         // No nonce: rule 6 does not apply to a refresh-issued ID token.
         val expectations = OidcIdToken.Expectations(
             issuer = configuration.issuer,
