@@ -56,9 +56,9 @@ import kotlin.concurrent.withLock
 class JwksVerifier private constructor(private val jwksUrl: URL) {
 
     private val retriever = DefaultResourceRetriever(
-        RemoteJWKSet.DEFAULT_HTTP_CONNECT_TIMEOUT,
-        RemoteJWKSet.DEFAULT_HTTP_READ_TIMEOUT,
-        RemoteJWKSet.DEFAULT_HTTP_SIZE_LIMIT,
+        RemoteJWKSet.resolveDefaultHTTPConnectTimeout(),
+        RemoteJWKSet.resolveDefaultHTTPReadTimeout(),
+        RemoteJWKSet.resolveDefaultHTTPSizeLimit(),
     )
     private val refreshLock = ReentrantLock()
 
@@ -73,6 +73,7 @@ class JwksVerifier private constructor(private val jwksUrl: URL) {
      * When the last JWKS fetch was ATTEMPTED, success or failure (the cooldown
      * window's origin); `0` until the first one. Guarded by [refreshLock].
      */
+    @Volatile
     private var lastFetchNanos: Long = 0L
 
     /** Monotonic clock (nanoseconds) behind the cooldown and the cache ages; replaceable by tests. */
@@ -324,8 +325,14 @@ class JwksVerifier private constructor(private val jwksUrl: URL) {
         val selector = JWKSelector(matcher)
 
         val clock = clockNanos
-        cached?.takeIf { clock() - it.atNanos < UNKNOWN_KID_COOLDOWN_NANOS }?.let { snapshot ->
-            firstOctetKeyPair(selector.select(snapshot.keys))?.let { return it }
+        // Lock-free fast path: while the window is open nothing may be fetched, so a
+        // set within its TTL answers (a hit, or a miss that is refused) with no lock.
+        cached?.let { snapshot ->
+            val t = clock()
+            val last = lastFetchNanos
+            if (t - snapshot.atNanos < CACHE_TTL_NANOS && last != 0L && t - last < UNKNOWN_KID_COOLDOWN_NANOS) {
+                return firstOctetKeyPair(selector.select(snapshot.keys))
+            }
         }
 
         return refreshLock.withLock {

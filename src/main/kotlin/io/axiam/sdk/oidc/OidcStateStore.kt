@@ -52,14 +52,18 @@ data class OidcStateEntry(
     /**
      * The 1.3.1 five-argument constructor, kept so a store compiled against 1.3.x
      * (it rebuilds entries with this arity) still links; the entry then has no
-     * [bindingDigest] and the login glue refuses it, loudly (§12.8 rule 1).
+     * [bindingDigest] and the login glue refuses it, loudly (§12.8 rule 1). Hidden
+     * from source (the primary constructor serves it); it also keeps the 1.3.1
+     * default-argument bridge (`…, int, DefaultConstructorMarker`) that a caller
+     * compiled against 1.3.x with `returnTo` omitted uses.
      */
+    @Deprecated("Binary compatibility with 1.3.1 only.", level = DeprecationLevel.HIDDEN)
     constructor(
         state: String,
         nonce: String,
         codeVerifier: Sensitive<String>,
         redirectUri: String,
-        returnTo: String?,
+        returnTo: String? = null,
     ) : this(state, nonce, codeVerifier, redirectUri, returnTo, null)
 }
 

@@ -75,8 +75,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **The login callback clears the binding cookie on every exit (KOT-R1-4).** The clearing `Set-Cookie` is set
   before the success hook runs, so the framework's error response for a hook (or store) that throws carries it
-  too. The KDoc of `onSuccessWithCall` now says the hook must not send a response (a hook that responds itself was
-  already tolerated by the test host; no behaviour change there).
+  too. A hook that responds itself via `onSuccessWithCall` owns the response: the glue skips its own when
+  `call.response.isCommitted`, and the KDoc says the hook must not respond.
 - **The callback's `Location` header is the percent-encoded form of the destination (login-glue Decision 7).** A
   `return_to` or `successRedirect` holding a space or a non-ASCII character used to reach the header raw; a CR/LF
   admitted by `allowReturnTo` now becomes `%0D%0A`. The application is never asked to encode.
@@ -98,7 +98,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `@AxiamRequireScope`. `AxiamUser`'s constructor gained two defaulted parameters (`scopes`,
   `rolesClaimPresent`); a three-argument constructor call still compiles **and** still links (`@JvmOverloads`
   keeps the 1.3.1 JVM signature, as do the five-argument `OidcStateEntry`, `MemoryOidcStateStore(long)` and the
-  1.3.1 `axiamOidcLogin`). The data classes' generated `copy` and `copy$default` did change shape, so Kotlin code
+  1.3.1 `axiamOidcLogin`; the default-argument bridge `OidcStateEntry(…, int, DefaultConstructorMarker)` is kept too). The internal glue type `OidcLoginOutcome.Redirect(String)` is now the two-argument `Redirect(String, String?)`, and so is its `copy`. The data classes' generated `copy` and `copy$default` did change shape, so Kotlin code
   that calls `copy` on `AxiamUser` or `OidcStateEntry` must be recompiled against 1.4.0 (source is unchanged).
 - **Login glue (C7, C6, behaviour change).** Sign-ins in flight across the upgrade fail once and restart (their
   entries have no digest). A custom `OidcStateStore` MUST persist and return `OidcStateEntry.bindingDigest`

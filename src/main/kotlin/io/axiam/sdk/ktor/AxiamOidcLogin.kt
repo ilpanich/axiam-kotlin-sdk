@@ -106,7 +106,8 @@ import java.util.Locale
  *   its session on THAT request without ambient context (§12.8 rule 2). Runs
  *   after [onSuccess] when both are set; the old hook is kept so the published
  *   signature of [onSuccess] does not change. **The hook must not send a
- *   response**: the glue sends the outcome itself. A
+ *   response**: the glue sends the outcome itself, and when the hook has already
+ *   responded (`call.response.isCommitted`) it sends nothing further. A
  *   hook that throws gets the framework's error response, which still clears the
  *   binding cookie (the clearing header is set before the hook can run)
  * @param onSuccess called with the validated token set once the exchange
@@ -164,6 +165,8 @@ fun Route.axiamOidcLogin(
             bindingCookie = call.request.cookies[cookieName],
             allowReturnTo = allowReturnTo,
         )
+        // A request hook that already responded owns the response.
+        if (call.response.isCommitted) return@get
         respondOutcome(call, outcome)
     }
 }

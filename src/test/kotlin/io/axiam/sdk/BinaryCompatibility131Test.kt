@@ -34,6 +34,16 @@ class BinaryCompatibility131Test {
     }
 
     @Test
+    fun `OidcStateEntry keeps the 1-3-1 default-argument bridge constructor`() {
+        val ctor = OidcStateEntry::class.java.getConstructor(
+            String::class.java, String::class.java, Sensitive::class.java, String::class.java, String::class.java,
+            Int::class.javaPrimitiveType, kotlin.jvm.internal.DefaultConstructorMarker::class.java,
+        )
+        val entry = ctor.newInstance("s", "n", Sensitive.of("v"), "https://a/cb", null, 16, null) as OidcStateEntry
+        assertEquals(null, entry.returnTo)
+    }
+
+    @Test
     fun `MemoryOidcStateStore keeps the one-argument long constructor`() {
         val store = MemoryOidcStateStore::class.java.getConstructor(Long::class.javaPrimitiveType).newInstance(1_000L)
         assertNotNull(store)
