@@ -99,7 +99,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `rolesClaimPresent`); a three-argument constructor call still compiles **and** still links (`@JvmOverloads`
   keeps the 1.3.1 JVM signature, as do the five-argument `OidcStateEntry`, `MemoryOidcStateStore(long)` and the
   1.3.1 `axiamOidcLogin`; the default-argument bridge `OidcStateEntry(…, int, DefaultConstructorMarker)` is kept too). The internal glue type `OidcLoginOutcome.Redirect(String)` is now the two-argument `Redirect(String, String?)`, and so is its `copy`. The data classes' generated `copy` and `copy$default` did change shape, so Kotlin code
-  that calls `copy` on `AxiamUser` or `OidcStateEntry` must be recompiled against 1.4.0 (source is unchanged).
+  that calls `copy` on `AxiamUser` or `OidcStateEntry` must be recompiled against 1.4.0 (source is unchanged). Java source must pass `bindingDigest` (6 arguments) to `OidcStateEntry`; compiled 1.3.x jars still link.
 - **Login glue (C7, C6, behaviour change).** Sign-ins in flight across the upgrade fail once and restart (their
   entries have no digest). A custom `OidcStateStore` MUST persist and return `OidcStateEntry.bindingDigest`
   unchanged, or every callback is refused. The callback must be reached by the same browser that hit the login

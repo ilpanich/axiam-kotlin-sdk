@@ -242,7 +242,16 @@ class OidcLoginBindingHooksTest {
 
     @Test
     fun `a request hook that responds itself still gets the cookie cleared (KOT-R1-4 pin)`() = testApplication {
+        val failures = java.util.concurrent.CopyOnWriteArrayList<Throwable>()
+        val sent = java.util.concurrent.CopyOnWriteArrayList<String>()
         application {
+            install(
+                createApplicationPlugin("failure-recorder") {
+                    on(CallFailed) { _, cause -> failures += cause }
+                    // Every attempt to send a response body, accepted or not.
+                    onCallRespond { _, body -> sent += body.toString() }
+                },
+            )
             routing {
                 axiamOidcLogin(
                     axiam(), redirectUri,
@@ -257,6 +266,9 @@ class OidcLoginBindingHooksTest {
         assertEquals(HttpStatusCode.Accepted, response.status)
         assertEquals("mine", response.bodyAsText())
         assertTrue(cleared(response))
+        // The glue must not respond a second time (the isCommitted guard).
+        assertTrue(failures.isEmpty(), "the callback failed: $failures")
+        assertTrue(sent.none { it.contains("authenticated") }, "the glue responded after the hook did: $sent")
     }
 
     @Test
