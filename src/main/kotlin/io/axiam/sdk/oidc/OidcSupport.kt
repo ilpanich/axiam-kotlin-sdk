@@ -95,6 +95,8 @@ internal class OidcSupport(
      * than a per-call one.
      */
     private val presentsClientCertificate: Boolean = false,
+    /** The client's TLS for the JWKS fetch (§6 `customCa`; the §6.1 identity only to the base URL's origin). */
+    private val jwksTls: io.axiam.sdk.internal.JwksTls = io.axiam.sdk.internal.JwksTls(null, null),
     /**
      * CONTRACT.md §5.2 rule 1 (contract 1.51) — invoked exactly once after
      * every SSO/federation completion that establishes a NEW session
@@ -2254,7 +2256,7 @@ internal class OidcSupport(
      */
     private suspend fun verifierFor(jwksUri: String): JwksVerifier = verifiersMutex.withLock {
         val resolved = resolveJwksUri(jwksUri)
-        verifiers.getOrPut(resolved) { JwksVerifier.forJwksUri(resolved) }
+        verifiers.getOrPut(resolved) { JwksVerifier.forJwksUri(resolved, baseUrl, jwksTls) }
     }
 
     /**

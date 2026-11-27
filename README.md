@@ -437,6 +437,9 @@ AxiamClient.builder(baseUrl, "acme")
     .build()
 ```
 
+The JWKS fetch behind `verifySession` and ID-token / logout-token validation honours `customCa` too. The §6.1
+client identity is sent to it only when the `jwks_uri` has the same origin as the base URL.
+
 For IoT / service-account **mutual TLS** (§6.1), present a client identity certificate (a PEM
 cert chain plus a PEM PKCS#8 private key). It is applied to the client's transport and the
 private key is held behind `Sensitive` — never logged or exposed:

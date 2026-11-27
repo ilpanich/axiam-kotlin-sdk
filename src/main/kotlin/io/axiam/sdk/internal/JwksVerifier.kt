@@ -30,7 +30,16 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.locks.ReentrantLock
+import javax.net.ssl.HttpsURLConnection
+import javax.net.ssl.SSLSocketFactory
 import kotlin.concurrent.withLock
+
+/**
+ * The TLS a JWKS fetch may use (CONTRACT.md §6): both factories verify the certificate chain and the host name
+ * strictly. [withIdentity] also carries the §6.1 client identity; [trustOnly] never does. Internal on purpose:
+ * no public input can hand the SDK a TLS configuration, only `customCa` and the client identity.
+ */
+internal class JwksTls(val withIdentity: SSLSocketFactory?, val trustOnly: SSLSocketFactory?)
 
 /**
  * Local JWT verification against an EdDSA JWKS document, the §10 middleware's
@@ -62,7 +71,14 @@ import kotlin.concurrent.withLock
  * signature verification through it and then applies [assertLocalClaims],
  * which is the full §10.1 minimum local-verification set.
  */
-class JwksVerifier private constructor(private val jwksUrl: URL) {
+class JwksVerifier private constructor(
+    private val jwksUrl: URL,
+    /**
+     * The client's strict TLS stack (CONTRACT.md §6: the system trust store plus `customCa`, and the §6.1 identity
+     * when configured), applied to an `https` fetch. `null` keeps the JVM defaults.
+     */
+    private val tlsSocketFactory: SSLSocketFactory?,
+) {
 
     private val connectTimeoutMs = RemoteJWKSet.resolveDefaultHTTPConnectTimeout()
     private val readTimeoutMs = RemoteJWKSet.resolveDefaultHTTPReadTimeout()
@@ -111,7 +127,11 @@ class JwksVerifier private constructor(private val jwksUrl: URL) {
      * The §10 middleware's public entry point: a verifier bound to
      * `{baseUrl}/oauth2/jwks`.
      */
-    constructor(baseUrl: String) : this(deriveJwksUrl(baseUrl))
+    constructor(baseUrl: String) : this(deriveJwksUrl(baseUrl), null)
+
+    /** As [JwksVerifier], fetching over [sslSocketFactory] so `customCa` (§6) reaches the key fetch. */
+    internal constructor(baseUrl: String, sslSocketFactory: SSLSocketFactory?) :
+        this(deriveJwksUrl(baseUrl), sslSocketFactory)
 
     /**
      * **Signature-only primitive — NOT a guard** (CONTRACT.md §10.1).
@@ -495,6 +515,11 @@ class JwksVerifier private constructor(private val jwksUrl: URL) {
                 requestMethod = "GET"
                 setRequestProperty("Accept", "application/json")
                 if (etag != null) setRequestProperty("If-None-Match", etag)
+                // Only the socket factory is replaced: verification stays strict and the
+                // default hostname check of HttpsURLConnection is untouched.
+                if (this is HttpsURLConnection && tlsSocketFactory != null) {
+                    this.sslSocketFactory = tlsSocketFactory
+                }
             }
             connRef.set(conn)
             when (conn.responseCode) {
@@ -584,14 +609,29 @@ class JwksVerifier private constructor(private val jwksUrl: URL) {
          * rather than assume the fixed AXIAM resource-server path — the two
          * may legitimately differ behind a proxy.
          */
-        fun forJwksUri(jwksUri: String): JwksVerifier {
+        fun forJwksUri(jwksUri: String): JwksVerifier = forJwksUri(jwksUri, jwksUri, JwksTls(null, null))
+
+        /**
+         * As [forJwksUri], fetching over the client's TLS stack so `customCa` (§6) reaches the key fetch. The §6.1
+         * client identity is presented only when [jwksUri] has the same origin (scheme, host, port) as [baseUrl];
+         * any other origin (§12.3 rule 6 allows one) gets the trust configuration alone.
+         */
+        internal fun forJwksUri(jwksUri: String, baseUrl: String, tls: JwksTls): JwksVerifier {
             val url = try {
                 URI.create(jwksUri).toURL()
             } catch (e: Exception) {
                 throw IllegalArgumentException("invalid jwks_uri: $jwksUri", e)
             }
-            return JwksVerifier(url)
+            val sameOrigin = try {
+                origin(url) == origin(URI.create(baseUrl).toURL())
+            } catch (_: Exception) {
+                false
+            }
+            return JwksVerifier(url, if (sameOrigin) tls.withIdentity else tls.trustOnly)
         }
+
+        private fun origin(u: URL): Triple<String, String, Int> =
+            Triple(u.protocol.lowercase(Locale.ROOT), u.host.lowercase(Locale.ROOT), if (u.port == -1) u.defaultPort else u.port)
 
         /** Derives `{baseUrl}/oauth2/jwks` as a [URL], failing clearly on a malformed [baseUrl]. */
         private fun deriveJwksUrl(baseUrl: String): URL {

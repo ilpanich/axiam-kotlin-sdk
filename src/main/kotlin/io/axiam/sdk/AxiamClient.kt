@@ -266,6 +266,11 @@ class AxiamClient private constructor(
                 val session = SessionState(cookieManager, baseUrl, tenantId, b.orgSlug, b.orgId)
 
                 val tls = TlsFactory.build(b.customCaPem, b.clientCertPem, b.clientKeyPem)
+                // §6 / §6.1: the JWKS fetch trusts the same CAs; the client identity goes only to the base URL's origin.
+                val jwksTls = io.axiam.sdk.internal.JwksTls(
+                    withIdentity = tls.sslContext.socketFactory,
+                    trustOnly = TlsFactory.build(b.customCaPem, null, null).sslContext.socketFactory,
+                )
 
                 val base = b.overrideHttpClient?.newBuilder() ?: OkHttpClient.Builder()
                 val httpClient = base
@@ -314,6 +319,8 @@ class AxiamClient private constructor(
                     // §6.1 is all-or-nothing: TlsFactory.build above has already
                     // refused a half-configured pair, so either half implies both.
                     presentsClientCertificate = b.clientCertPem != null,
+                    // §6: the JWKS fetch (an ID or logout token's key set) uses the same TLS stack.
+                    jwksTls = jwksTls,
                     // §5.2 rule 1 / "For C-12" answer 5: every SSO/federation
                     // completion establishes a session with no LoginUserInfo to
                     // read a reach from — reset the gate exactly as
@@ -343,7 +350,7 @@ class AxiamClient private constructor(
                     expectedAudience = b.expectedAudience,
                     httpClient = httpClient,
                     refreshGuard = RefreshGuard(),
-                    jwksVerifier = JwksVerifier(baseUrl),
+                    jwksVerifier = JwksVerifier(baseUrl, jwksTls.withIdentity),
                     session = session,
                     oidcSupport = oidcSupport,
                     retryEnabled = b.retryEnabled,

@@ -77,6 +77,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`customCa` now reaches the JWKS fetch (#107).** `JwksVerifier` fetched the key set over a plain
+  `HttpURLConnection`, so with a private CA `verifySession` and ID-token / logout-token validation failed closed
+  (`unknown_kid`) while every other call worked. The fetch now uses the client's own TLS stack (CONTRACT.md §6:
+  system trust store plus `customCa`, and the §6.1 identity when configured), for the session verifier and for the
+  OIDC verifiers alike. Verification stays strict: only the socket factory is set (no public API accepts a TLS
+  configuration), the hostname check is untouched, and a client without the CA still fails. The §6.1 client
+  identity goes to the JWKS endpoint only when its origin is the base URL's; another origin gets `customCa` trust alone.
+
 - **The JWKS cache is bounded stale-if-error (CONTRACT.md 1.69 §12.4 rule 2, D-10; axiam#883).** The held key set is
   kept through a failed refresh for exactly TTL + 300 s after the last successful fetch (it was 300 s in all), then
   every token is refused until a fetch succeeds. The TTL is 300 s, or a smaller `Cache-Control: max-age`; a larger
