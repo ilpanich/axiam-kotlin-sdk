@@ -7,22 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- **The JWKS cache is bounded stale-if-error (CONTRACT.md 1.69 §12.4 rule 2, D-10; axiam#883).** The held key set is
-  kept through a failed refresh for exactly TTL + 300 s after the last successful fetch (it was 300 s in all), then
-  every token is refused until a fetch succeeds. The TTL is 300 s, or a smaller `Cache-Control: max-age`; a larger
-  one is clamped to 300 s. A known `kid` inside the TTL no longer causes a refresh. A refresh succeeds on a `200`
-  with at least one key or a `304` to the `ETag` conditional request (which moves the anchor); an empty key set, a
-  non-JWKS body (including `{"keys":[{}]}`), any other status or a transport error is a failure that keeps the held keys and never moves the
-  anchor, and a failed unknown-`kid` refresh never opens or extends the stale window. The verifier now fetches with
-  `HttpURLConnection` (no redirects, nimbus's timeouts and size limit) so it can read the headers. There is no
-  caller-set TTL, so a configured TTL never competes with `max-age` and no `config_clamped` event applies.
-  The fetch no longer runs under the cache lock: it is single-flight on an SDK-owned daemon thread with a 5 s total
-  deadline enforced by a watchdog that closes the connection (a server dripping the status line or headers cannot hold it), a held key that is still usable is answered without waiting for it, and a caller that is interrupted
-  records no failure and opens no cooldown. Every TTL-driven refresh respects the 60 s window, so `max-age=0` cannot
-  mean a fetch per verification.
-
 ### Security
 
 - **The build now runs on Kotlin Gradle plugin 2.4.21** (was 2.2.21), which fixes GHSA-r937-wjx7-w2jp, a
@@ -31,10 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `coreLibrariesVersion`, so the `@Metadata` and the POM's `kotlin-stdlib` still ask for Kotlin 2.2.21.
   `VersionPolicyTest` reads the metadata version back from the compiled classes and checks the stdlib on the
   classpath. The minimum Kotlin for consumers is unchanged.
-
-## [1.4.0] - 2026-11-22
-
-### Security
+- **Build-tool dependency floors for Dependabot alerts.** `settings.gradle.kts` raises BouncyCastle (`bcprov`,
+  `bcpkix`, `bcpg`, `bcutil`) to 1.85 (GHSA-9pwp-9qqc-pr26, GHSA-qp49-qgx5-5m26, GHSA-wg6q-6289-32hp,
+  GHSA-cj8j-37rh-8475), FreeMarker to 2.3.35 (GHSA-27j2-h3m2-8237) and OpenTelemetry `api`/`context` to 1.67.0
+  (GHSA-rcgg-9c38-7xpx, GHSA-ccrj-gw8r-854m), and floors jackson at 2.22.3 (GHSA-7hhh-6rmp-j9qf, GHSA-p6pp-m3f8-5c89,
+  GHSA-cxp5-3px4-pw24, GHSA-wv8q-qhhj-9h54) and Netty at 4.2.21.Final on transitive classpaths (the Kotlin and Dokka
+  plugins, Kover, and the Netty engine of the examples source set). None of them reaches the published POM.
 
 - Security-audit 2026-11-14 fixes (CONTRACT.md 1.68). **Three of these are behaviour changes for integrators**
 (login glue, `requireRole`, and the guard's stricter access-token checks); read the migration notes.
@@ -87,7 +73,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Vendored `CONTRACT.md`, `openapi.json` and `management-registry.json` re-synced to contract 1.68; the §27
   surface is regenerated (`AuditLogEntry.organizationId`, the audit and privacy operation documentation).
 
+- Monthly dependency refresh (2026-11): Gradle wrapper 9.9.1 -> 9.9.2; RabbitMQ `amqp-client` (compileOnly / tests) 5.38.0. Kotlin (2.2.21 floor, 2.4.21 newest) and JVM (17 floor, 27 newest) support unchanged.
+
 ### Fixed
+
+- **The JWKS cache is bounded stale-if-error (CONTRACT.md 1.69 §12.4 rule 2, D-10; axiam#883).** The held key set is
+  kept through a failed refresh for exactly TTL + 300 s after the last successful fetch (it was 300 s in all), then
+  every token is refused until a fetch succeeds. The TTL is 300 s, or a smaller `Cache-Control: max-age`; a larger
+  one is clamped to 300 s. A known `kid` inside the TTL no longer causes a refresh. A refresh succeeds on a `200`
+  with at least one key or a `304` to the `ETag` conditional request (which moves the anchor); an empty key set, a
+  non-JWKS body (including `{"keys":[{}]}`), any other status or a transport error is a failure that keeps the held keys and never moves the
+  anchor, and a failed unknown-`kid` refresh never opens or extends the stale window. The verifier now fetches with
+  `HttpURLConnection` (no redirects, nimbus's timeouts and size limit) so it can read the headers. There is no
+  caller-set TTL, so a configured TTL never competes with `max-age` and no `config_clamped` event applies.
+  The fetch no longer runs under the cache lock: it is single-flight on an SDK-owned daemon thread with a 5 s total
+  deadline enforced by a watchdog that closes the connection (a server dripping the status line or headers cannot hold it), a held key that is still usable is answered without waiting for it, and a caller that is interrupted
+  records no failure and opens no cooldown. Every TTL-driven refresh respects the 60 s window, so `max-age=0` cannot
+  mean a fetch per verification.
 
 - **The login callback clears the binding cookie on every exit (KOT-R1-4).** The clearing `Set-Cookie` is set
   before the success hook runs, so the framework's error response for a hook (or store) that throws carries it
@@ -132,9 +134,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   equal to the `axiam_csrf` cookie; a browser client that already echoes it (this SDK's `AxiamClient` does) is
   unaffected, a hand-rolled one is refused `403`. Access tokens minted by an AXIAM server before 1.67 carry
   `typ: JWT` and are refused; their holders refresh (at most one access-token lifetime).
-### Changed
-
-- Monthly dependency refresh (2026-11): Gradle wrapper 9.9.1 -> 9.9.2; RabbitMQ `amqp-client` (compileOnly / tests) 5.38.0. Kotlin (2.2.21 floor, 2.4.21 newest) and JVM (17 floor, 27 newest) support unchanged.
 
 ## [1.3.1] - 2026-11-11
 
