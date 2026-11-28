@@ -12,6 +12,7 @@ import com.nimbusds.jwt.SignedJWT
 import io.axiam.sdk.annotations.AxiamRequireAccess
 import io.axiam.sdk.annotations.AxiamRequireAuth
 import io.axiam.sdk.annotations.AxiamRequireRole
+import io.axiam.sdk.annotations.AxiamRequireScope
 import io.axiam.sdk.ktor.AxiamAuthentication
 import io.axiam.sdk.ktor.axiamUser
 import io.axiam.sdk.ktor.enforce
@@ -39,6 +40,13 @@ import java.util.Date
 @AxiamRequireRole("admin")
 @AxiamRequireAccess(action = "read", resourceParam = "id")
 private class AnnotatedEndpointMarker
+
+@AxiamRequireScope("admin", "superuser")
+private class ScopedEndpointMarker
+
+@AxiamRequireScope("openid")
+@AxiamRequireScope("admin")
+private class TwoScopedEndpointMarker
 
 class KtorEnforceTest {
 
@@ -145,5 +153,42 @@ class KtorEnforceTest {
         }
         assertEquals(HttpStatusCode.OK, client.get("/open").status)
         axiam.close()
+    }
+
+    private fun scopeRoute(markerAnnotations: Array<Annotation>, scope: String, roles: List<String>?) = testApplication {
+        val axiam = AxiamClient.builder(backend.url("/").toString(), TestSupport.TENANT_ID).build()
+        application {
+            install(AxiamAuthentication) { client = axiam }
+            routing {
+                get("/s") {
+                    call.enforce(*markerAnnotations) ?: return@get
+                    call.respondText("ok")
+                }
+            }
+        }
+        lastStatus = client.get("/s") { header("Authorization", "Bearer ${token(scope, roles)}") }.status
+        axiam.close()
+    }
+
+    private var lastStatus: HttpStatusCode? = null
+
+    @Test
+    fun `enforce applies AxiamRequireScope - any listed scope passes, a role never stands in for it`() {
+        val marker = ScopedEndpointMarker::class.java.annotations
+        scopeRoute(marker, "openid admin", null)
+        assertEquals(HttpStatusCode.OK, lastStatus)
+        scopeRoute(marker, "openid", listOf("admin"))
+        assertEquals(HttpStatusCode.Forbidden, lastStatus)
+    }
+
+    @Test
+    fun `a repeated AxiamRequireScope needs every annotation to pass`() {
+        val marker = TwoScopedEndpointMarker::class.java.annotations
+        scopeRoute(marker, "openid admin", null)
+        assertEquals(HttpStatusCode.OK, lastStatus)
+        scopeRoute(marker, "openid", null)
+        assertEquals(HttpStatusCode.Forbidden, lastStatus)
+        scopeRoute(marker, "admin", null)
+        assertEquals(HttpStatusCode.Forbidden, lastStatus)
     }
 }

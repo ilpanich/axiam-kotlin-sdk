@@ -6,9 +6,14 @@ import io.axiam.sdk.oidc.OidcTestKit
 import io.axiam.sdk.Sensitive
 import io.ktor.client.request.get
 import io.ktor.client.request.header
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
+import io.ktor.server.application.createApplicationPlugin
+import io.ktor.server.application.hooks.CallFailed
+import io.ktor.server.application.install
+import io.ktor.server.response.respondText
 import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
 import kotlinx.coroutines.runBlocking
@@ -201,5 +206,166 @@ class OidcLoginBindingHooksTest {
         assertEquals(3, store.size)
         assertNotNull(store.consume("s5"))
         assertNull(store.consume("s1"))
+    }
+
+    private fun cleared(response: io.ktor.client.statement.HttpResponse) =
+        response.headers.getAll(HttpHeaders.SetCookie).orEmpty().any {
+            it.startsWith("$cookieName=;") && it.contains("Max-Age=0")
+        }
+
+    /** Begins a login on [client] and returns the callback request's cookie header and `state`. */
+    private suspend fun beginLogin(client: io.ktor.client.HttpClient): Pair<String, String> {
+        val login = client.config { followRedirects = false }.get("/login?return_to=${java.net.URLEncoder.encode("/a b/café", "UTF-8")}")
+        val state = Regex("state=([^&]+)").find(login.headers[HttpHeaders.Location]!!)!!.groupValues[1]
+        val cookie = login.headers.getAll(HttpHeaders.SetCookie)!!.first { it.startsWith("$cookieName=") }.substringBefore(";")
+        return cookie to state
+    }
+
+    private val errorHandler = createApplicationPlugin("test-error-handler") {
+        // An application error handler: it answers 500 and keeps the headers already set.
+        on(CallFailed) { call, _ -> call.respondText("boom", status = HttpStatusCode.InternalServerError) }
+    }
+
+    @Test
+    fun `a success hook that throws still clears the binding cookie (KOT-R1-4)`() = testApplication {
+        application {
+            install(errorHandler)
+            routing { axiamOidcLogin(axiam(), redirectUri, onSuccess = { _, _ -> error("the session store is down") }) }
+        }
+        val (cookie, state) = beginLogin(client)
+        val response = client.config { followRedirects = false }.get("/callback?state=$state&code=c") {
+            header(HttpHeaders.Cookie, cookie)
+        }
+        assertEquals(HttpStatusCode.InternalServerError, response.status)
+        assertTrue(cleared(response), "the 500 must carry the clearing Set-Cookie")
+    }
+
+    @Test
+    fun `a request hook that responds itself still gets the cookie cleared (KOT-R1-4 pin)`() = testApplication {
+        val failures = java.util.concurrent.CopyOnWriteArrayList<Throwable>()
+        val sent = java.util.concurrent.CopyOnWriteArrayList<String>()
+        application {
+            install(
+                createApplicationPlugin("failure-recorder") {
+                    on(CallFailed) { _, cause -> failures += cause }
+                    // Every attempt to send a response body, accepted or not.
+                    onCallRespond { _, body -> sent += body.toString() }
+                },
+            )
+            routing {
+                axiamOidcLogin(
+                    axiam(), redirectUri,
+                    onSuccessWithCall = { _, _, call -> call.respondText("mine", status = HttpStatusCode.Accepted) },
+                )
+            }
+        }
+        val (cookie, state) = beginLogin(client)
+        val response = client.config { followRedirects = false }.get("/callback?state=$state&code=c") {
+            header(HttpHeaders.Cookie, cookie)
+        }
+        assertEquals(HttpStatusCode.Accepted, response.status)
+        assertEquals("mine", response.bodyAsText())
+        assertTrue(cleared(response))
+        // The glue must not respond a second time (the isCommitted guard).
+        assertTrue(failures.isEmpty(), "the callback failed: $failures")
+        assertTrue(sent.none { it.contains("authenticated") }, "the glue responded after the hook did: $sent")
+    }
+
+    @Test
+    fun `a wrong cookie spends the state, answers the uniform 401 and clears (GLUE-R1-4)`() = testApplication {
+        val calls = AtomicInteger()
+        application {
+            routing { axiamOidcLogin(axiam(), redirectUri, onSuccess = { _, _ -> calls.incrementAndGet() }) }
+        }
+        val (cookie, state) = beginLogin(client)
+        val wrong = client.get("/callback?state=$state&code=c") { header(HttpHeaders.Cookie, "$cookieName=another-logins-value") }
+        assertEquals(HttpStatusCode.Unauthorized, wrong.status)
+        assertTrue(cleared(wrong))
+        // The state is spent: the right cookie now gets the same 401, and nothing was exchanged.
+        val retry = client.get("/callback?state=$state&code=c") { header(HttpHeaders.Cookie, cookie) }
+        assertEquals(HttpStatusCode.Unauthorized, retry.status)
+        assertEquals(wrong.bodyAsText(), retry.bodyAsText())
+        assertEquals(0, tokenRequests.get())
+        assertEquals(0, calls.get())
+    }
+
+    @Test
+    fun `a predicate that throws an Error accepts nothing (N4)`() {
+        assertFalse(isAcceptableReturnTo("https://app.example/x") { throw NoSuchMethodError("linkage") })
+    }
+
+    // Decision 7 (login-glue-binding.md): the adapter encodes the Location value.
+
+    @Test
+    fun `the callback redirect carries the percent-encoded return_to - space and non-ASCII (Decision 7)`() = testApplication {
+        application { routing { axiamOidcLogin(axiam(), redirectUri) } }
+        val (cookie, state) = beginLogin(client)
+        val response = client.config { followRedirects = false }.get("/callback?state=$state&code=c") {
+            header(HttpHeaders.Cookie, cookie)
+        }
+        assertEquals(HttpStatusCode.Found, response.status)
+        assertEquals("/a%20b/caf%C3%A9", response.headers[HttpHeaders.Location])
+        assertTrue(cleared(response))
+    }
+
+    @Test
+    fun `a CR LF destination admitted by the predicate is encoded and injects no header (Decision 7)`() = testApplication {
+        val store = MemoryOidcStateStore()
+        val value = newBindingValue()
+        val hostile = "https://app.example/x\r\nSet-Cookie: pwned=1"
+        runBlocking { store.save(entry("hostile", returnTo = hostile, digest = bindingDigest(value))) }
+        application { routing { axiamOidcLogin(axiam(), redirectUri, store = store, allowReturnTo = { true }) } }
+        val response = client.config { followRedirects = false }.get("/callback?state=hostile&code=c") {
+            header(HttpHeaders.Cookie, "$cookieName=$value")
+        }
+        assertEquals(HttpStatusCode.Found, response.status)
+        val location = response.headers[HttpHeaders.Location]!!
+        assertEquals("https://app.example/x%0D%0ASet-Cookie:%20pwned=1", location)
+        assertNull(response.headers["pwned"])
+        assertFalse(response.headers.getAll(HttpHeaders.SetCookie).orEmpty().any { it.startsWith("pwned") })
+    }
+
+    @Test
+    fun `encodeRedirectLocation follows the contract table`() {
+        assertEquals("/a%20b", encodeRedirectLocation("/a b"))
+        assertEquals("/caf%C3%A9", encodeRedirectLocation("/café"))
+        assertEquals("/%E2%82%AC", encodeRedirectLocation("/€"))
+        assertEquals("/%F0%9F%98%80", encodeRedirectLocation("/\uD83D\uDE00"))
+        assertEquals("/%EF%BF%BD", encodeRedirectLocation("/\uD83D"))
+        assertEquals("/a%20b", encodeRedirectLocation("/a%20b"))
+        assertEquals("/100%25", encodeRedirectLocation("/100%"))
+        assertEquals("/%25zz", encodeRedirectLocation("/%zz"))
+        assertEquals("/%25%41", encodeRedirectLocation("/%%41"))
+        assertEquals("/a%252", encodeRedirectLocation("/a%2"))
+        assertEquals("/%EF%BF%BD%EF%BF%BD", encodeRedirectLocation("/\uD800\uD800"))
+        assertEquals("/a\\b", encodeRedirectLocation("/a\\b"))
+        assertEquals("/%0D%0A", encodeRedirectLocation("/\r\n"))
+        assertEquals("/%22%3C%3E%60%7B%7D%7F", encodeRedirectLocation("/\"<>`{}\u007f"))
+        assertEquals("/a?b=c&d=e#f", encodeRedirectLocation("/a?b=c&d=e#f"))
+        assertTrue(encodeRedirectLocation("/日本 \r\n\u0000é").all { it.code in 0x21..0x7E })
+    }
+
+    @Test
+    fun `the memory store never overshoots its bound under concurrent saves (KOT-R1-7)`() {
+        repeat(20) {
+            val store = MemoryOidcStateStore(maxEntries = 50)
+            val pool = java.util.concurrent.Executors.newFixedThreadPool(8)
+            val start = java.util.concurrent.CountDownLatch(1)
+            val maxSeen = AtomicInteger()
+            val tasks = (0 until 8).map { t ->
+                pool.submit {
+                    start.await()
+                    for (i in 0 until 400) {
+                        runBlocking { store.save(entry("s-$t-$i", null, "d")) }
+                        maxSeen.accumulateAndGet(store.size) { a, b -> maxOf(a, b) }
+                    }
+                }
+            }
+            start.countDown()
+            tasks.forEach { it.get() }
+            pool.shutdown()
+            assertTrue(maxSeen.get() <= 50, "the store held ${maxSeen.get()} entries, bound is 50")
+            assertEquals(50, store.size)
+        }
     }
 }

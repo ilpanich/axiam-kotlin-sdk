@@ -51,7 +51,7 @@ import kotlin.coroutines.CoroutineContext
  * `deferred.isActive`/`isCompleted`, not nullness.
  *
  * **(c) Only the current owner clears its own slot.** The vacate is
- * identity-checked (`inFlight === slot`) so a lagging attempt can never clear
+ * identity-checked (`inFlight[key] === slot`) so a lagging attempt can never clear
  * a newer attempt's entry, and it runs inside [NonCancellable]: acquiring
  * [mutex] is a cancellable suspension point, so without that a worker unwound
  * by cancellation could throw *before* clearing and leave a settled outcome
@@ -59,7 +59,7 @@ import kotlin.coroutines.CoroutineContext
  * (a rule 6d violation) with no wire call ever happening again.
  *
  * **(d) A caller arriving after full settlement gets a fresh attempt.** Once
- * the slot is vacated it is `null`, so the next caller becomes a new leader and
+ * the slot is vacated its entry is removed, so the next caller becomes a new leader and
  * runs its own work block. Nothing caches the settled `Deferred` — [fastPath]
  * caches *values* (a token pair, a discovery document), never the in-flight
  * slot.
@@ -100,11 +100,13 @@ internal class SingleFlight<T : Any> private constructor(private val scope: Coro
     private val mutex = Mutex()
 
     /**
-     * The shared outcome of the attempt currently being coalesced, or `null`.
-     * Read and written ONLY under [mutex], and only by [run]/[start] — see
-     * rule (b) above on why nothing else may consult it.
+     * The shared outcome of the attempt currently being coalesced, per key
+     * (an absent key is the "empty slot"). Read and written ONLY under
+     * [mutex], and only by [run]/[start] — see rule (b) above on why nothing
+     * else may consult it. A key's entry is removed when its attempt vacates,
+     * so the map never outgrows the set of live or just-settled attempts.
      */
-    private var inFlight: CompletableDeferred<Result<T>>? = null
+    private val inFlight = HashMap<Any, CompletableDeferred<Result<T>>>()
 
     /**
      * Visible-for-testing seam: invoked on the worker immediately after the
@@ -119,6 +121,11 @@ internal class SingleFlight<T : Any> private constructor(private val scope: Coro
     /**
      * Coalesces [block] (§9 rules 1–3).
      *
+     * @param key the burst identity: callers with equal keys coalesce (rules
+     *   1–3, 6a–6d hold per key); a caller with a different key never joins
+     *   another key's attempt and never receives its outcome. Must not be (or
+     *   hold) a secret — derive it with a digest. Defaults to one shared key,
+     *   the unkeyed behaviour of the §1 guard and discovery fetch.
      * @param fastPath consulted under [mutex] before the start/join decision;
      *   a non-null return short-circuits with no attempt at all (the §1
      *   observed-token double-check, the §12.1 discovery TTL cache).
@@ -133,13 +140,14 @@ internal class SingleFlight<T : Any> private constructor(private val scope: Coro
      *   to every caller in the burst, never retried (§9.3).
      */
     suspend fun run(
+        key: Any = Unit,
         fastPath: () -> T? = { null },
         beforePublish: (T) -> Unit = {},
         block: suspend () -> T,
     ): T {
         val shared = mutex.withLock {
             fastPath()?.let { return it }
-            inFlight ?: start(beforePublish, block)
+            inFlight[key] ?: start(key, beforePublish, block)
         }
         // Awaited OUTSIDE the mutex: a waiter never holds the lock it (or the
         // worker's vacate) would otherwise need. `getOrThrow` rethrows the
@@ -147,10 +155,13 @@ internal class SingleFlight<T : Any> private constructor(private val scope: Coro
         return shared.await().getOrThrow()
     }
 
-    /** Elects this caller's attempt as leader and starts it. Caller MUST hold [mutex]. */
-    private fun start(beforePublish: (T) -> Unit, block: suspend () -> T): CompletableDeferred<Result<T>> {
+    /** Visible-for-testing: the keys that currently occupy a slot (never a raw secret). */
+    internal suspend fun occupiedKeys(): Set<Any> = mutex.withLock { inFlight.keys.toSet() }
+
+    /** Elects this caller's attempt as leader for [key] and starts it. Caller MUST hold [mutex]. */
+    private fun start(key: Any, beforePublish: (T) -> Unit, block: suspend () -> T): CompletableDeferred<Result<T>> {
         val slot = CompletableDeferred<Result<T>>()
-        inFlight = slot
+        inFlight[key] = slot
         scope.launch {
             val outcome = runCatching { block() }
             outcome.getOrNull()?.let(beforePublish)
@@ -159,7 +170,7 @@ internal class SingleFlight<T : Any> private constructor(private val scope: Coro
             afterPublishHook?.invoke()
             // ... (c) and only THEN vacate: uncancellably, and only our own entry.
             withContext(NonCancellable) {
-                mutex.withLock { if (inFlight === slot) inFlight = null }
+                mutex.withLock { if (inFlight[key] === slot) inFlight.remove(key) }
             }
         }
         return slot

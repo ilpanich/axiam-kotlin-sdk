@@ -38,13 +38,13 @@ class JwksUnknownKidCooldownTest {
         jwks.client().use { c ->
             c.jwksVerifier().setClockForTesting { now.get() }
             // Warm the cache with one token carrying the served kid.
-            assertEquals("user-1", c.verifySession(AccessTokenFixtures.mint(key)).userId)
+            assertEquals("user-1", v(c, AccessTokenFixtures.mint(key)).userId)
             val warm = jwks.fetches.get()
             assertEquals(1, warm)
 
             for (i in 0 until 50) {
                 val forged = AccessTokenFixtures.mint(key, kid = "forged-$i")
-                assertThrows(AuthError::class.java) { c.verifySession(forged) }
+                assertThrows(AuthError::class.java) { v(c, forged) }
             }
             val duringBurst = jwks.fetches.get() - warm
             assertTrue(duringBurst <= 1, "50 unknown kids must cause at most one JWKS fetch, saw $duringBurst")
@@ -56,20 +56,109 @@ class JwksUnknownKidCooldownTest {
         val rotated = AccessTokenFixtures.newKey("key-2")
         jwks.client().use { c ->
             c.jwksVerifier().setClockForTesting { now.get() }
-            assertEquals("user-1", c.verifySession(AccessTokenFixtures.mint(key)).userId)
+            assertEquals("user-1", v(c, AccessTokenFixtures.mint(key)).userId)
 
             jwks.published.set(listOf(rotated))
             val token = AccessTokenFixtures.mint(rotated, kid = "key-2")
 
             // Inside the window: refused, and no fetch.
             val before = jwks.fetches.get()
-            assertThrows(AuthError::class.java) { c.verifySession(token) }
+            assertThrows(AuthError::class.java) { v(c, token) }
             assertEquals(before, jwks.fetches.get(), "no JWKS fetch inside the cooldown window")
 
             // Past the window: one fetch picks the new key up. "Never re-fetch" would fail here.
             now.addAndGet(JwksVerifier.UNKNOWN_KID_COOLDOWN_NANOS + 1)
-            assertEquals("user-1", c.verifySession(token).userId)
+            assertEquals("user-1", v(c, token).userId)
             assertEquals(before + 1, jwks.fetches.get())
         }
     }
+
+    @Test
+    fun `a cold cache and an unknown kid cause one fetch, not a load plus a miss fetch`() {
+        jwks.client().use { c ->
+            c.jwksVerifier().setClockForTesting { now.get() }
+            val forged = AccessTokenFixtures.mint(key, kid = "forged")
+            assertThrows(AuthError::class.java) { v(c, forged) }
+            assertEquals(1, jwks.fetches.get(), "a cold cache and a forged kid must cost one JWKS fetch")
+            // And the window holds from there.
+            for (i in 0 until 49) {
+                assertThrows(AuthError::class.java) { v(c, AccessTokenFixtures.mint(key, kid = "forged-$i")) }
+            }
+            assertEquals(1, jwks.fetches.get())
+        }
+    }
+
+    @Test
+    fun `the first unknown kid after the window costs exactly one fetch`() {
+        jwks.client().use { c ->
+            c.jwksVerifier().setClockForTesting { now.get() }
+            assertEquals("user-1", v(c, AccessTokenFixtures.mint(key)).userId)
+            val warm = jwks.fetches.get()
+            now.addAndGet(JwksVerifier.UNKNOWN_KID_COOLDOWN_NANOS + 1)
+            assertThrows(AuthError::class.java) { v(c, AccessTokenFixtures.mint(key, kid = "forged")) }
+            assertEquals(warm + 1, jwks.fetches.get(), "one fetch for the first miss after the window")
+            for (i in 0 until 49) {
+                assertThrows(AuthError::class.java) { v(c, AccessTokenFixtures.mint(key, kid = "forged-$i")) }
+            }
+            assertEquals(warm + 1, jwks.fetches.get())
+        }
+    }
+
+    @Test
+    fun `fifty tokens against a failing JWKS endpoint cause at most one fetch per window`() {
+        jwks.status = 500
+        jwks.client().use { c ->
+            c.jwksVerifier().setClockForTesting { now.get() }
+            for (i in 0 until 50) {
+                assertThrows(AuthError::class.java) { v(c, AccessTokenFixtures.mint(key)) }
+            }
+            assertEquals(1, jwks.fetches.get(), "a failing endpoint is fetched once per window, not once per token")
+
+            // The endpoint recovers: after the window one fetch brings the key in.
+            jwks.status = 200
+            now.addAndGet(JwksVerifier.UNKNOWN_KID_COOLDOWN_NANOS + 1)
+            assertEquals("user-1", v(c, AccessTokenFixtures.mint(key)).userId)
+            assertEquals(2, jwks.fetches.get())
+        }
+    }
+
+    @Test
+    fun `a failing endpoint keeps serving a known key until TTL plus 300 s and then refuses it`() {
+        jwks.client().use { c ->
+            c.jwksVerifier().setClockForTesting { now.get() }
+            val known = AccessTokenFixtures.mint(key)
+            assertEquals("user-1", v(c, known).userId)
+            assertEquals(1, jwks.fetches.get())
+
+            // Within the TTL the held set answers with no fetch, past the cooldown window too.
+            now.addAndGet(JwksVerifier.UNKNOWN_KID_COOLDOWN_NANOS + 1)
+            assertEquals("user-1", v(c, known).userId)
+            assertEquals(1, jwks.fetches.get(), "a known kid inside the TTL costs no fetch")
+
+            jwks.status = 500
+            // Past the TTL: one (failed) fetch, and the held key is still accepted.
+            now.addAndGet(300_000_000_000L)
+            assertEquals("user-1", v(c, known).userId)
+            assertEquals(2, jwks.fetches.get())
+            // Inside the new window: accepted with no fetch.
+            assertEquals("user-1", v(c, known).userId)
+            assertEquals(2, jwks.fetches.get())
+
+            // 301 s past the TTL (the anchor never moved): refused.
+            now.set(T0 + 600_000_000_000L + 1_000_000_000L)
+            assertThrows(AuthError::class.java) { v(c, known) }
+        }
+    }
+
+    private companion object {
+        const val T0 = 1_000_000_000_000L
+    }
+
+    /** Verifies, then waits for any refresh the call started behind a usable held key to publish its outcome. */
+    private fun v(c: AxiamClient, token: String) =
+        try {
+            c.verifySession(token)
+        } finally {
+            c.jwksVerifier().awaitIdleForTesting()
+        }
 }

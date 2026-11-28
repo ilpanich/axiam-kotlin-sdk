@@ -1,7 +1,6 @@
 package io.axiam.sdk.oidc
 
 import io.axiam.sdk.Sensitive
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
@@ -49,7 +48,24 @@ data class OidcStateEntry(
     val redirectUri: String,
     val returnTo: String? = null,
     val bindingDigest: String? = null,
-)
+) {
+    /**
+     * The 1.3.1 five-argument constructor, kept so a store compiled against 1.3.x
+     * (it rebuilds entries with this arity) still links; the entry then has no
+     * [bindingDigest] and the login glue refuses it, loudly (§12.8 rule 1). Hidden
+     * from source (the primary constructor serves it); it also keeps the 1.3.1
+     * default-argument bridge (`…, int, DefaultConstructorMarker`) that a caller
+     * compiled against 1.3.x with `returnTo` omitted uses.
+     */
+    @Deprecated("Binary compatibility with 1.3.1 only.", level = DeprecationLevel.HIDDEN)
+    constructor(
+        state: String,
+        nonce: String,
+        codeVerifier: Sensitive<String>,
+        redirectUri: String,
+        returnTo: String? = null,
+    ) : this(state, nonce, codeVerifier, redirectUri, returnTo, null)
+}
 
 /**
  * Optional server-side store for in-flight `oidcBegin` state (CONTRACT.md
@@ -107,56 +123,61 @@ class MemoryOidcStateStore(
     maxEntries: Int = DEFAULT_MAX_ENTRIES,
 ) : OidcStateStore {
 
+    /** The 1.3.1 one-argument constructor `MemoryOidcStateStore(long)`, kept for binary compatibility. */
+    constructor(ttlMs: Long) : this(ttlMs, DEFAULT_MAX_ENTRIES)
+
     private val maxEntries: Int = maxEntries.coerceAtLeast(1)
 
     private val ttlMs: Long = ttlMs.coerceAtMost(OIDC_STATE_TTL_MS)
-    private val entries = ConcurrentHashMap<String, Held>()
-    private val sweepLock = ReentrantLock()
 
-    private class Held(val entry: OidcStateEntry, val expiresAtEpochMs: Long, val seq: Long)
-    private val nextSeq = java.util.concurrent.atomic.AtomicLong()
+    // Insertion-ordered, and every entry lives for the same TTL, so the head is
+    // always the oldest AND the first to expire: eviction and the expiry sweep
+    // are O(1) per removed entry instead of a scan. Every access holds [lock], so
+    // the bound is checked and enforced in one critical section.
+    private val entries = LinkedHashMap<String, Held>()
+    private val lock = ReentrantLock()
+
+    private class Held(val entry: OidcStateEntry, val expiresAtEpochMs: Long)
 
     /** Number of unexpired entries currently held. Intended for tests and metrics. */
     val size: Int
-        get() {
-            sweep()
-            return entries.size
+        get() = lock.withLock {
+            sweepLocked()
+            entries.size
         }
 
     override suspend fun save(entry: OidcStateEntry) {
-        sweep()
-        sweepLock.withLock {
-            while (entries.size >= maxEntries && !entries.containsKey(entry.state)) {
-                val oldest = entries.entries.minByOrNull { it.value.seq } ?: break
-                entries.remove(oldest.key)
+        lock.withLock {
+            sweepLocked()
+            // A re-save of a live state replaces it (and counts as the newest).
+            entries.remove(entry.state)
+            while (entries.size >= maxEntries) {
+                val eldest = entries.entries.iterator()
+                eldest.next()
+                eldest.remove()
             }
+            entries[entry.state] = Held(entry, System.currentTimeMillis() + ttlMs)
         }
-        entries[entry.state] = Held(entry, System.currentTimeMillis() + ttlMs, nextSeq.incrementAndGet())
     }
 
     /**
      * Atomically returns and deletes the entry for [state]. Deletion happens
      * BEFORE the expiry check, so even an expired hit is removed rather than
      * left to accumulate, and a second call can never return the same entry
-     * twice regardless of timing — [ConcurrentHashMap.remove] is itself
-     * atomic, so no external lock is needed for this operation.
+     * twice regardless of timing.
      */
     override suspend fun consume(state: String): OidcStateEntry? {
-        val held = entries.remove(state) ?: return null
+        val held = lock.withLock { entries.remove(state) } ?: return null
         if (held.expiresAtEpochMs <= System.currentTimeMillis()) return null
         return held.entry
     }
 
-    /** Drops every expired entry. Lazy housekeeping only — no background timer. */
-    private fun sweep() {
-        sweepLock.withLock {
-            val now = System.currentTimeMillis()
-            val iterator = entries.entries.iterator()
-            while (iterator.hasNext()) {
-                if (iterator.next().value.expiresAtEpochMs <= now) {
-                    iterator.remove()
-                }
-            }
+    /** Drops every expired entry from the head. Lazy housekeeping only — no background timer. Caller holds [lock]. */
+    private fun sweepLocked() {
+        val now = System.currentTimeMillis()
+        val iterator = entries.entries.iterator()
+        while (iterator.hasNext() && iterator.next().value.expiresAtEpochMs <= now) {
+            iterator.remove()
         }
     }
 

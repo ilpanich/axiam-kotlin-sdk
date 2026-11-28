@@ -266,6 +266,11 @@ class AxiamClient private constructor(
                 val session = SessionState(cookieManager, baseUrl, tenantId, b.orgSlug, b.orgId)
 
                 val tls = TlsFactory.build(b.customCaPem, b.clientCertPem, b.clientKeyPem)
+                // §6 / §6.1: the JWKS fetch trusts the same CAs; the client identity goes only to the base URL's origin.
+                val jwksTls = io.axiam.sdk.internal.JwksTls(
+                    withIdentity = tls.sslContext.socketFactory,
+                    trustOnly = TlsFactory.build(b.customCaPem, null, null).sslContext.socketFactory,
+                )
 
                 val base = b.overrideHttpClient?.newBuilder() ?: OkHttpClient.Builder()
                 val httpClient = base
@@ -314,6 +319,8 @@ class AxiamClient private constructor(
                     // §6.1 is all-or-nothing: TlsFactory.build above has already
                     // refused a half-configured pair, so either half implies both.
                     presentsClientCertificate = b.clientCertPem != null,
+                    // §6: the JWKS fetch (an ID or logout token's key set) uses the same TLS stack.
+                    jwksTls = jwksTls,
                     // §5.2 rule 1 / "For C-12" answer 5: every SSO/federation
                     // completion establishes a session with no LoginUserInfo to
                     // read a reach from — reset the gate exactly as
@@ -343,7 +350,7 @@ class AxiamClient private constructor(
                     expectedAudience = b.expectedAudience,
                     httpClient = httpClient,
                     refreshGuard = RefreshGuard(),
-                    jwksVerifier = JwksVerifier(baseUrl),
+                    jwksVerifier = JwksVerifier(baseUrl, jwksTls.withIdentity),
                     session = session,
                     oidcSupport = oidcSupport,
                     retryEnabled = b.retryEnabled,
@@ -800,6 +807,9 @@ class AxiamClient private constructor(
         set(value) {
             oidcSupport.afterRefreshPublishHook = value
         }
+
+    /** Visible-for-testing: keys occupying `oidcRefresh`'s single-flight (digests, never tokens). */
+    internal suspend fun oidcRefreshOccupiedKeys(): Set<Any> = oidcSupport.refreshOccupiedKeys()
 
     // ---- Auth methods (§1): login / verifyMfa / refresh / logout --------
 
@@ -1435,7 +1445,11 @@ class AxiamClient private constructor(
      * key lookup, REQUIRED `exp`, `nbf` when present, REQUIRED `tenant_id`
      * asserted against the configured tenant, `iss`/`aud` when this client
      * was configured with an expected value (see [Builder.expectedIssuer] /
-     * [Builder.expectedAudience]), and **rule 9**: a token carrying `cnf`
+     * [Builder.expectedAudience]), **rules 10-12** (contract 1.68: the token
+     * is an ACCESS token — a header `typ` other than `at+jwt` is refused, a
+     * payload with a `purpose` member is refused whatever its value, and a
+     * missing `kid` is refused, with no "only key in the set" fallback), and
+     * **rule 9**: a token carrying `cnf`
      * MUST NOT be accepted without proof the caller holds the named key — see
      * [presentedProofs] — with a single bounded
      * [JwksVerifier.CLOCK_SKEW_SECONDS] leeway on the time claims. Every
@@ -1456,6 +1470,10 @@ class AxiamClient private constructor(
      * own, but an integrator embedding it in one that does terminate mTLS or
      * verify DPoP — passes [presentedProofs] explicitly; see
      * [JwksVerifier.verifyTokenBinding] for the full ten-row table.
+     *
+     * The returned [AxiamUser] takes `roles` from the token's `roles` claim
+     * only and `scopes` from its space-separated `scope` claim (§11.2 rule 11):
+     * the two never stand in for each other.
      *
      * The signature-only primitive
      * ([JwksVerifier.verifySignatureOnlyUnchecked]) is NOT a substitute for

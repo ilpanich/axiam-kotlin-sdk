@@ -203,6 +203,279 @@ class OidcRefreshRule6Test {
     }
 
     /**
+     * Issue #109 — the single-flight is keyed by the refresh token. A caller
+     * holding a DIFFERENT refresh token is not part of another token's burst:
+     * even inside the publish-before-vacate window it must get its own wire
+     * call and its own token set (never another grant's), while the same token
+     * still joins (rule 6a, pinned by the test above).
+     */
+    @Test
+    fun `a different refresh token in the publish window gets its own wire call and token set`() = runBlocking {
+        val client = OidcTestKit.clientFor(server)
+        client.oidcDiscover()
+        val calls = AtomicInteger(0)
+        dispatcher.on("/oauth2/token") { req ->
+            calls.incrementAndGet()
+            val rt = req.body.peek().readUtf8().substringAfter("refresh_token=").substringBefore("&")
+            MockResponse().setResponseCode(200)
+                .addHeader("Content-Type", "application/json")
+                .setBody(OidcTestKit.tokenResponseJson(accessToken = "access-for-$rt"))
+        }
+        val windowOpen = CountDownLatch(1)
+        val releaseWindow = CountDownLatch(1)
+        client.oidcRefreshAfterPublishHook = {
+            windowOpen.countDown()
+            check(releaseWindow.await(10, TimeUnit.SECONDS)) { "window never released" }
+        }
+        val callers = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val a = callers.async { client.oidcRefresh(OidcRefreshParams.of("rtA", tenantId = tenantId)) }
+            check(windowOpen.await(10, TimeUnit.SECONDS)) { "outcome was never published" }
+            assertEquals("access-for-rtA", a.await().accessToken.expose())
+
+            // Different token inside rtA's window: its own call, its own outcome.
+            client.oidcRefreshAfterPublishHook = null
+            val b = callers.async { client.oidcRefresh(OidcRefreshParams.of("rtB", tenantId = tenantId)) }
+            assertEquals("access-for-rtB", b.await().accessToken.expose(), "a different refresh token must not receive another grant's tokens")
+            assertEquals(2, calls.get())
+
+            // Same token as the settled slot still joins (rule 6a).
+            val a2 = callers.async { client.oidcRefresh(OidcRefreshParams.of("rtA", tenantId = tenantId)) }
+            delay(300)
+            assertEquals("access-for-rtA", a2.await().accessToken.expose())
+            assertEquals(2, calls.get(), "same token inside its window must join, not re-call")
+        } finally {
+            client.oidcRefreshAfterPublishHook = null
+            releaseWindow.countDown()
+            callers.cancel()
+        }
+    }
+
+    private val wireTenants = java.util.concurrent.ConcurrentLinkedQueue<String>()
+
+    private fun installEchoToken(calls: AtomicInteger, gate: CountDownLatch? = null) {
+        dispatcher.on("/oauth2/token") { req ->
+            calls.incrementAndGet()
+            wireTenants.add(req.requestUrl?.queryParameter("tenant_id") ?: "")
+            gate?.let { check(it.await(10, TimeUnit.SECONDS)) { "gate never released" } }
+            val rt = req.body.peek().readUtf8().substringAfter("refresh_token=").substringBefore("&")
+            val t = req.requestUrl?.queryParameter("tenant_id")
+            MockResponse().setResponseCode(200)
+                .addHeader("Content-Type", "application/json")
+                .setBody(OidcTestKit.tokenResponseJson(accessToken = "access-for-$rt-$t"))
+        }
+    }
+
+    /** Issue #109, required test 1: a different token during a LIVE flight gets its own call. */
+    @Test
+    fun `a different refresh token during a live flight gets its own wire call and token set`() = runBlocking {
+        val client = OidcTestKit.clientFor(server)
+        client.oidcDiscover()
+        val calls = AtomicInteger(0)
+        val release = CountDownLatch(1)
+        installEchoToken(calls, release)
+        val callers = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val a = callers.async { client.oidcRefresh(OidcRefreshParams.of("rtA", tenantId = tenantId)) }
+            val b = callers.async { client.oidcRefresh(OidcRefreshParams.of("rtB", tenantId = tenantId)) }
+            val a2 = callers.async { client.oidcRefresh(OidcRefreshParams.of("rtA", tenantId = tenantId)) }
+            delay(500)
+            release.countDown()
+            assertEquals("access-for-rtA-$tenantId", a.await().accessToken.expose())
+            assertEquals("access-for-rtB-$tenantId", b.await().accessToken.expose())
+            assertEquals("access-for-rtA-$tenantId", a2.await().accessToken.expose(), "same token shares A's one call")
+            assertEquals(2, calls.get(), "one call for rtA (shared), one for rtB")
+        } finally {
+            release.countDown()
+            callers.cancel()
+        }
+    }
+
+    /**
+     * Different keys run independently: while A's wire call is HELD on the
+     * transport, B's wire call starts (asserted on the server), and no lock is
+     * shared with the §1 cookie refresh. Twenty distinct tokens complete
+     * concurrently under a timeout.
+     */
+    @Test
+    fun `different keys run concurrently and twenty distinct tokens complete under a timeout`() = runBlocking {
+        val client = OidcTestKit.clientFor(server)
+        client.oidcDiscover()
+        val calls = AtomicInteger(0)
+        val release = CountDownLatch(1)
+        installEchoToken(calls, release)
+        val callers = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val a = callers.async { client.oidcRefresh(OidcRefreshParams.of("rtA", tenantId = tenantId)) }
+            val others = (1..19).map { i ->
+                callers.async { client.oidcRefresh(OidcRefreshParams.of("rt-$i", tenantId = tenantId)) }
+            }
+            // Every distinct token reaches the transport while A's call is still held.
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
+            while (calls.get() < 20 && System.nanoTime() < deadline) delay(20)
+            assertEquals(20, calls.get(), "a held wire call must not block other keys' wire calls")
+            release.countDown()
+            kotlinx.coroutines.withTimeout(15_000) {
+                assertEquals("access-for-rtA-$tenantId", a.await().accessToken.expose())
+                others.forEachIndexed { i, d ->
+                    assertEquals("access-for-rt-${i + 1}-$tenantId", d.await().accessToken.expose())
+                }
+            }
+        } finally {
+            release.countDown()
+            callers.cancel()
+        }
+    }
+
+    /** Same token, different resolved tenant: separate flights. Scope is not part of the key. */
+    @Test
+    fun `the same token for a different tenant is a separate flight and scope does not split one`() = runBlocking {
+        val client = OidcTestKit.clientFor(server)
+        client.oidcDiscover()
+        val calls = AtomicInteger(0)
+        val release = CountDownLatch(1)
+        installEchoToken(calls, release)
+        val other = "33333333-3333-3333-3333-333333333333"
+        val callers = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val a = callers.async { client.oidcRefresh(OidcRefreshParams.of("rtA", tenantId = tenantId)) }
+            val a2 = callers.async { client.oidcRefresh(OidcRefreshParams.of("rtA", scope = "x", tenantId = tenantId)) }
+            val t2 = callers.async { client.oidcRefresh(OidcRefreshParams.of("rtA", tenantId = other)) }
+            delay(500)
+            release.countDown()
+            assertEquals("access-for-rtA-$tenantId", a.await().accessToken.expose())
+            assertEquals("access-for-rtA-$tenantId", a2.await().accessToken.expose(), "scope joins the one flight")
+            assertEquals("access-for-rtA-$other", t2.await().accessToken.expose(), "other tenant gets its own result")
+            assertEquals(2, calls.get(), "one flight per (tenant, token)")
+            assertEquals(setOf(tenantId, other), wireTenants.toSet())
+        } finally {
+            release.countDown()
+            callers.cancel()
+        }
+    }
+
+    /** The client's default tenant, explicit or omitted, is ONE flight and ONE wire call. */
+    @Test
+    fun `an explicit tenant equal to the default and an omitted tenant share one flight`() = runBlocking {
+        val client = OidcTestKit.clientFor(server)
+        client.oidcDiscover()
+        val calls = AtomicInteger(0)
+        val release = CountDownLatch(1)
+        installEchoToken(calls, release)
+        val callers = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val a = callers.async { client.oidcRefresh(OidcRefreshParams.of("rtA", tenantId = tenantId)) }
+            val b = callers.async { client.oidcRefresh(OidcRefreshParams.of("rtA")) }
+            delay(500)
+            release.countDown()
+            assertEquals("access-for-rtA-$tenantId", a.await().accessToken.expose())
+            assertEquals("access-for-rtA-$tenantId", b.await().accessToken.expose())
+            assertEquals(1, calls.get())
+        } finally {
+            release.countDown()
+            callers.cancel()
+        }
+    }
+
+    /** Upper-case, lower-case and omitted default tenant spell one key: one flight, one wire call. */
+    @Test
+    fun `tenant case does not split a flight`() = runBlocking {
+        val client = OidcTestKit.clientFor(server, tenantId = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee")
+        client.oidcDiscover()
+        val calls = AtomicInteger(0)
+        val release = CountDownLatch(1)
+        installEchoToken(calls, release)
+        val callers = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val a = callers.async { client.oidcRefresh(OidcRefreshParams.of("rtA", tenantId = "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE")) }
+            val b = callers.async { client.oidcRefresh(OidcRefreshParams.of("rtA", tenantId = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee")) }
+            val c = callers.async { client.oidcRefresh(OidcRefreshParams.of("rtA")) }
+            delay(500)
+            release.countDown()
+            assertEquals("access-for-rtA-aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", a.await().accessToken.expose())
+            b.await(); c.await()
+            assertEquals(1, calls.get())
+            assertEquals(listOf("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"), wireTenants.toList(), "canonical tenant on the wire")
+        } finally {
+            release.countDown()
+            callers.cancel()
+        }
+    }
+
+    /** An upper-case CONFIGURED default tenant is canonicalised: same flight as the lower-case spelling. */
+    @Test
+    fun `an upper-case configured default tenant shares a flight with the lower-case spelling`() = runBlocking {
+        val upper = "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE"
+        val client = OidcTestKit.clientFor(server, tenantId = upper)
+        client.oidcDiscover()
+        val calls = AtomicInteger(0)
+        val release = CountDownLatch(1)
+        installEchoToken(calls, release)
+        val callers = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val a = callers.async { client.oidcRefresh(OidcRefreshParams.of("rtA")) }
+            val b = callers.async { client.oidcRefresh(OidcRefreshParams.of("rtA", tenantId = upper.lowercase())) }
+            delay(500)
+            release.countDown()
+            a.await(); b.await()
+            assertEquals(1, calls.get())
+            assertEquals(listOf(upper.lowercase()), wireTenants.toList())
+        } finally {
+            release.countDown()
+            callers.cancel()
+        }
+    }
+
+    /** An invalid tenant fails immediately: no slot, no request. */
+    @Test
+    fun `an invalid tenant is rejected before the guard with no request`() = runBlocking {
+        val client = OidcTestKit.clientFor(server)
+        client.oidcDiscover()
+        val calls = AtomicInteger(0)
+        installEchoToken(calls)
+        try {
+            client.oidcRefresh(OidcRefreshParams.of("rtA", tenantId = "not-a-uuid"))
+            org.junit.jupiter.api.Assertions.fail<Unit>("expected AuthError")
+        } catch (e: io.axiam.sdk.errors.AuthError) {
+            // expected
+        }
+        assertEquals(0, calls.get())
+        assertTrue(client.oidcRefreshOccupiedKeys().isEmpty())
+    }
+
+    /** No raw token in the registry, and the slot is removed once vacated (no growth). */
+    @Test
+    fun `the flight registry holds a digest never the raw token and empties after vacate`() = runBlocking {
+        val client = OidcTestKit.clientFor(server)
+        client.oidcDiscover()
+        installEchoToken(AtomicInteger(0))
+        val windowOpen = CountDownLatch(1)
+        val releaseWindow = CountDownLatch(1)
+        client.oidcRefreshAfterPublishHook = {
+            windowOpen.countDown()
+            check(releaseWindow.await(10, TimeUnit.SECONDS)) { "window never released" }
+        }
+        val callers = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val a = callers.async { client.oidcRefresh(OidcRefreshParams.of("rt-secret-value", tenantId = tenantId)) }
+            check(windowOpen.await(10, TimeUnit.SECONDS))
+            a.await()
+            val keys = client.oidcRefreshOccupiedKeys()
+            assertEquals(1, keys.size)
+            assertTrue(keys.none { it.toString().contains("rt-secret-value") }, "raw token must never be a key")
+            assertTrue(keys.all { Regex("[0-9a-f]{64}").matches(it.toString()) })
+            client.oidcRefreshAfterPublishHook = null
+            releaseWindow.countDown()
+            delay(500)
+            assertTrue(client.oidcRefreshOccupiedKeys().isEmpty(), "a vacated key's slot must be removed")
+        } finally {
+            client.oidcRefreshAfterPublishHook = null
+            releaseWindow.countDown()
+            callers.cancel()
+        }
+    }
+
+    /**
      * §9 rule 6b — occupancy is not liveness. While the settled-but-uncleared
      * slot sits in rule 6a's bookkeeping window, an unrelated §12 operation
      * must run normally: nothing in this SDK may read "the slot is non-null" as

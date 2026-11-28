@@ -12,6 +12,7 @@ import io.axiam.sdk.internal.AuthHeaderInterceptor
 import io.axiam.sdk.internal.JwksVerifier
 import io.axiam.sdk.internal.SessionState
 import io.axiam.sdk.internal.SingleFlight
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
@@ -95,6 +96,8 @@ internal class OidcSupport(
      * than a per-call one.
      */
     private val presentsClientCertificate: Boolean = false,
+    /** The client's TLS for the JWKS fetch (§6 `customCa`; the §6.1 identity only to the base URL's origin). */
+    private val jwksTls: io.axiam.sdk.internal.JwksTls = io.axiam.sdk.internal.JwksTls(null, null),
     /**
      * CONTRACT.md §5.2 rule 1 (contract 1.51) — invoked exactly once after
      * every SSO/federation completion that establishes a NEW session
@@ -558,10 +561,15 @@ internal class OidcSupport(
             refreshFlight.afterPublishHook = value
         }
 
+    /** Visible-for-testing: the refresh single-flight's occupied keys. */
+    internal suspend fun refreshOccupiedKeys(): Set<Any> = refreshFlight.occupiedKeys()
+
     /**
      * `POST /oauth2/token` with `grant_type=refresh_token` (§12.1) — refresh
-     * an [OidcTokenSet] under [refreshFlight]'s single-flight guard (§9):
-     * concurrent callers collapse into ONE HTTP request and all receive the
+     * an [OidcTokenSet] under [refreshFlight]'s single-flight guard (§9),
+     * keyed by a digest of the resolved tenant and the refresh token (callers presenting different
+     * tokens are different bursts and never share an outcome; rule 6a–6d hold
+     * per token): concurrent callers with the same token collapse into ONE HTTP request and all receive the
      * same result (or the same failure), with no retry loop on failure
      * (§9 rule 3). See [SingleFlight] for how §9 rule 6's four invariants are
      * met — in particular why cancelling one caller can never strand the rest
@@ -580,9 +588,29 @@ internal class OidcSupport(
      * require a nonce in a refresh-issued ID token.
      */
     suspend fun oidcRefresh(params: OidcRefreshParams): OidcTokenSet =
-        refreshFlight.run { doOidcRefresh(params) }
+        // Resolve, validate and canonicalise the tenant ONCE, before the guard: an
+        // invalid or unresolvable tenant is an immediate client-side AuthError (no
+        // slot, no request), and the same value keys the flight and goes on the wire.
+        resolveTenantId(params.tenantId).lowercase().let { tenant ->
+            refreshFlight.run(key = refreshFlightKey(tenant, params.refreshToken.expose())) {
+                doOidcRefresh(params, tenant)
+            }
+        }
 
-    private suspend fun doOidcRefresh(params: OidcRefreshParams): OidcTokenSet {
+    /**
+     * The single-flight key: SHA-256 over the RESOLVED tenant UUID (explicit
+     * argument or the client's default, so both spell the same key), a NUL
+     * separator, and the refresh token. The raw single-use token is never a
+     * map key and so can never reach a log or error through one; `scope` is
+     * deliberately not part of it. Different tokens or tenants are different
+     * bursts.
+     */
+    internal fun refreshFlightKey(tenantId: String, token: String): String =
+        java.security.MessageDigest.getInstance("SHA-256")
+            .digest("${tenantId.lowercase()}\u0000$token".toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+
+    private suspend fun doOidcRefresh(params: OidcRefreshParams, tenantId: String): OidcTokenSet {
         val configuration = params.configuration ?: oidcDiscover()
         val clientId = requireClientId()
         val form = buildForm(
@@ -592,7 +620,7 @@ internal class OidcSupport(
             "client_secret" to oidcClientSecret?.expose(),
             "scope" to params.scope,
         )
-        val json = postToken(configuration, form, params.tenantId)
+        val json = postToken(configuration, form, tenantId)
         // No nonce: rule 6 does not apply to a refresh-issued ID token.
         val expectations = OidcIdToken.Expectations(
             issuer = configuration.issuer,
@@ -1971,7 +1999,10 @@ internal class OidcSupport(
         val verifier = verifierFor(config.jwks_uri)
 
         val claims = try {
-            verifier.verifyForIdToken(logoutToken)
+            // The verifier may wait, bounded, on a JWKS fetch: keep that off the caller's dispatcher (#108).
+            withContext(Dispatchers.IO) { verifier.verifyForIdToken(logoutToken) }
+        } catch (e: CancellationException) {
+            throw e // the caller cancelled: not a verification failure
         } catch (e: AuthError) {
             throw e
         } catch (e: Exception) {
@@ -2222,7 +2253,7 @@ internal class OidcSupport(
 
         val idClaims = if (!idToken.isNullOrEmpty()) {
             val verifier = verifierFor(configuration.jwks_uri)
-            val claims = verifier.verifyForIdToken(idToken)
+            val claims = withContext(Dispatchers.IO) { verifier.verifyForIdToken(idToken) }
             OidcIdToken.checkClaims(claims, expectations)
         } else {
             null
@@ -2254,7 +2285,7 @@ internal class OidcSupport(
      */
     private suspend fun verifierFor(jwksUri: String): JwksVerifier = verifiersMutex.withLock {
         val resolved = resolveJwksUri(jwksUri)
-        verifiers.getOrPut(resolved) { JwksVerifier.forJwksUri(resolved) }
+        verifiers.getOrPut(resolved) { JwksVerifier.forJwksUri(resolved, baseUrl, jwksTls) }
     }
 
     /**

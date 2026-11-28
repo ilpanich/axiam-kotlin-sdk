@@ -31,13 +31,21 @@ Source: [ilpanich/axiam-kotlin-sdk](https://github.com/ilpanich/axiam-kotlin-sdk
 
 ## Contract conformance
 
-This SDK conforms to **contract 1.68**: CONTRACT.md §1–§7 (§1.1's `getUserInfo` and §1.1.1's
+This SDK conforms to **contract 1.69**: CONTRACT.md §1–§7 (§1.1's `getUserInfo` and §1.1.1's
 `validateToken`/`introspectToken` declined — gRPC-only, and this SDK ships no gRPC transport; see
 [Scope of this SDK (v1)](#scope-of-this-sdk-v1) below), §9–§13 and §12.7, §14, §15, §17, §19,
 §20, §21, §22, §23, §24, §25, §26, §27, §28 (including §6.1 mTLS), and §28.12, §29, §30, §31, §32,
 §33, §36 and §37, with §32.7 and §33.2 signed. Manifest pruning: not offered in any namespace (§27.10). §12 is implemented in full at its
 1.38 shape: all **thirteen** operations, including the four public "Sign in with X" entry points,
 as `suspend` functions on the same `AxiamClient`.
+
+**Contract 1.69 — back-channel logout tokens carry their JWKS `kid` (§34.13, #880).** No operation is added and
+no API changes. §12.7.3 rule 1: `verifyLogoutToken` selects the key **by `kid`**, through the same §12.4 verifier
+as the ID token — a token with no `kid` is refused as `unknown_kid` (no single-key fallback, no trying every
+key), and an unknown `kid` costs at most one JWKS fetch per window. A logout token from a server before 1.69
+carries no `kid` and is therefore refused. §10.1 rules 10 and 11 do **not** apply on this path or on the ID-token
+path (the logout token's `typ` is `logout+jwt`); a test verifies a server-shaped token against a two-key JWKS and
+shows the access-token guard refusing both token kinds.
 
 **Contract 1.68 — the security-audit 2026-11-14 fixes (§34.12). This release (1.4.0) changes behaviour; see
 [`CHANGELOG.md`](CHANGELOG.md) for the migration notes.** No operation is added. §10.1 rules 10–12: the guard
@@ -222,7 +230,7 @@ rather than folded into the range because they landed after this SDK already sta
 would turn a statement that was true when written into a different claim without anyone editing it.
 
 `CONTRACT.md`, `openapi.json`, `management-registry.json` and `proto/` are vendored byte for byte
-from `axiam` (contract 1.68) at `e502a3b` (`proto/` unchanged since 1.62; spec digest
+from `axiam` (contract 1.69) at `c4c4e44` (`proto/` unchanged since 1.62; spec digest
 `sha256:badfb480…d59ca`), and the §27 surface is generated from them. See
 [MCP resource-server helpers](#mcp-resource-server-helpers-ioaxiamsdkmcp-28-opt-in) below for §28.
 
@@ -429,6 +437,9 @@ AxiamClient.builder(baseUrl, "acme")
     .build()
 ```
 
+The JWKS fetch behind `verifySession` and ID-token / logout-token validation honours `customCa` too. The §6.1
+client identity is sent to it only when the `jwks_uri` has the same origin as the base URL.
+
 For IoT / service-account **mutual TLS** (§6.1), present a client identity certificate (a PEM
 cert chain plus a PEM PKCS#8 private key). It is applied to the client's transport and the
 private key is held behind `Sensitive` — never logged or exposed:
@@ -566,7 +577,8 @@ routing {
 ```
 
 The framework-free annotations `@AxiamRequireAuth`, `@AxiamRequireAccess(action, …)`, and
-`@AxiamRequireRole(…)` are also provided (`io.axiam.sdk.annotations`). **Spring Boot** users can
+`@AxiamRequireRole(…)` and `@AxiamRequireScope(…)` (repeatable: any listed scope within one annotation, every
+annotation must pass) are also provided (`io.axiam.sdk.annotations`), applied by `call.enforce(...)`. **Spring Boot** users can
 reuse the Java SDK's `AxiamAuthorizationInterceptor` (`io.github.ilpanich:axiam-sdk`), which
 enforces the same annotation vocabulary.
 
@@ -584,10 +596,10 @@ A signature check alone is not a guard.
 | 5 | `iss` | Checked only when `expectedIssuer(...)` was configured on the builder. |
 | 6 | `aud` | Checked only when `expectedAudience(...)` was configured on the builder. |
 | 7 | clock skew | One named 60s constant, `JwksVerifier.CLOCK_SKEW_SECONDS`, on rules 2 and 3. Not settable. |
+| 9 | `cnf` (sender-constrained tokens, contract 1.51) | Absent `cnf` ⇒ an ordinary bearer token, rules 1–7 alone decide. A **present** `cnf.x5t#S256` (a device-login token, §6.1 rule 9) is now checked against what the caller proves it holds — see below. |
 | 10 | `typ` (contract 1.68) | When the header carries `typ` it must be `at+jwt` (any case, with or without `application/`). `JWT`, `logout+jwt` and the `axiam-…+jwt` purpose types are refused. A header with no `typ` is not refused by this rule. |
 | 11 | `purpose` (contract 1.68) | A payload with a `purpose` member is refused, whatever its value and whatever `typ` says — the MFA-challenge and WebAuthn-state tokens share the access-token key and carry no `aud`. |
 | 12 | `kid` (contract 1.68) | Required. The key is selected by `kid`; there is no "the only key in the set" fallback. An unknown `kid` causes at most one JWKS re-fetch per 60 s window (§12.4 rule 2). |
-| 9 | `cnf` (sender-constrained tokens, contract 1.51) | Absent `cnf` ⇒ an ordinary bearer token, rules 1–7 alone decide. A **present** `cnf.x5t#S256` (a device-login token, §6.1 rule 9) is now checked against what the caller proves it holds — see below. |
 
 Every rule fails **closed** — a required claim that is absent, unparseable, or of the wrong JSON
 type rejects the token.
@@ -684,8 +696,8 @@ and a feed that is *down* is not retried on every request either, because the in
 from the last *attempt*. And it **never fails closed**: an unreachable feed, a non-`200`, a body
 that does not parse, or an `alg` this build does not know all behave exactly as no feed at all —
 and specifically not as an empty list, which would assert that nothing has been revoked and is a
-guard silently honouring no revocations while appearing to honour them. All seven rules above run
-first and still decide; the feed can only ever turn an accept into a reject, and the `AuthError`
+guard silently honouring no revocations while appearing to honour them. Every rule above runs
+first and still decides; the feed can only ever turn an accept into a reject, and the `AuthError`
 it throws names the session rather than the credential — "the session is gone" is not "this token
 was never valid".
 

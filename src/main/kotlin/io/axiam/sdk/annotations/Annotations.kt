@@ -58,3 +58,29 @@ annotation class AxiamRequireAccess(
 @Retention(AnnotationRetention.RUNTIME)
 @Target(AnnotationTarget.FUNCTION, AnnotationTarget.CLASS)
 annotation class AxiamRequireRole(vararg val roles: String)
+
+/**
+ * Declares that the authenticated caller's token must carry at least one of
+ * [scopes] in its **`scope` claim** (CONTRACT.md §11 `require_scope`, §11.2
+ * rule 11d; contract 1.68). The annotation form of the Ktor `requireScope`
+ * call, applied by `enforce`.
+ *
+ * A LOCAL check: entries are the space-separated values of RFC 6749 §3.3,
+ * compared whole and case-sensitively, and a `roles` claim never stands in for
+ * `scope`. 401 if unauthenticated, 403 if none match or the token has no
+ * `scope`.
+ *
+ * **Repeatable.** Within one annotation any listed scope suffices; when the
+ * annotation is repeated every occurrence must pass, so
+ * `@AxiamRequireScope("a") @AxiamRequireScope("b")` demands both.
+ */
+@Retention(AnnotationRetention.RUNTIME)
+@Target(AnnotationTarget.FUNCTION, AnnotationTarget.CLASS)
+@Repeatable
+@JvmRepeatable(AxiamRequireScopes::class)
+annotation class AxiamRequireScope(vararg val scopes: String)
+
+/** The container the JVM wraps a repeated [AxiamRequireScope] in; `enforce` unwraps it. */
+@Retention(AnnotationRetention.RUNTIME)
+@Target(AnnotationTarget.FUNCTION, AnnotationTarget.CLASS)
+annotation class AxiamRequireScopes(vararg val value: AxiamRequireScope)

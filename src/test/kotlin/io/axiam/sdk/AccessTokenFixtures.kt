@@ -79,14 +79,88 @@ object AccessTokenFixtures {
     class Jwks(initial: OctetKeyPair) {
         val published = AtomicReference(listOf(initial))
         val fetches = AtomicInteger()
+
+        /** The status `/oauth2/jwks` answers with; anything but 200 is a failing endpoint. */
+        @Volatile
+        var status: Int = 200
+
+        /** When true a 200 answers `{"keys":[]}` (the empty set, a failed refresh under §12.4 rule 2). */
+        @Volatile
+        var emptyKeys: Boolean = false
+
+        /** `Cache-Control` sent with a 200, or null for none. */
+        @Volatile
+        var cacheControl: String? = null
+
+        /** `ETag` sent with a 200; a request carrying it in `If-None-Match` is answered 304 while [honour304]. */
+        @Volatile
+        var etag: String? = null
+
+        @Volatile
+        var honour304: Boolean = false
+
+        /** When set, a 200 answers exactly this body instead of the published set. */
+        @Volatile
+        var rawBody: String? = null
+
+        /** `Cache-Control` sent with the 304 answering a conditional request. */
+        @Volatile
+        var cacheControl304: String? = null
+
+        /** Delay before the response headers, in milliseconds (a stalled endpoint). */
+        @Volatile
+        var headersDelayMs: Long = 0
+
+        /** When true the 200 body is dripped one byte per 200 ms (a drip-feeding endpoint). */
+        @Volatile
+        var drip: Boolean = false
+
+        /** Whitespace bytes appended to a 200 body (to reach or pass the size limit). */
+        @Volatile
+        var padBytes: Int = 0
+
+        /** `Location` sent with a non-200 status. */
+        @Volatile
+        var location: String? = null
+
+        /** The `If-None-Match` header of every request that carried one. */
+        val ifNoneMatches = java.util.concurrent.CopyOnWriteArrayList<String>()
         val server = MockWebServer().also { s ->
             s.dispatcher = object : Dispatcher() {
                 override fun dispatch(request: RecordedRequest): MockResponse =
                     if ((request.path ?: "").startsWith("/oauth2/jwks")) {
                         fetches.incrementAndGet()
-                        MockResponse().setResponseCode(200)
-                            .addHeader("Content-Type", "application/json")
-                            .setBody(JWKSet(published.get().map { it.toPublicJWK() }).toString())
+                        request.getHeader("If-None-Match")?.let { ifNoneMatches.add(it) }
+                        if (status != 200) {
+                            MockResponse().setResponseCode(status).setBody(if (status == 304) "" else (rawBody ?: "down"))
+                                .apply {
+                                    cacheControl?.let { addHeader("Cache-Control", it) }
+                                    location?.let { addHeader("Location", it) }
+                                    setHeadersDelay(headersDelayMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+                                }
+                        } else if (honour304 && etag != null && request.getHeader("If-None-Match") == etag) {
+                            MockResponse().setResponseCode(304).apply {
+                                cacheControl304?.let { addHeader("Cache-Control", it) }
+                            }
+                        } else {
+                            MockResponse().setResponseCode(200)
+                                .addHeader("Content-Type", "application/json")
+                                .apply {
+                                    cacheControl?.let { addHeader("Cache-Control", it) }
+                                    etag?.let { addHeader("ETag", it) }
+                                }
+                                .setHeadersDelay(headersDelayMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+                                .setBody(
+                                    (
+                                        if (rawBody != null) rawBody!!
+                                        else if (emptyKeys) "{\"keys\":[]}"
+                                        else JWKSet(published.get().map { it.toPublicJWK() }).toString()
+                                        ) + " ".repeat(padBytes),
+                                )
+                                .apply {
+                                    if (drip) throttleBody(1, 200, java.util.concurrent.TimeUnit.MILLISECONDS)
+                                }
+                        }
                     } else {
                         MockResponse().setResponseCode(404)
                     }

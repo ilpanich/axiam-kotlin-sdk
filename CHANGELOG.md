@@ -15,10 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `coreLibrariesVersion`, so the `@Metadata` and the POM's `kotlin-stdlib` still ask for Kotlin 2.2.21.
   `VersionPolicyTest` reads the metadata version back from the compiled classes and checks the stdlib on the
   classpath. The minimum Kotlin for consumers is unchanged.
-
-## [1.4.0] - 2026-11-22
-
-### Security
+- **Build-tool dependency floors for Dependabot alerts.** `settings.gradle.kts` raises BouncyCastle (`bcprov`,
+  `bcpkix`, `bcpg`, `bcutil`) to 1.85 (GHSA-9pwp-9qqc-pr26, GHSA-qp49-qgx5-5m26, GHSA-wg6q-6289-32hp,
+  GHSA-cj8j-37rh-8475), FreeMarker to 2.3.35 (GHSA-27j2-h3m2-8237) and OpenTelemetry `api`/`context` to 1.67.0
+  (GHSA-rcgg-9c38-7xpx, GHSA-ccrj-gw8r-854m), and floors jackson at 2.22.3 (GHSA-7hhh-6rmp-j9qf, GHSA-p6pp-m3f8-5c89,
+  GHSA-cxp5-3px4-pw24, GHSA-wv8q-qhhj-9h54) and Netty at 4.2.21.Final on transitive classpaths (the Kotlin and Dokka
+  plugins, Kover, and the Netty engine of the examples source set). None of them reaches the published POM.
 
 - Security-audit 2026-11-14 fixes (CONTRACT.md 1.68). **Three of these are behaviour changes for integrators**
 (login glue, `requireRole`, and the guard's stricter access-token checks); read the migration notes.
@@ -44,10 +46,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   again before redirecting.
 - **C5 — at most one JWKS fetch per unknown-`kid` window (§12.4 rule 2).** nimbus's `DefaultJWKSetCache` re-fetched
   on every `kid` miss; `JwksVerifier` now keeps a 60 s window, so forged `kid`s cannot drive one fetch each.
+  The key set is now fetched and cached by `JwksVerifier` itself (KOT-R1-5): nimbus's `RemoteJWKSet` could still
+  fetch twice for one lookup (a load or refresh, then a second fetch on the `kid` miss), so a cold cache, or the
+  first miss after a window, cost two fetches. Now one fetch per window holds on a warm cache, a cold one, and
+  while the endpoint is failing (a failed attempt opens the window too); the first fetch is immediate.
+- **Back-channel logout tokens are selected by `kid` (contract 1.69, #880).** `verifyLogoutToken` already
+  required a `kid` through the shared §12.4 verifier; new tests pin it with a server-shaped token (header exactly
+  `alg`, `typ: logout+jwt`, `kid`) against a two-key JWKS whose signing key is not first, refuse a kid-less token
+  and an unknown `kid` as `unknown_kid`, and show that §10.1 rules 10 and 11 stay off the logout and ID-token
+  paths. No production behaviour changed. A logout token from a server before 1.69 carries no `kid` and is refused.
 
 ### Added
 
 - `requireScope(vararg scopes)` (§11.2 rule 11d): a local check of the `scope` claim; `403` when absent.
+- `@AxiamRequireScope(vararg scopes)` (KOT-R1-1), the annotation form of `requireScope`, applied by `call.enforce(...)`.
+  It is repeatable: any listed scope satisfies one annotation, and every annotation must pass.
 - `AxiamUser.scopes` and `AxiamUser.rolesClaimPresent` (an absent `roles` claim is distinguishable from `[]`).
 - `axiamOidcLogin(..., onSuccessWithCall = { tokens, entry, call -> })`: the success callback that receives the
   Ktor `ApplicationCall` (§12.8 rule 2). `onSuccess` is unchanged and still runs.
@@ -60,15 +73,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Vendored `CONTRACT.md`, `openapi.json` and `management-registry.json` re-synced to contract 1.68; the §27
   surface is regenerated (`AuditLogEntry.organizationId`, the audit and privacy operation documentation).
 
+- Monthly dependency refresh (2026-11): Gradle wrapper 9.9.1 -> 9.9.2; RabbitMQ `amqp-client` (compileOnly / tests) 5.38.0. Kotlin (2.2.21 floor, 2.4.21 newest) and JVM (17 floor, 27 newest) support unchanged.
+
+### Fixed
+
+- **`oidcRefresh` with a different refresh token no longer receives another grant's token set (#109).** The
+  single-flight is now keyed by a SHA-256 digest of the resolved tenant UUID and the refresh token (the raw token is never a map key; `scope` is not part of the key): the same
+  token still joins an in-flight or publish-before-vacate attempt (CONTRACT §9 rules 2, 6a-6d, per key), a different
+  token makes its own wire call, and a key's slot is removed once vacated. The §1 `refresh()` guard is unchanged: its
+  wire call takes no token parameter.
+
+- **The suspend OIDC verifiers no longer park the caller's thread on the JWKS fetch (#108).** `verifyLogoutToken`
+  and the ID-token check inside every token-returning OIDC call (`toTokenSet`) waited on the in-flight fetch with a
+  blocking `Future.get`, so a cold or stale cache and a slow endpoint stalled unrelated coroutines on a small
+  dispatcher for up to the fetch deadline. Both now run the verifier on `Dispatchers.IO`, so the caller's dispatcher
+  thread is never parked, and a cancellation is never turned into an `AuthError`. The fetch rules are unchanged.
+
+- **`customCa` now reaches the JWKS fetch (#107).** `JwksVerifier` fetched the key set over a plain
+  `HttpURLConnection`, so with a private CA `verifySession` and ID-token / logout-token validation failed closed
+  (`unknown_kid`) while every other call worked. The fetch now uses the client's own TLS stack (CONTRACT.md §6:
+  system trust store plus `customCa`, and the §6.1 identity when configured), for the session verifier and for the
+  OIDC verifiers alike. Verification stays strict: only the socket factory is set (no public API accepts a TLS
+  configuration), the hostname check is untouched, and a client without the CA still fails. The §6.1 client
+  identity goes to the JWKS endpoint only when its origin is the base URL's; another origin gets `customCa` trust alone.
+
+- **The JWKS cache is bounded stale-if-error (CONTRACT.md 1.69 §12.4 rule 2, D-10; axiam#883).** The held key set is
+  kept through a failed refresh for exactly TTL + 300 s after the last successful fetch (it was 300 s in all), then
+  every token is refused until a fetch succeeds. The TTL is 300 s, or a smaller `Cache-Control: max-age`; a larger
+  one is clamped to 300 s. A known `kid` inside the TTL no longer causes a refresh. A refresh succeeds on a `200`
+  with at least one key or a `304` to the `ETag` conditional request (which moves the anchor); an empty key set, a
+  non-JWKS body (including `{"keys":[{}]}`), any other status or a transport error is a failure that keeps the held keys and never moves the
+  anchor, and a failed unknown-`kid` refresh never opens or extends the stale window. The verifier now fetches with
+  `HttpURLConnection` (no redirects, nimbus's timeouts and size limit) so it can read the headers. There is no
+  caller-set TTL, so a configured TTL never competes with `max-age` and no `config_clamped` event applies.
+  The fetch no longer runs under the cache lock: it is single-flight on an SDK-owned daemon thread with a 5 s total
+  deadline enforced by a watchdog that closes the connection (a server dripping the status line or headers cannot hold it), a held key that is still usable is answered without waiting for it, and a caller that is interrupted
+  records no failure and opens no cooldown. Every TTL-driven refresh respects the 60 s window, so `max-age=0` cannot
+  mean a fetch per verification.
+
+- **The login callback clears the binding cookie on every exit (KOT-R1-4).** The clearing `Set-Cookie` is set
+  before the success hook runs, so the framework's error response for a hook (or store) that throws carries it
+  too. A hook that responds itself via `onSuccessWithCall` owns the response: the glue skips its own when
+  `call.response.isCommitted`, and the KDoc says the hook must not respond.
+- **The callback's `Location` header is the percent-encoded form of the destination (login-glue Decision 7).** A
+  `return_to` or `successRedirect` holding a space or a non-ASCII character used to reach the header raw; a CR/LF
+  admitted by `allowReturnTo` now becomes `%0D%0A`. The application is never asked to encode.
+- An `allowReturnTo` predicate that throws an `Error` (not only an `Exception`) accepts nothing (N4).
+- `MemoryOidcStateStore` enforces its bound under the same lock that checks it, so concurrent `/login` calls can
+  no longer overshoot `maxEntries`; eviction and the expiry sweep are O(1) per removed entry (KOT-R1-7).
+- Binary compatibility with 1.3.1 is restored for `AxiamUser(String, String, List)`, the five-argument
+  `OidcStateEntry`, `MemoryOidcStateStore(long)` and the 1.3.1 `axiamOidcLogin` signature (KOT-R1-3, N2).
+- README and KDoc: the §10.1 rule table is in order, "every rule above" replaces "all seven rules", and
+  `verifySession` documents rules 10-12 and the `roles` / `scopes` sources (KOT-R1-6).
+
 ### Migration notes
 
 - **`requireRole` / `@AxiamRequireRole` / `AxiamUser.roles` (N15, behaviour change).** Roles now come from the
   `roles` claim, which the server emits only when the client requested, and is allowed, the `roles` scope.
   **Add `roles` to the scope you pass to `oidcBegin`** (or `scope=roles` on a client-credentials grant) and have
   an administrator register `roles` for the client; the SDK never adds it. Until you do, every `requireRole` is a
-  `403`. If you relied on a scope standing in for a role, switch those routes to `requireScope`. `AxiamUser`'s
-  constructor gained two defaulted parameters (`scopes`, `rolesClaimPresent`); a `copy`/destructuring call
-  site that listed three components still compiles.
+  `403`. If you relied on a scope standing in for a role, switch those routes to `requireScope` or
+  `@AxiamRequireScope`. `AxiamUser`'s constructor gained two defaulted parameters (`scopes`,
+  `rolesClaimPresent`); a three-argument constructor call still compiles **and** still links (`@JvmOverloads`
+  keeps the 1.3.1 JVM signature, as do the five-argument `OidcStateEntry`, `MemoryOidcStateStore(long)` and the
+  1.3.1 `axiamOidcLogin`; the default-argument bridge `OidcStateEntry(…, int, DefaultConstructorMarker)` is kept too). The internal glue type `OidcLoginOutcome.Redirect(String)` is now the two-argument `Redirect(String, String?)`, and so is its `copy`. The data classes' generated `copy` and `copy$default` did change shape, so Kotlin code
+  that calls `copy` on `AxiamUser` or `OidcStateEntry` must be recompiled against 1.4.0 (source is unchanged). Java source must pass `bindingDigest` (6 arguments) to `OidcStateEntry`; compiled 1.3.x jars still link.
 - **Login glue (C7, C6, behaviour change).** Sign-ins in flight across the upgrade fail once and restart (their
   entries have no digest). A custom `OidcStateStore` MUST persist and return `OidcStateEntry.bindingDigest`
   unchanged, or every callback is refused. The callback must be reached by the same browser that hit the login
@@ -77,14 +146,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cookie and the callback fails closed; use HTTPS. An absolute or scheme-relative `return_to` is now dropped;
   pass `allowReturnTo` to accept the origins you trust. In `axiamOidcLogin` the new `allowReturnTo` and
   `onSuccessWithCall` parameters sit before the trailing `onSuccess`, so a trailing-lambda call is unaffected;
-  a call that passed `onSuccess` positionally must name it.
+  a call that passed `onSuccess` positionally must name it in source (a jar already compiled against 1.3.1 keeps
+  working). The success hook runs after the clearing `Set-Cookie` is set and must not send a response itself.
+- **`JwksVerifier` (KOT-R1-2).** `verifyAccessTokenSignature` and `setClockForTesting`, new in this release,
+  are `internal`: a custom guard calls `AxiamClient.verifySession`, not a signature-only primitive.
 - **Guard (N12, N14).** A cookie-authenticated `POST`/`PUT`/`PATCH`/`DELETE` must now send `X-CSRF-Token`
   equal to the `axiam_csrf` cookie; a browser client that already echoes it (this SDK's `AxiamClient` does) is
   unaffected, a hand-rolled one is refused `403`. Access tokens minted by an AXIAM server before 1.67 carry
   `typ: JWT` and are refused; their holders refresh (at most one access-token lifetime).
-### Changed
-
-- Monthly dependency refresh (2026-11): Gradle wrapper 9.9.1 -> 9.9.2; RabbitMQ `amqp-client` (compileOnly / tests) 5.38.0. Kotlin (2.2.21 floor, 2.4.21 newest) and JVM (17 floor, 27 newest) support unchanged.
 
 ## [1.3.1] - 2026-11-11
 
