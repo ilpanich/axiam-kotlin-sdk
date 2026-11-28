@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-28
+
 ### Security
 
 - **The build now runs on Kotlin Gradle plugin 2.4.21** (was 2.2.21), which fixes GHSA-r937-wjx7-w2jp, a
@@ -75,6 +77,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Monthly dependency refresh (2026-11): Gradle wrapper 9.9.1 -> 9.9.2; RabbitMQ `amqp-client` (compileOnly / tests) 5.38.0. Kotlin (2.2.21 floor, 2.4.21 newest) and JVM (17 floor, 27 newest) support unchanged.
 
+- re-vendor CONTRACT.md 1.69 (§9 rule 7: oidc_refresh single-flight per tenant and token)
+
+- Share A's live flight with a second caller; refresh the SingleFlight docs (#109)
+
+- Accept an [Unreleased] change-log top between releases
+
+- re-vendor CONTRACT.md after the server merged ilpanich/axiam#893
+
+- re-vendor CONTRACT.md 1.69 (typed consume, BOM refusal, bounded JWKS stale-if-error; axiam#883)
+
+- re-vendor CONTRACT.md 1.69 wire-form clarification (axiam#883)
+
+- re-vendor CONTRACT.md for the contract 1.69 §8 correction
+
+- Run on Kotlin Gradle plugin 2.4.21, publish against a 2.2.21 floor
+
+- re-vendor CONTRACT.md, openapi.json and the management registry
+
+- Floor BouncyCastle 1.85, FreeMarker 2.3.35, OpenTelemetry 1.67.0
+
+- Give the Gradle and Kotlin daemons a 4 GB heap
+
+- Floor jackson 2.22.3 and Netty 4.2.21 on transitive classpaths
+
+- Bump the minor-patch group with 2 updates
+
+- Monthly dependency and toolchain update (2026-11)
+
+- Bump actions/setup-java
+
+- Bump the minor-patch group across 1 directory with 8 updates
+
+- Bump org.junit:junit-bom from 5.14.4 to 6.1.3
+
 ### Fixed
 
 - **`oidcRefresh` with a different refresh token no longer receives another grant's token set (#109).** The
@@ -125,6 +161,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `OidcStateEntry`, `MemoryOidcStateStore(long)` and the 1.3.1 `axiamOidcLogin` signature (KOT-R1-3, N2).
 - README and KDoc: the §10.1 rule table is in order, "every rule above" replaces "all seven rules", and
   `verifySession` documents rules 10-12 and the `roles` / `scopes` sources (KOT-R1-6).
+
+- Key the oidc_refresh single-flight per refresh token (#109)
+
+- Review follow-ups for #107/#108; deflake the refresh-scope test
+
+- Keep the JWKS wait off the caller's dispatcher (#108)
+
+- Fetch the key set through customCa (#107)
+
+- OI-37 review round 2 (axiam#883)
+
+- OI-37 review round 1 (axiam#883)
+
+- Bounded JWKS stale-if-error (OI-37, axiam#883)
+
+- Java-source note for the hidden OidcStateEntry constructor, failure-recording pin (OI wave B, round 2)
+
+- Nimbus timeout properties, lock-free JWKS fast path, cache test, 1.3.1 bridge ctor, committed-response guard (OI wave B, round 1)
+
+- Scope annotation, JWKS single-fetch window, glue clearing and encoding, 1.3.1 binary compat (OI-15, #99, axiam#880)
+
+- Cookie CSRF check, bound login glue, safe return_to, access-token rules, roles claim (SA-25, N12/C6/C7/N14/N15)
+
+- Hold serialization and Ktor within the Kotlin 2.2.21 floor
 
 ### Migration notes
 
